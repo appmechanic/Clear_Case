@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "852578536478",
+    "project_id": "clearcase-c4af8",
+    "storage_bucket": "clearcase-c4af8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:852578536478:android:21bf00bad06ec16c20320f",
+        "android_client_info": {
+          "package_name": "com.clearcase.clearcase"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLAV2Os9ahpBI1dEgXRMY_5-U7AiH6rIw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

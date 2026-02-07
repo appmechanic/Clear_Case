@@ -1,7 +1,9 @@
+import 'package:clearcase/views/insights/insights_screen.dart';
+import 'package:clearcase/views/settings/settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
 import '../../core/theme/app_colors.dart';
-import 'home/home_screen.dart';
+import 'home/calender_screen.dart';
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/main';
@@ -33,9 +35,9 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   final List<Widget> _children = [
-    HomeScreen(),
-    HomeScreen(),
-    HomeScreen()
+    CalenderScreen(),
+    InsightsScreen(),
+    SettingsScreen()
   ];
 
   @override

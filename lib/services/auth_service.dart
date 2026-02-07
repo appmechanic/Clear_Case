@@ -66,6 +66,8 @@ class AuthService {
         return 'Incorrect password.';
       case 'user-disabled':
         return 'This user account has been disabled.';
+      case 'invalid-credential': 
+        return 'Incorrect email or password.';
       default:
         return e.message ?? 'An error occurred. Please try again.';
     }

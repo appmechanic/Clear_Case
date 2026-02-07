@@ -1,4 +1,3 @@
-
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -21,13 +20,6 @@ class _SignupScreenState extends State<SignupScreen> {
   final authController = AuthController();
   final _formKey = GlobalKey<FormState>();
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // context.read<AuthProvider>().resetSignUpState();
-    });
-  }
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -54,19 +46,18 @@ class _SignupScreenState extends State<SignupScreen> {
                           ),
                         ),
                         const SizedBox(height: 48),
-                          CustomTextField(
-                            labelText: "First Name",
-                            controller: authController.fullNameController,
-                            node: authController.fullNameFocusNode,
-                            hintText: "Enter your first name",
-                            nextNode: authController.emailFocusNode,
-                            // isReadOnly: provider.isOtpSent,
-                          ),
+                        CustomTextField(
+                          labelText: "First Name",
+                          controller: authController.firstNameController,
+                          node: authController.firstNameFocusNode,
+                          hintText: "Enter your first name",
+                          nextNode: authController.lastNameFocusNode
+                        ),
                         SizedBox(height: 16),
                         CustomTextField(
                           labelText: "Last Name",
-                          controller: authController.otpController,
-                          node: authController.otpFocusNode,
+                          controller: authController.lastNameController,
+                          node: authController.lastNameFocusNode,
                           hintText: "Enter your last name",
                           nextNode: null,
                         ),
@@ -76,9 +67,7 @@ class _SignupScreenState extends State<SignupScreen> {
                             controller: authController.emailController,
                             node: authController.emailFocusNode,
                             hintText: "Enter your email",
-                            isCap: false,
-                            // nextNode: provider.isOtpSent ? authController.otpFocusNode : null,
-                            // isReadOnly: provider.isOtpSent,
+                            isCap: false
                           ),
                         SizedBox(height: 16),
                         CustomTextField(
@@ -88,31 +77,26 @@ class _SignupScreenState extends State<SignupScreen> {
                             node: authController.passwordFocusNode,
                             hintText: "Enter your password",
                             nextNode: null,
-                          ),
+                        ),
                         SizedBox(height: 16),
-                        // if (provider.isOtpSent && !provider.isEmailVerified)...[
-
-                        // ],
                           
                         const SizedBox(height: 24),
-                        // if (provider.isEmailVerified)
-                          CustomPrimaryButton(
-                              text: "Create Account",
-                              isLoading: provider.isLoading,
-                              onPressed: () {
-                                if (_formKey.currentState!.validate()) {
-                                  String fullName = "${authController.fullNameController.text.trim()} ${authController.otpController.text.trim()}";
-
+                        CustomPrimaryButton(
+                            text: "Create Account",
+                            isLoading: provider.isLoading,
+                            onPressed: () {
+                                if (_formKey.currentState!.validate() && authController.isRegisterValidate(context: context)) {
                                   provider.signUpFunction(
                                     context: context,
                                     email: authController.emailController.text.trim(),
                                     password: authController.passwordController.text.trim(),
-                                    fullName: fullName,
+                                    firstName: authController.firstNameController.text.trim(),
+                                    lastName: authController.lastNameController.text.trim(),
                                   );
                                 }
-                              }),
-                         const SizedBox(height: 34),
-
+                              }
+                        ),
+                        const SizedBox(height: 34),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [

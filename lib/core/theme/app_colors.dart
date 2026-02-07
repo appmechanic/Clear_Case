@@ -2,13 +2,14 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   static const Color primary = Color(0xff45086D);
+  static const Color lightBlueColor = Color(0xffD7F1FE);
   static const Color primaryColorDark = Color(0xff1B4332);
   static const Color backgroundCards = Color(0xFFE9EAE2);
   static const Color textFieldBackgroundColor = Color(0xFFE0E0E0);
   static const Color textFieldBorderColor = Color(0xFFD8CBC2);
   static const Color textPrimary = Color(0xFF111827);
   static const Color whiteColor = Colors.white;
-  static const Color surfaceColor = Color(0xffF6F6F6);
+  static const Color surfaceColor = Color(0xffF5F5F5);
   static const Color blackColor = Colors.black;
   static const Color redColor = Color(0xffFF1010);
   static const Color navBarColor = Color(0xff27273A);

@@ -26,9 +26,8 @@ class CustomSecondaryButton extends StatelessWidget {
     return OutlinedButton(
       onPressed: isLoading ? null : onPressed,
       style: OutlinedButton.styleFrom(
-        backgroundColor: AppColors.backgroundCards,
+        backgroundColor: AppColors.lightBlueColor,
         foregroundColor: AppColors.primary,
-        shadowColor: AppColors.backgroundCards.withValues(alpha: 0.6),
         minimumSize: const Size.fromHeight(50),
         shape: RoundedRectangleBorder(
           side: BorderSide(color: borderColor, width: 1.5),

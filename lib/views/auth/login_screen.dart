@@ -74,8 +74,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         alignment: Alignment.centerRight,
                         child: TextButton(
                           onPressed: () {
-                            Navigator.pushNamed(
-                                context, ForgotPasswordScreen.routeName);
+                            Navigator.pushNamed(context, ForgotPasswordScreen.routeName);
                           },
                           child: Text(
                             'Forgot Password?',
@@ -90,7 +89,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       CustomPrimaryButton(
                         text: 'Login',
-                        isLoading: provider.isLoading, // Show loading spinner
+                        isLoading: provider.isLoading,
                         onPressed: () {
                           if (authController.isLoginValidate(context: context)) {
                             provider.loginFunction(
@@ -101,30 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           }
                         },
                       ),
-                      // const SizedBox(height: 30),
 
-                      // Text(
-                      //   'or continue with',
-                      //   style: TextStyle(
-                      //     fontSize: 14,
-                      //     color: AppColors.greyColor,
-                      //   ),
-                      // ),
-                      // const SizedBox(height: 30),
-
-                      // CustomSecondaryButton(
-                      //   text: 'Google',
-                      //   prefixWidget: SvgPicture.asset(
-                      //       'assets/icons/google.svg', height: 24, width: 24),
-                      //   onPressed: () {},
-                      // ),
-                      // const SizedBox(height: 16),
-                      // CustomSecondaryButton(
-                      //   text: 'Apple',
-                      //   prefixWidget: SvgPicture.asset(
-                      //       'assets/icons/apple.svg', height: 24, width: 24),
-                      //   onPressed: () {},
-                      // ),
                       const SizedBox(height: 40),
 
                       RichText(
@@ -148,8 +124,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () {
-                                  Navigator.pushNamed(
-                                      context, SignupScreen.routeName);
+                                  Navigator.pushNamed(context, SignupScreen.routeName);
                                 },
                             ),
                           ],

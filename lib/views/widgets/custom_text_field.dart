@@ -75,7 +75,7 @@ class _CustomTextFieldState extends State<CustomTextField> {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(widget.labelText, style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+            Text(widget.labelText, style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 14)),
             const SizedBox(height: 5),
             TextField(
               readOnly: widget.isReadOnly,

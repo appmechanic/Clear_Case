@@ -75,6 +75,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: TextButton(
                           onPressed: () {
                             Navigator.pushNamed(context, ForgotPasswordScreen.routeName);
+                            authController.clearControllers();
                           },
                           child: Text(
                             'Forgot Password?',
@@ -108,11 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           style: TextStyle(
                             fontSize: 16,
                             color: AppColors.greyColor,
-                            fontFamily: Theme
-                                .of(context)
-                                .textTheme
-                                .bodyMedium
-                                ?.fontFamily,
+                            fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,
                           ),
                           children: [
                             TextSpan(text: 'Do not have an account? '),
@@ -124,6 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               recognizer: TapGestureRecognizer()
                                 ..onTap = () {
+                                  authController.clearControllers();
                                   Navigator.pushNamed(context, SignupScreen.routeName);
                                 },
                             ),

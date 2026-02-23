@@ -24,7 +24,6 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
               child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   child: SingleChildScrollView(
-
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [

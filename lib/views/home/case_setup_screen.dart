@@ -6,10 +6,36 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/case_setup_provider.dart';
 import '../widgets/custom_text_field.dart';
-
-class CaseSetupScreen extends StatelessWidget {
+class CaseSetupScreen extends StatefulWidget {
   static const routeName = '/case-setup';
   const CaseSetupScreen({super.key});
+
+  @override
+  State<CaseSetupScreen> createState() => _CaseSetupScreenState();
+}
+
+class _CaseSetupScreenState extends State<CaseSetupScreen> {
+  // 1. Create the controller
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // 2. Helper to jump to top
+  void _scrollToTop() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scrollController.hasClients) {
+        _scrollController.animateTo(
+          0.0,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,6 +79,7 @@ class CaseSetupScreen extends StatelessWidget {
                   _buildProgressHeader(provider.currentStep),
                   Expanded(
                     child: SingleChildScrollView(
+                      controller: _scrollController, // <--- CRITICAL: YOU MISSED THIS
                       padding: const EdgeInsets.all(20),
                       child: _buildCurrentStep(context, provider),
                     ),
@@ -152,12 +179,14 @@ class CaseSetupScreen extends StatelessWidget {
                     return;
                   }
                   provider.nextStep();
+                  _scrollToTop(); // <--- Add this
                 } else if (provider.currentStep == 2) {
                    if (provider.selectedRuleType == null) {
                       showSnackBar(context, "Please select a rule type");
                       return;
                    }
                    provider.nextStep();
+                   _scrollToTop(); // <--- Add this
                 }
               },
               child: provider.isLoading 

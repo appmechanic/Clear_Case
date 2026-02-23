@@ -65,6 +65,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                               context: context,
                               email: _authController.emailController.text.trim(),
                             );
+                            _authController.clearControllers();
                           },
                         ),
                         SizedBox(height: getDeviceHeight(context) * 0.04),

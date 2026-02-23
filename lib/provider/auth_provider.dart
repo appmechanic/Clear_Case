@@ -134,9 +134,23 @@ class AuthProvider extends ChangeNotifier {
       if (context.mounted) {
         showSnackBar(context, "Verification email sent.");
       }
+    } on FirebaseAuthException catch (e) { // Catch the specific Firebase error
+      String message = "An error occurred. Please try again.";
+
+      // Map specific codes to short messages
+      if (e.code == 'too-many-requests') {
+        message = "Too many attempts. Please try again later.";
+      } else if (e.code == 'network-request-failed') {
+        message = "Check your internet connection.";
+      }
+
+      if (context.mounted) {
+        showSnackBar(context, message);
+      }
+      debugPrint("Firebase Error: ${e.code} - ${e.message}");
     } catch (e) {
       if (context.mounted) {
-        showSnackBar(context, e.toString());
+        showSnackBar(context, "Something went wrong.");
       }
     }
   }

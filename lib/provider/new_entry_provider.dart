@@ -76,7 +76,7 @@ class NewEntryProvider extends ChangeNotifier {
       DocumentReference custodyRef = _firestore
           .collection('users')
           .doc(user.uid)
-          .collection('cases ')
+          .collection('cases')
           .doc(_selectedCase!.id)
           .collection('custodyRecords')
           .doc(); // Auto-ID

@@ -4,11 +4,13 @@ import 'package:clearcase/views/home/new_entry_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
 import 'package:clearcase/views/home/scheduled_dates_screen.dart';
 import 'package:clearcase/views/widgets/custom_dialog.dart';
+import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
+import '../../models/case_model.dart';
 
 class CalenderScreen extends StatefulWidget {
   const CalenderScreen({super.key});
@@ -61,81 +63,166 @@ class _CalenderScreenState extends State<CalenderScreen> {
       );
   }
 
+
   Widget _buildHeader(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text("Select Case", style: TextStyle(fontSize: 12, color: Colors.grey)),
-              SizedBox(height: 4),
-              Text("2541-8455 (Jack & Ella)", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+    return Consumer<CalendarProvider>(
+      builder: (context, provider, child) {
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center, // Vertically center the Export button
+            children: [
+              // Left Side: Dropdown Section
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      "Select Case",
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 2), // Tight spacing like the image
+                    DropdownButtonHideUnderline(
+                      child: DropdownButton2<dynamic>(
+                        isExpanded: true,
+                        value: provider.selectedCase,
+                        // Customizing the display of the selected item
+                        selectedItemBuilder: (context) {
+                          return provider.allCases.map((caseItem) {
+                            return Text(
+                              provider.getCaseDisplayName(caseItem),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18, // Slightly larger per screenshot
+                                color: Colors.black,
+                              ),
+                              maxLines: 2, // Allows wrapping for 3+ children
+                              overflow: TextOverflow.ellipsis,
+                            );
+                          }).toList();
+                        },
+                        items: [
+                          ...provider.allCases.map((caseItem) => DropdownMenuItem<dynamic>(
+                            value: caseItem,
+                            child: Text(
+                              provider.getCaseDisplayName(caseItem),
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          )),
+                          const DropdownMenuItem<dynamic>(
+                            value: "add_new",
+                            child: Text(
+                              "Add New Case",
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                            ),
+                          ),
+                        ],
+                        onChanged: (value) {
+                          if (value == "add_new") {
+                             Navigator.pushNamed(context, NewEntryScreen.routeName);
+                          } else {
+                            provider.setSelectedCase(value as CaseModel);
+                          }
+                        },
+                        buttonStyleData: const ButtonStyleData(
+                          padding: EdgeInsets.zero,
+                          height: 40, // Height to accommodate wrapped text
+                        ),
+                        iconStyleData: const IconStyleData(
+                          icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 24),
+                          openMenuIcon: Icon(Icons.keyboard_arrow_up, color: Colors.black, size: 24),
+                        ),
+                        dropdownStyleData: DropdownStyleData(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(20),
+                            color: Colors.white,
+                          ),
+                          offset: const Offset(0, -5),
+                          elevation: 4,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 10), // Gap between text and export button
+
+              // Right Side: Export Button
+              _buildExportButton(),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Colors.blue.shade50,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Row(
-              children: const [
-                Text("Export", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-                SizedBox(width: 5),
-                Icon(Icons.upload, color: Colors.blue, size: 16),
-              ],
-            ),
-          )
+        );
+      },
+    );
+  }
+
+// Helper for the Export UI
+  Widget _buildExportButton() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: const Row(
+        children: [
+          Text("Export", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
+          SizedBox(width: 5),
+          Icon(Icons.upload, color: Colors.blue, size: 16),
         ],
       ),
     );
   }
 
   Widget _buildCalendar(BuildContext context, CalendarProvider provider) {
+    // We use a fixed height or a Stack to ensure the loader appears
+    // in the same space the calendar occupies.
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      child: TableCalendar<CalendarEvent>(
+      height: 400, // Matches your existing calendar height
+      child: provider.isLoading
+          ? const Center(
+        child: CircularProgressIndicator(
+          color: AppColors.primary,
+        ),
+      )
+          : TableCalendar<CalendarEvent>(
         firstDay: DateTime.utc(2020, 10, 16),
         lastDay: DateTime.utc(2030, 3, 14),
         focusedDay: provider.focusedDay,
         selectedDayPredicate: (day) => provider.isSameDay(provider.selectedDay, day),
         eventLoader: provider.getEventsForDay,
-        
         onDaySelected: (selectedDay, focusedDay) {
           provider.onDaySelected(selectedDay, focusedDay);
           _showDayDetailsSheet(context, provider, selectedDay);
         },
         onPageChanged: provider.onPageChanged,
-        
         calendarStyle: CalendarStyle(
           outsideDaysVisible: false,
           weekendTextStyle: const TextStyle(color: Colors.black),
           defaultTextStyle: const TextStyle(fontWeight: FontWeight.w600),
-          
           todayDecoration: BoxDecoration(
             color: AppColors.primary.withOpacity(0.3),
-            shape: BoxShape.rectangle, 
+            shape: BoxShape.rectangle,
             borderRadius: BorderRadius.circular(12),
           ),
-          
           selectedDecoration: BoxDecoration(
             color: AppColors.primary,
-            shape: BoxShape.rectangle, 
+            shape: BoxShape.rectangle,
             borderRadius: BorderRadius.circular(12),
           ),
-          
           markerSize: 6,
         ),
-        
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
-          titleTextStyle: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
+          titleTextStyle: TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.bold,
+              fontSize: 18),
         ),
-        
         calendarBuilders: CalendarBuilders(
           markerBuilder: (context, date, events) {
             if (events.isEmpty) return null;
@@ -160,7 +247,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
       ),
     );
   }
-  
+
+
   Widget _buildBottomButton(String label, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,

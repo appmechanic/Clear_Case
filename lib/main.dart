@@ -3,6 +3,8 @@ import 'package:clearcase/provider/calender_provider.dart';
 import 'package:clearcase/provider/case_setup_provider.dart';
 import 'package:clearcase/provider/main_provider.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
+import 'package:clearcase/provider/rule_configuration_provider.dart';
+import 'package:clearcase/provider/scheduled_dates_provider.dart';
 import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/views/auth/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -36,6 +38,8 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CaseSetupProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
         ChangeNotifierProvider(create: (_) => NewEntryProvider()..init()),
+        ChangeNotifierProvider(create: (_) => ScheduledDatesProvider()),
+        ChangeNotifierProvider(create: (_) => RuleConfigurationProvider()),
       ],
       child: MaterialApp(
       title: 'ClearCase',

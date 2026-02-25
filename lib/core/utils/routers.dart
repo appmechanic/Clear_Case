@@ -45,9 +45,11 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     RuleConfigurationScreen.routeName: (context) {
       final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
       return RuleConfigurationScreen(
-        ruleType: args?['ruleType'] ?? "Rule Configuration",
+        recordId: args?['recordId'],
+        caseId: args?['caseId'],
+        category: args?['category'] ?? 'custody',
         availableChildren: (args?['availableChildren'] as List<dynamic>?)?.cast<ChildModel>() ?? [],
-        );
+      );
     },
     NewReminderScreen.routeName: (context) => const NewReminderScreen(),
     CustodyComplianceScreen.routeName: (context) => const CustodyComplianceScreen(),

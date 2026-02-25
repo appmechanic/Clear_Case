@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import '../../core/theme/app_colors.dart';
 
 class AppLoader extends StatelessWidget {
@@ -20,11 +21,11 @@ class AppLoader extends StatelessWidget {
         width: size,
         height: size,
         child: CircularProgressIndicator(
-          strokeWidth: size / 15,
+
+          strokeWidth: size / 10, // dynamic stroke width based on size
           valueColor: AlwaysStoppedAnimation<Color>(color),
         ),
       ),
     );
   }
 }
-

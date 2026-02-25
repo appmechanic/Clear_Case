@@ -1,16 +1,24 @@
-import 'package:clearcase/models/case_model.dart';
-import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:clearcase/models/case_model.dart'; // Ensure ChildModel is accessible
+import 'package:clearcase/views/widgets/custom_text_field.dart';
+import '../../provider/rule_configuration_provider.dart';
+
 
 class RuleConfigurationScreen extends StatefulWidget {
   static const routeName = '/rule-configuration';
-  final String ruleType;
-  final List<ChildModel> availableChildren; // Receive children from Step 1
+  final String? recordId;
+  final String? caseId;
+  final String category;
+  final List<ChildModel> availableChildren;
 
   const RuleConfigurationScreen({
-    super.key, 
-    this.ruleType = "Rule Configuration",
+    super.key,
+    this.recordId,
+    this.caseId,
+    required this.category,
     required this.availableChildren,
   });
 
@@ -19,93 +27,32 @@ class RuleConfigurationScreen extends StatefulWidget {
 }
 
 class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
-  final _notesController = TextEditingController();
-  final _notesNode = FocusNode();
-
-  // State Variables
-  DateTime? startDate;
-  DateTime? endDate;
-  TimeOfDay? startTime;
-  TimeOfDay? endTime;
-  String notificationPref = "On the Scheduled day";
-  bool isRepeat = true;
-  String repeatFrequency = "Weekly";
-  bool isEnabled = true;
-
-  // Children Selection Logic
-  Set<String> selectedChildIds = {};
-
   @override
   void initState() {
     super.initState();
-    // Default select all children
-    selectedChildIds = widget.availableChildren.map((e) => e.id).toSet();
-  }
-
-  @override
-  void dispose() {
-    _notesController.dispose();
-    _notesNode.dispose();
-    super.dispose();
-  }
-
-  void _onSave() {
-    if (startDate == null || startTime == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Start Date and Time are required")));
-      return;
-    }
-    if (!isRepeat && (endDate == null || endTime == null)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("End Date and Time are required for one-time events")));
-      return;
-    }
-    if (selectedChildIds.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child")));
-      return;
-    }
-
-    // Construct the Rule Object to store in Firebase
-    List<ChildModel> selectedChildrenObjects = widget.availableChildren
-        .where((child) => selectedChildIds.contains(child.id))
-        .toList();
-
-    // 2. CONVERT: Transform those objects into JSON Maps (for Firebase)
-    List<Map<String, dynamic>> childrenData = selectedChildrenObjects
-        .map((child) => child.toMap())
-        .toList();
-
-    final Map<String, dynamic> ruleData = {
-      "startDate": startDate!.toIso8601String(),
-      "startTime": "${startTime!.hour}:${startTime!.minute}",
-      "isRepeat": isRepeat,
-      "frequency": isRepeat ? repeatFrequency : null,
-      "endDate": isRepeat ? null : endDate?.toIso8601String(),
-      "endTime": isRepeat ? null : (endTime != null ? "${endTime!.hour}:${endTime!.minute}" : null),
-      "notificationPref": notificationPref,
-      "notes": _notesController.text.trim(),
-      "isEnabled": isEnabled,
-      // Storing Full Objects instead of just IDs
-      "appliedChildren": childrenData, 
-    };
-
-    Navigator.pop(context, ruleData);
-  }
-
-  Future<void> _pickDate(bool isStart) async {
-    final picked = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100));
-    if (picked != null) setState(() => isStart ? startDate = picked : endDate = picked);
-  }
-
-  Future<void> _pickTime(bool isStart) async {
-    final picked = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));
-    if (picked != null) setState(() => isStart ? startTime = picked : endTime = picked);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<RuleConfigurationProvider>().init(
+        widget.recordId,
+        widget.caseId,
+        widget.category,
+        widget.availableChildren,
+      );
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final provider = context.watch<RuleConfigurationProvider>();
+
+    if (provider.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text(widget.ruleType, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: Text(widget.recordId != null ? "Edit Rule" : "Rule Configuration",
+            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: const BackButton(color: Colors.black),
@@ -115,125 +62,418 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text("Professional case configuration for compliance tracking.", style: TextStyle(color: Colors.grey, fontSize: 12)),
-            const SizedBox(height: 20),
-
-            _buildInteractiveField("Rule Start Date *", startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(startDate!), Icons.calendar_today, () => _pickDate(true)),
-            const SizedBox(height: 15),
-            _buildInteractiveField("Start Time *", startTime == null ? "--:--" : startTime!.format(context), Icons.access_time, () => _pickTime(true)),
-            const SizedBox(height: 15),
-
-            if (!isRepeat) ...[
-              _buildInteractiveField("Rule End Date *", endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!), Icons.calendar_today, () => _pickDate(false)),
-              const SizedBox(height: 15),
-              _buildInteractiveField("End Time *", endTime == null ? "--:--" : endTime!.format(context), Icons.access_time, () => _pickTime(false)),
-              const SizedBox(height: 20),
-            ],
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Repeat Schedule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                Switch(value: isRepeat, activeColor: const Color(0xFF4A148C), onChanged: (v) => setState(() => isRepeat = v)),
-              ],
+            _buildInteractiveField(
+              "Rule Start Date *",
+              provider.startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.startDate!),
+              Icons.calendar_today,
+                  () => _pickDate(context, true),
             ),
-            
-            if (isRepeat) ...[
-              const SizedBox(height: 10),
-              Row(
-                children: ["Weekly", "Fortnightly", "Monthly"].map((freq) => Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => repeatFrequency = freq),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: repeatFrequency == freq ? const Color(0xFFEDE7F6) : Colors.white,
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.grey.shade300),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(freq, style: TextStyle(color: repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.black, fontWeight: FontWeight.w600, fontSize: 12)),
-                    ),
-                  ),
-                )).toList(),
-              ),
-            ],
-
+            const SizedBox(height: 15),
+            _buildInteractiveField(
+              "Start Time *",
+              provider.startTime == null ? "--:--" : provider.startTime!.format(context),
+              Icons.access_time,
+                  () => _pickTime(context, true),
+            ),
+            const SizedBox(height: 15),
+            _buildInteractiveField(
+              "Rule End Date",
+              provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!),
+              Icons.calendar_today,
+                  () => _pickDate(context, false),
+            ),
+            const SizedBox(height: 15),
+            _buildInteractiveField(
+              "End Time",
+              provider.endTime == null ? "--:--" : provider.endTime!.format(context),
+              Icons.access_time,
+                  () => _pickTime(context, false),
+            ),
             const SizedBox(height: 20),
-            CustomTextField(labelText: "Notes", hintText: "Enter Any Additional Details", maxLines: 3, controller: _notesController, node: _notesNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
+            const Text("Notification Preference", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            const SizedBox(height: 8),
+            _buildNotificationDropdown(provider),
+            const SizedBox(height: 20),
+            _buildRepeatToggle(provider),
+            if (provider.isRepeat) _buildFrequencySelector(provider),
+            const SizedBox(height: 20),
+            CustomTextField(
+              labelText: "Notes",
+              hintText: "Enter Any Additional Details",
+              maxLines: 3,
+              node: provider.notesNode,
+              controller: provider.notesController,
+              borderRadius: 8,
+              backgroundColor: Colors.grey.shade200,
+            ),
+
             const SizedBox(height: 25),
 
-            // --- SELECT CHILDREN SECTION (Restored UI) ---
-            const Text("Select Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+// ... inside your Column in build()
+
+            const Text("Selected Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(8)),
-              child: const Text("Select which children this rule applies to.", textAlign: TextAlign.center, style: TextStyle(fontSize: 11, color: Colors.black87)),
-            ),
-            const SizedBox(height: 15),
 
-            // Select All Toggle
-            _buildChildItem("Select All", isSelectAll: true),
-            
-            // Child List
-            ...widget.availableChildren.map((child) => _buildChildItem(child.name, id: child.id, subtitle: DateFormat('dd MMM yyyy').format(child.dob))).toList(),
+            _buildComplianceNote(),
+            const SizedBox(height: 10),
 
-            const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text("Enable Rule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                Switch(value: isEnabled, activeColor: const Color(0xFF4A148C), onChanged: (v) => setState(() => isEnabled = v)),
-              ],
-            ),
+            if (provider.appliedChildrenList.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 10),
+                child: Text("No children currently applied to this rule.", style: TextStyle(color: Colors.grey)),
+              )
+            else
+              ...provider.appliedChildrenList.asMap().entries.map((entry) {
+                return _buildActionableChildCard(context, entry.value, entry.key);
+              }).toList(),
+
+            const SizedBox(height: 10),
+
+// --- DYNAMIC SELECTION SECTION (Only visible when Adding) ---
+            if (widget.recordId == null) ...[
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
+                ),
+                child: Column(
+                  children: [
+                    // Select All Category
+                    if (widget.availableChildren.length > 1)
+                      _buildSelectionTile(
+                          "Select All",
+                          null,
+                          provider.appliedChildrenList.length == widget.availableChildren.length,
+                              () {
+                            bool isAllSelected = provider.appliedChildrenList.length == widget.availableChildren.length;
+                            if (isAllSelected) {
+                              provider.clearAllChildren(); // Add this method to provider
+                            } else {
+                              provider.selectAllChildren(widget.availableChildren); // Add this method to provider
+                            }
+                          }
+                      ),
+                    // Display all available children for selection
+                    ...widget.availableChildren.map((child) {
+                      bool isSelected = provider.appliedChildrenList.any((c) => c['id'] == child.id);
+                      return _buildSelectionTile(
+                        child.name,
+                        DateFormat('dd MMM yyyy').format(child.dob),
+                        isSelected,
+                            () => provider.toggleChildSelection(child), // Add this method to provider
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 15),
+              _buildAddNewChildButton(context, provider),
+            ],
+
+             const SizedBox(height: 20),
+            _buildEnableToggle(provider),
             const SizedBox(height: 30),
-            
-            SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: _onSave, child: const Text("Save Rule", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
-            const SizedBox(height: 20),
+            _buildSaveButton(context, provider),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildInteractiveField(String label, String value, IconData icon, VoidCallback onTap) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(value, style: const TextStyle(fontSize: 14)), Icon(icon, size: 18, color: const Color(0xFF4A148C))])))] );
-  }
-
-  Widget _buildChildItem(String title, {String? id, String? subtitle, bool isSelectAll = false}) {
-    bool isSelected = isSelectAll 
-        ? selectedChildIds.length == widget.availableChildren.length && widget.availableChildren.isNotEmpty
-        : selectedChildIds.contains(id);
+  // Card UI matching your uploaded image (Image_2fda5d.png)
+  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index) {
+    DateTime dobDate = (childData['dob'] as Timestamp).toDate();
+    String formattedDob = DateFormat('dd MMM yyyy').format(dobDate);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        leading: isSelectAll ? null : CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12)) : null,
-        trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
-        onTap: () {
-          setState(() {
-            if (isSelectAll) {
-              if (isSelected) {
-                selectedChildIds.clear();
-              } else {
-                selectedChildIds = widget.availableChildren.map((e) => e.id).toSet();
-              }
-            } else {
-              if (isSelected) {
-                selectedChildIds.remove(id);
-              } else {
-                selectedChildIds.add(id!);
-              }
-            }
-          });
-        },
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE1F5FE)),
+      ),
+      child: Row(
+        children: [
+          const CircleAvatar(
+            backgroundColor: Color(0xFFF3E5F5),
+            child: Icon(Icons.person, color: Color(0xFF4A148C)),
+          ),
+          const SizedBox(width: 15),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(childData['name'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(formattedDob, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+              ],
+            ),
+          ),
+
+          IconButton(
+            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(index),
+            icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
+          ),
+        ],
       ),
     );
+  }
+
+  Widget _buildSelectionTile(String title, String? subtitle, bool isSelected, VoidCallback onTap) {
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: subtitle != null
+          ? const CircleAvatar(backgroundColor: Color(0xFFF3E5F5), radius: 18, child: Icon(Icons.person, size: 18, color: Color(0xFF4A148C)))
+          : null,
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)) : null,
+      trailing: Icon(
+        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+        color: const Color(0xFF4A148C),
+      ),
+    );
+  }
+
+  Widget _buildComplianceNote() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 15),
+      decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(12)),
+      child: const Column(
+        children: [
+          Text("Compliance Calculation", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          SizedBox(height: 6),
+          Text(
+            "Compliance is calculated per child. Select which children this rule applies to for accurate tracking and legal documentation.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: Colors.black54, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAddNewChildButton(BuildContext context, RuleConfigurationProvider provider) {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: Color(0xFF4A148C)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          backgroundColor: const Color(0xFFE1F5FE).withOpacity(0.5),
+        ),
+        onPressed: () => _showAddChildPopup(context, provider),
+        child: const Text("Add New Child", style: TextStyle(color: Color(0xFF4A148C), fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  // Popup for adding a child as requested
+  void _showAddChildPopup(BuildContext context, RuleConfigurationProvider provider) {
+    final nameCtrl = TextEditingController();
+    DateTime tempDob = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setPopupState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: const Text("Add New Child", style: TextStyle(fontWeight: FontWeight.bold)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "Child Name", border: OutlineInputBorder()),
+              ),
+              const SizedBox(height: 20),
+              InkWell(
+                onTap: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: tempDob,
+                    firstDate: DateTime(1900),
+                    lastDate: DateTime.now(),
+                  );
+                  if (picked != null) setPopupState(() => tempDob = picked);
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(border: Border.all(color: Colors.grey), borderRadius: BorderRadius.circular(5)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(DateFormat('dd/MM/yyyy').format(tempDob)),
+                      const Icon(Icons.calendar_today, size: 18),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C)),
+              onPressed: () {
+                if (nameCtrl.text.trim().isNotEmpty) {
+                  provider.addChild(nameCtrl.text.trim(), tempDob);
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text("Add", style: TextStyle(color: Colors.white)),
+            )
+          ],
+        ),
+      ),
+    );
+  }
+
+  // --- Core Form Components ---
+
+  Widget _buildNotificationDropdown(RuleConfigurationProvider provider) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: provider.notificationPref,
+          isExpanded: true,
+          items: ["On the Scheduled day", "One day before", "X days before", "Turn off notifications"]
+              .map((val) => DropdownMenuItem(value: val, child: Text(val)))
+              .toList(),
+          onChanged: (val) => provider.setNotification(val!),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRepeatToggle(RuleConfigurationProvider provider) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text("Repeat Schedule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        Switch(value: provider.isRepeat, activeThumbColor: const Color(0xFF4A148C), onChanged: (v) => provider.toggleRepeat(v)),
+      ],
+    );
+  }
+
+  Widget _buildFrequencySelector(RuleConfigurationProvider provider) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        children: ["Weekly", "Fortnightly", "Monthly"].map((freq) => Expanded(
+          child: GestureDetector(
+            onTap: () => provider.setFrequency(freq),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(
+                color: provider.repeatFrequency == freq ? const Color(0xFFEDE7F6) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: provider.repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.grey.shade300),
+              ),
+              alignment: Alignment.center,
+              child: Text(freq, style: TextStyle(color: provider.repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.black, fontSize: 12)),
+            ),
+          ),
+        )).toList(),
+      ),
+    );
+  }
+
+  Widget _buildEnableToggle(RuleConfigurationProvider provider) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text("Enable Rule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        Switch(value: provider.isEnabled, activeThumbColor: const Color(0xFF4A148C), onChanged: (v) => provider.toggleEnabled(v)),
+      ],
+    );
+  }
+
+  Widget _buildSaveButton(BuildContext context, RuleConfigurationProvider provider) {
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
+        onPressed: () async {
+          if (provider.appliedChildrenList.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
+            return;
+          }
+
+          bool success = await provider.updateRuleInFirestore(
+            caseId: widget.caseId,
+            recordId: widget.recordId,
+            category: widget.category,
+          );
+
+          if (success) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Rule Sync Successful")));
+            Navigator.pop(context);
+          }
+        },
+        child: const Text("Save Rule", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      ),
+    );
+  }
+
+  Widget _buildInteractiveField(String label, String value, IconData icon, VoidCallback onTap) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+      const SizedBox(height: 8),
+      InkWell(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+          decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+          child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text(value, style: const TextStyle(fontSize: 14)),
+            Icon(icon, size: 18, color: const Color(0xFF4A148C))
+          ]),
+        ),
+      ),
+    ]);
+  }
+
+  Future<void> _pickDate(BuildContext context, bool isStart) async {
+    final provider = context.read<RuleConfigurationProvider>();
+    DateTime initialDate = (isStart || provider.startDate == null) ? DateTime.now() : provider.startDate!;
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: (isStart) ? DateTime(2000) : initialDate,
+      lastDate: DateTime(2100),
+    );
+
+    if (picked != null) {
+      if (isStart) {
+        provider.updateStartDate(picked);
+        if (provider.endDate != null && provider.endDate!.isBefore(picked)) {
+          provider.updateEndDate(picked);
+        }
+      } else {
+        provider.updateEndDate(picked);
+      }
+    }
+  }
+
+  Future<void> _pickTime(BuildContext context, bool isStart) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: const TimeOfDay(hour: 9, minute: 0),
+    );
+    if (picked != null) {
+      final provider = context.read<RuleConfigurationProvider>();
+      if (isStart) provider.updateStartTime(picked);
+      else provider.updateEndTime(picked);
+    }
   }
 }

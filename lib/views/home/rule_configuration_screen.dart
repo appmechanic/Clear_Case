@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:clearcase/models/case_model.dart'; // Ensure ChildModel is accessible
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import '../../provider/rule_configuration_provider.dart';
+import 'calender_screen.dart';
 
 
 class RuleConfigurationScreen extends StatefulWidget {
@@ -111,69 +112,45 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
 
 // ... inside your Column in build()
 
+// ... inside your Column in build()
+
+// ... inside your Column in build()
+
             const Text("Selected Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 10),
 
             _buildComplianceNote(),
             const SizedBox(height: 10),
 
+// --- UNIFIED ACTIONABLE LIST ---
             if (provider.appliedChildrenList.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 10),
-                child: Text("No children currently applied to this rule.", style: TextStyle(color: Colors.grey)),
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20),
+                  child: Text("No children applied. Click 'Add New Child' to start.",
+                      style: TextStyle(color: Colors.grey, fontSize: 13)),
+                ),
               )
             else
               ...provider.appliedChildrenList.asMap().entries.map((entry) {
-                return _buildActionableChildCard(context, entry.value, entry.key);
+                return _buildActionableChildCard(
+                    context,
+                    entry.value,
+                    entry.key,
+                    widget.caseId,
+                    widget.recordId,
+                    widget.category
+                );
               }).toList(),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 15),
 
-// --- DYNAMIC SELECTION SECTION (Only visible when Adding) ---
-            if (widget.recordId == null) ...[
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 5)],
-                ),
-                child: Column(
-                  children: [
-                    // Select All Category
-                    if (widget.availableChildren.length > 1)
-                      _buildSelectionTile(
-                          "Select All",
-                          null,
-                          provider.appliedChildrenList.length == widget.availableChildren.length,
-                              () {
-                            bool isAllSelected = provider.appliedChildrenList.length == widget.availableChildren.length;
-                            if (isAllSelected) {
-                              provider.clearAllChildren(); // Add this method to provider
-                            } else {
-                              provider.selectAllChildren(widget.availableChildren); // Add this method to provider
-                            }
-                          }
-                      ),
-                    // Display all available children for selection
-                    ...widget.availableChildren.map((child) {
-                      bool isSelected = provider.appliedChildrenList.any((c) => c['id'] == child.id);
-                      return _buildSelectionTile(
-                        child.name,
-                        DateFormat('dd MMM yyyy').format(child.dob),
-                        isSelected,
-                            () => provider.toggleChildSelection(child), // Add this method to provider
-                      );
-                    }).toList(),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 15),
-              _buildAddNewChildButton(context, provider),
-            ],
+// ADD NEW CHILD BUTTON: Common for both modes
+            _buildAddNewChildButton(context, provider),
 
-             const SizedBox(height: 20),
+            const SizedBox(height: 20),
             _buildEnableToggle(provider),
-            const SizedBox(height: 30),
+           const SizedBox(height: 30),
             _buildSaveButton(context, provider),
           ],
         ),
@@ -182,8 +159,12 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
   }
 
   // Card UI matching your uploaded image (Image_2fda5d.png)
-  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index) {
-    DateTime dobDate = (childData['dob'] as Timestamp).toDate();
+  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index, String? caseId, String? recordId, String category) {
+    // Safe parsing of Timestamp
+    DateTime dobDate = (childData['dob'] is Timestamp)
+        ? (childData['dob'] as Timestamp).toDate()
+        : DateTime.parse(childData['dob'].toString());
+
     String formattedDob = DateFormat('dd MMM yyyy').format(dobDate);
 
     return Container(
@@ -210,9 +191,13 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
               ],
             ),
           ),
-
           IconButton(
-            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(index),
+            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(
+                index,
+                caseId,
+                recordId,
+                category
+            ),
             icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
           ),
         ],
@@ -220,21 +205,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     );
   }
 
-  Widget _buildSelectionTile(String title, String? subtitle, bool isSelected, VoidCallback onTap) {
-    return ListTile(
-      onTap: onTap,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: subtitle != null
-          ? const CircleAvatar(backgroundColor: Color(0xFFF3E5F5), radius: 18, child: Icon(Icons.person, size: 18, color: Color(0xFF4A148C)))
-          : null,
-      title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-      subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)) : null,
-      trailing: Icon(
-        isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-        color: const Color(0xFF4A148C),
-      ),
-    );
-  }
+
 
   Widget _buildComplianceNote() {
     return Container(
@@ -317,11 +288,19 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context), child: const Text("Cancel")),
+            // Inside _showAddChildPopup
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C)),
               onPressed: () {
                 if (nameCtrl.text.trim().isNotEmpty) {
-                  provider.addChild(nameCtrl.text.trim(), tempDob);
+                  // Pass IDs so the provider knows if it needs to sync to DB immediately
+                  provider.addChild(
+                      nameCtrl.text.trim(),
+                      tempDob,
+                      widget.caseId,
+                      widget.recordId,
+                      widget.category
+                  );
                   Navigator.pop(context);
                 }
               },
@@ -401,13 +380,56 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
       width: double.infinity,
       height: 50,
       child: ElevatedButton(
-        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF4A148C),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        ),
         onPressed: () async {
+          // 1. Check if children are selected
           if (provider.appliedChildrenList.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Please select at least one child.")),
+            );
             return;
           }
 
+          // 2. Validate Start and End Time/Date
+          if (provider.startDate != null && provider.startTime != null &&
+              provider.endDate != null && provider.endTime != null) {
+
+            final startDateTime = DateTime(
+              provider.startDate!.year,
+              provider.startDate!.month,
+              provider.startDate!.day,
+              provider.startTime!.hour,
+              provider.startTime!.minute,
+            );
+
+            final endDateTime = DateTime(
+              provider.endDate!.year,
+              provider.endDate!.month,
+              provider.endDate!.day,
+              provider.endTime!.hour,
+              provider.endTime!.minute,
+            );
+
+            if (startDateTime.isAtSameMomentAs(endDateTime)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Start time and End time cannot be the same.")),
+              );
+              return;
+            }
+
+            if (endDateTime.isBefore(startDateTime)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("End time cannot be before Start time.")),
+              );
+              return;
+            }
+          }
+
+          // 3. Proceed with Firestore update
           bool success = await provider.updateRuleInFirestore(
             caseId: widget.caseId,
             recordId: widget.recordId,
@@ -415,11 +437,21 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
           );
 
           if (success) {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Rule Sync Successful")));
-            Navigator.pop(context);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text("Rule Sync Successful")),
+            );
+
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (context) => const CalenderScreen()),
+                  (route) => false,
+            );
           }
         },
-        child: const Text("Save Rule", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        child: const Text(
+          "Save Rule",
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
       ),
     );
   }

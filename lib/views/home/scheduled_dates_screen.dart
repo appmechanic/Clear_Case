@@ -218,6 +218,7 @@ class ScheduledDatesScreen extends StatelessWidget {
                         'caseId': provider.selectedCase?.id,
                         'recordId': null,
                         'category': category,
+                        'availableChildren': provider.selectedCase?.children ?? [], // CRITICAL: This must not be empty
                       },
                     );
                   },

@@ -348,12 +348,42 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
   }
 
   void _onSaveRule() {
+    // 1. Basic Null Checks
     if (startDate == null || startTime == null) {
       showSnackBar(context, "Start Date and Time required");
       return;
     }
 
-    // Prepare Child Data
+    // 2. Same Moment / Chronological Validation
+    if (isRepeat && endDate != null && endTime != null) {
+      final startDateTime = DateTime(
+        startDate!.year, startDate!.month, startDate!.day,
+        startTime!.hour, startTime!.minute,
+      );
+
+      final endDateTime = DateTime(
+        endDate!.year, endDate!.month, endDate!.day,
+        endTime!.hour, endTime!.minute,
+      );
+
+      if (startDateTime.isAtSameMomentAs(endDateTime)) {
+        showSnackBar(context, "Start time and End time cannot be exactly the same.");
+        return;
+      }
+
+      if (endDateTime.isBefore(startDateTime)) {
+        showSnackBar(context, "End time cannot be before the Start time.");
+        return;
+      }
+    }
+
+    // 3. Child Selection Check
+    if (selectedChildIds.isEmpty) {
+      showSnackBar(context, "Please apply this rule to at least one child.");
+      return;
+    }
+
+    // ... rest of your code to prepare childData and submit ...
     List<Map<String, dynamic>> childrenData = widget.provider.caseData.children
         .where((c) => selectedChildIds.contains(c.id))
         .map((c) => c.toMap())
@@ -377,8 +407,31 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
   // Pickers
   Future<void> _pickDate(bool isStart) async {
-    final d = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime(2000), lastDate: DateTime(2100));
-    if (d != null) setState(() => isStart ? startDate = d : endDate = d);
+    final now = DateTime.now();
+
+    // If picking End Date, the earliest possible date is the Start Date (or now)
+    DateTime firstAllowedDate = (isStart || startDate == null) ? DateTime(2000) : startDate!;
+
+    final d = await showDatePicker(
+        context: context,
+        initialDate: (isStart) ? (startDate ?? now) : (endDate ?? firstAllowedDate),
+        firstDate: (isStart) ? DateTime(2000) : firstAllowedDate,
+        lastDate: DateTime(2100)
+    );
+
+    if (d != null) {
+      setState(() {
+        if (isStart) {
+          startDate = d;
+          // If the current end date is now before the new start date, reset or update it
+          if (endDate != null && endDate!.isBefore(startDate!)) {
+            endDate = startDate;
+          }
+        } else {
+          endDate = d;
+        }
+      });
+    }
   }
   Future<void> _pickTime(bool isStart) async {
     final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 9, minute: 0));

@@ -4,10 +4,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/case_model.dart';
 
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_core/firebase_core.dart';
 // Ensure CaseModel import is here
 
 class ScheduledDatesProvider extends ChangeNotifier {
@@ -72,7 +68,7 @@ class ScheduledDatesProvider extends ChangeNotifier {
       final results = await Future.wait([
         caseDocRef.collection('custodyRecords').limit(1).get(),
         caseDocRef.collection('paymentRecords').limit(1).get(),
-        caseDocRef.collection('customOrders').limit(1).get(),
+        caseDocRef.collection('customRecords').limit(1).get(),
       ]);
 
       // Process Custody
@@ -90,6 +86,7 @@ class ScheduledDatesProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error checking sub-collections: $e");
     }
+    notifyListeners(); // THIS UPDATES THE UI
   }
 
   Future<void> fetchUserCases() async {

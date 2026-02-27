@@ -27,17 +27,17 @@ class RuleConfigurationProvider extends ChangeNotifier {
   final TextEditingController notesController = TextEditingController();
   final FocusNode notesNode = FocusNode();
 
-  // --- Children Logic ---
-  // List of maps containing: 'id' (string), 'name' (string), 'dob' (Timestamp)
+  // Unified list for both Add and Edit modes
   List<Map<String, dynamic>> _appliedChildrenList = [];
   List<Map<String, dynamic>> get appliedChildrenList => _appliedChildrenList;
 
   void init(String? recordId, String? caseId, String category, List<ChildModel> available) {
     reset();
     if (recordId != null) {
+      // Fetch existing rule data and its specific applied children
       fetchExistingData(recordId, caseId!, category);
     } else {
-      // Default for new records: use the children passed from the previous screen
+      // For a new rule, start with the children already present in the case
       _appliedChildrenList = available.map((child) => child.toMap()).toList();
       notifyListeners();
     }
@@ -66,7 +66,6 @@ class RuleConfigurationProvider extends ChangeNotifier {
         notesController.text = data['notes'] ?? "";
         isEnabled = data['isEnabled'] ?? true;
 
-        // Fetch the appliedChildren array directly from Firestore
         final List<dynamic> applied = data['appliedChildren'] ?? [];
         _appliedChildrenList = List<Map<String, dynamic>>.from(applied);
       }
@@ -78,27 +77,52 @@ class RuleConfigurationProvider extends ChangeNotifier {
     }
   }
 
-  // --- Child Management Logic ---
+  // --- Unified Child Management (Smart UI + DB Sync) ---
 
-  /// Adds a child locally with a unique ID and Firestore-compatible Timestamp
-  void addChild(String name, DateTime dob) {
-    _appliedChildrenList.add({
+  void addChild(String name, DateTime dob, String? caseId, String? recordId, String category) async {
+    final newChild = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'name': name,
-      'dob': Timestamp.fromDate(dob), // Store as Timestamp for Firestore consistency
-    });
-    notifyListeners();
-  }
+      'dob': Timestamp.fromDate(dob),
+    };
 
-  /// Removes a child from the list based on index
-  void removeChild(int index) {
-    if (index >= 0 && index < _appliedChildrenList.length) {
-      _appliedChildrenList.removeAt(index);
-      notifyListeners();
+    _appliedChildrenList.add(newChild);
+    notifyListeners();
+
+    // If we are editing an existing document, sync the new child to DB immediately
+    if (recordId != null && caseId != null) {
+      await _syncChildrenToDb(caseId, recordId, category);
     }
   }
 
-  // --- UI State Setters ---
+  void removeChild(int index, String? caseId, String? recordId, String category) async {
+    if (index >= 0 && index < _appliedChildrenList.length) {
+      _appliedChildrenList.removeAt(index);
+      notifyListeners();
+
+      // If we are editing an existing document, sync the removal to DB immediately
+      if (recordId != null && caseId != null) {
+        await _syncChildrenToDb(caseId, recordId, category);
+      }
+    }
+  }
+
+  Future<void> _syncChildrenToDb(String caseId, String recordId, String category) async {
+    try {
+      await _firestore
+          .collection('users').doc(_auth.currentUser!.uid)
+          .collection('cases').doc(caseId)
+          .collection('${category}Records').doc(recordId)
+          .update({
+        "appliedChildren": _appliedChildrenList,
+        "updatedAt": FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      debugPrint("Sync Error: $e");
+    }
+  }
+
+  // --- Setters & Form Logic ---
 
   void updateStartDate(DateTime date) { startDate = date; notifyListeners(); }
   void updateEndDate(DateTime date) { endDate = date; notifyListeners(); }
@@ -109,15 +133,12 @@ class RuleConfigurationProvider extends ChangeNotifier {
   void setNotification(String val) { notificationPref = val; notifyListeners(); }
   void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
 
-  // --- Firestore Update Sync ---
-
   Future<bool> updateRuleInFirestore({
     required String? caseId,
     required String? recordId,
     required String category
   }) async {
     if (caseId == null) return false;
-
     _isLoading = true;
     notifyListeners();
 
@@ -142,13 +163,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
           .collection('${category}Records');
 
       if (recordId != null) {
-        // EDIT MODE
         await collectionRef.doc(recordId).update(data);
       } else {
-        // ADD MODE
         await collectionRef.add(data);
       }
-
       return true;
     } catch (e) {
       debugPrint("Save Error: $e");
@@ -159,34 +177,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
     }
   }
 
-  // Add to RuleConfigurationProvider
-
-  void toggleChildSelection(ChildModel child) {
-    final index = _appliedChildrenList.indexWhere((c) => c['id'] == child.id);
-    if (index != -1) {
-      _appliedChildrenList.removeAt(index);
-    } else {
-      _appliedChildrenList.add(child.toMap());
-    }
-    notifyListeners();
-  }
-
-  void selectAllChildren(List<ChildModel> available) {
-    _appliedChildrenList = available.map((c) => c.toMap()).toList();
-    notifyListeners();
-  }
-
-  void clearAllChildren() {
-    _appliedChildrenList = [];
-    notifyListeners();
-  }
-
   TimeOfDay _parseTime(String timeStr) {
     final parts = timeStr.split(':');
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
-
-
 
   @override
   void dispose() {
@@ -204,7 +198,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     isRepeat = true;
     repeatFrequency = "Weekly";
     isEnabled = true;
-    notesController.clear(); // Important to clear the text controller
+    notesController.clear();
     _appliedChildrenList = [];
     _isLoading = false;
   }

@@ -184,6 +184,7 @@ class ScheduledDatesScreen extends StatelessWidget {
                           arguments: {
                             'caseId': provider.selectedCase?.id,
                             'recordId': recordId,
+                            'category': category, // <--- ADD THIS LINEad
                             'availableChildren': provider.selectedCase?.children ?? [], // Pass the children!
                           },
                         );

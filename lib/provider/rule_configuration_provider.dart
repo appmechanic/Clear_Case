@@ -4,11 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:clearcase/models/case_model.dart';
 
-
-
 class RuleConfigurationProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
-      app: Firebase.app(), databaseId: 'clearcase');
+  final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool _isLoading = false;
@@ -46,6 +43,8 @@ class RuleConfigurationProvider extends ChangeNotifier {
   Future<void> fetchExistingData(String recordId, String caseId, String category) async {
     _isLoading = true;
     notifyListeners();
+
+    print("Fetching from: users/${_auth.currentUser!.uid}/cases/$caseId/${category}Records/$recordId");
 
     try {
       final doc = await _firestore

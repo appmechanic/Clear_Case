@@ -354,25 +354,13 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       return;
     }
 
-    // 2. Same Moment / Chronological Validation
+    // 2. Validate End Time logic only (if both exist)
     if (isRepeat && endDate != null && endTime != null) {
-      final startDateTime = DateTime(
-        startDate!.year, startDate!.month, startDate!.day,
-        startTime!.hour, startTime!.minute,
-      );
+      final startMinutes = startTime!.hour * 60 + startTime!.minute;
+      final endMinutes = endTime!.hour * 60 + endTime!.minute;
 
-      final endDateTime = DateTime(
-        endDate!.year, endDate!.month, endDate!.day,
-        endTime!.hour, endTime!.minute,
-      );
-
-      if (startDateTime.isAtSameMomentAs(endDateTime)) {
-        showSnackBar(context, "Start time and End time cannot be exactly the same.");
-        return;
-      }
-
-      if (endDateTime.isBefore(startDateTime)) {
-        showSnackBar(context, "End time cannot be before the Start time.");
+      if (endMinutes <= startMinutes) {
+        showSnackBar(context, "End time must be after Start time.");
         return;
       }
     }
@@ -383,7 +371,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       return;
     }
 
-    // ... rest of your code to prepare childData and submit ...
+    // 4. Data Preparation
     List<Map<String, dynamic>> childrenData = widget.provider.caseData.children
         .where((c) => selectedChildIds.contains(c.id))
         .map((c) => c.toMap())
@@ -401,10 +389,13 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       "appliedChildren": childrenData,
     };
 
+    // 5. Success Feedback
+    showSnackBar(context, "Rule saved successfully!");
+
+    // 6. Submit
     widget.provider.setRuleConfiguration(ruleData);
     widget.provider.submitCase(context);
   }
-
   // Pickers
   Future<void> _pickDate(bool isStart) async {
     final now = DateTime.now();

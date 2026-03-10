@@ -56,23 +56,23 @@ class ScheduledDatesProvider extends ChangeNotifier {
     if (_selectedCase == null || _auth.currentUser == null) return;
 
     final caseDocRef = _firestore
-        .collection('users')
-        .doc(_auth.currentUser!.uid)
-        .collection('cases')
-        .doc(_selectedCase!.id);
+        .collection('users').doc(_auth.currentUser!.uid)
+        .collection('cases').doc(_selectedCase!.id)
+        .collection('scheduledRules'); // THE NEW CLEAN FOLDER
 
     try {
-      // Fetch ALL entries for this case
-      final results = await Future.wait([
-        caseDocRef.collection('custodyRecords').get(),
-        caseDocRef.collection('paymentRecords').get(),
-        caseDocRef.collection('customRecords').get(),
+      // Check if the specific rule documents exist
+      final [custodyDoc, paymentDoc, customDoc] = await Future.wait([
+        caseDocRef.doc('custody').get(),
+        caseDocRef.doc('payment').get(),
+        caseDocRef.doc('custom').get(),
       ]);
 
-      // Map everything to a List including the document ID
-      custodyRecords = results[0].docs.map((d) => {...d.data(), 'id': d.id}).toList();
-      paymentRecords = results[1].docs.map((d) => {...d.data(), 'id': d.id}).toList();
-      customRecords = results[2].docs.map((d) => {...d.data(), 'id': d.id}).toList();
+      // Update your state based on whether the document exists
+      // We store the data, and we store the doc ID (which is the category name)
+      custodyRecords = custodyDoc.exists ? [{...custodyDoc.data()!, 'id': custodyDoc.id}] : [];
+      paymentRecords = paymentDoc.exists ? [{...paymentDoc.data()!, 'id': paymentDoc.id}] : [];
+      customRecords = customDoc.exists ? [{...customDoc.data()!, 'id': customDoc.id}] : [];
 
     } catch (e) {
       debugPrint("Error checking sub-collections: $e");
@@ -115,14 +115,15 @@ class ScheduledDatesProvider extends ChangeNotifier {
       await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
-          .collection('${category}Records').doc(recordId)
+          .collection('scheduledRules') // Point to the new folder
+          .doc(category.toLowerCase())  // Delete the specific rule document
           .delete();
-      await checkSubCollections(); // Refresh the list
+
+      await checkSubCollections(); // This will now refresh and see that the doc is gone
     } catch (e) {
       debugPrint("Delete Error: $e");
     } finally {
       isLoading = false;
       notifyListeners();
     }
-  }
-}
+  }}

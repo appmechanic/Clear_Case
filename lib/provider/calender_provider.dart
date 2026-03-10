@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 
 import '../models/case_model.dart';
 
-
-
 class CalendarProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -80,7 +78,6 @@ class CalendarProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-
   Future<void> fetchEventsForCase(String caseId) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -89,19 +86,23 @@ class CalendarProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      _events.clear(); // Clear existing markers before fetching new ones
+      _events.clear();
       final caseDocRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId);
 
-      // Fetch all categories at once
       final snapshots = await Future.wait([
         caseDocRef.collection('paymentRecords').get(),
         caseDocRef.collection('custodyRecords').get(),
         caseDocRef.collection('disputeRecords').get(),
       ]);
 
-      // 1. Process Payments (Green dots)
+      // 1. Process Payments
       for (var doc in snapshots[0].docs) {
         final data = doc.data();
+
+        // ONLY show if it is explicitly marked as 'manual'
+        final String entryType = data['entryType'] ?? 'manual';
+        if (entryType == 'scheduled') continue;
+
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
         if (recordDate != null) {
           _addEventToMap(CalendarEvent(
@@ -114,21 +115,30 @@ class CalendarProvider extends ChangeNotifier {
         }
       }
 
-      // 2. Process Custody (Purple dots)
+      // 2. Process Custody (ONLY MANUAL ENTRIES)
       for (var doc in snapshots[1].docs) {
         final data = doc.data();
-        final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
-        if (recordDate != null) {
+
+        // FILTER: Only process if these specific keys are missing
+        // This confirms it's a "Manual" entry rather than a "Scheduled" one
+        if (data.containsKey('frequency') || data.containsKey('notificationPref')) {
+          continue;
+        }
+
+        final Timestamp? timestamp = data['startDate'] as Timestamp?;
+        if (timestamp != null) {
+          final DateTime recordDate = timestamp.toDate();
           _addEventToMap(CalendarEvent(
             id: doc.id,
-            title: data['title'] ?? 'Custody',
+            title: data['notes'] ?? 'Custody Record',
             date: recordDate,
             type: EventType.custody,
+            description: data['notes'],
           ));
         }
       }
 
-      // 3. Process Disputes (Orange dots)
+      // 3. Process Disputes
       for (var doc in snapshots[2].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
@@ -141,16 +151,16 @@ class CalendarProvider extends ChangeNotifier {
           ));
         }
       }
-
     } catch (e) {
       debugPrint("Error loading calendar events: $e");
     } finally {
       _isLoading = false;
-      notifyListeners(); // This tells the TableCalendar to redraw with the new dots
+      notifyListeners();
     }
   }
 
-// Helper to ensure events are grouped by day (removing time part)
+
+ // Helper to ensure events are grouped by day (removing time part)
   void _addEventToMap(CalendarEvent event) {
     final dayKey = DateTime(event.date.year, event.date.month, event.date.day);
     if (_events[dayKey] == null) {

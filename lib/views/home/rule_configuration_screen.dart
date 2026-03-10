@@ -10,14 +10,12 @@ import 'calender_screen.dart';
 
 class RuleConfigurationScreen extends StatefulWidget {
   static const routeName = '/rule-configuration';
-  final String? recordId;
   final String? caseId;
   final String category;
   final List<ChildModel> availableChildren;
 
   const RuleConfigurationScreen({
     super.key,
-    this.recordId,
     this.caseId,
     required this.category,
     required this.availableChildren,
@@ -27,13 +25,14 @@ class RuleConfigurationScreen extends StatefulWidget {
   State<RuleConfigurationScreen> createState() => _RuleConfigurationScreenState();
 }
 
+
 class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Pass only the 3 required arguments
       context.read<RuleConfigurationProvider>().init(
-        widget.recordId,
         widget.caseId,
         widget.category,
         widget.availableChildren,
@@ -52,7 +51,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text(widget.recordId != null ? "Edit Rule" : "Rule Configuration",
+        title: Text("Rule Configuration",
             style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
@@ -138,7 +137,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
                     entry.value,
                     entry.key,
                     widget.caseId,
-                    widget.recordId,
                     widget.category
                 );
               }).toList(),
@@ -159,7 +157,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
   }
 
   // Card UI matching your uploaded image (Image_2fda5d.png)
-  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index, String? caseId, String? recordId, String category) {
+  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index, String? caseId,  String category) {
     // Safe parsing of Timestamp
     DateTime dobDate = (childData['dob'] is Timestamp)
         ? (childData['dob'] as Timestamp).toDate()
@@ -192,12 +190,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             ),
           ),
           IconButton(
-            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(
-                index,
-                caseId,
-                recordId,
-                category
-            ),
+            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(index, widget.caseId, widget.category),
             icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
           ),
         ],
@@ -298,7 +291,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
                       nameCtrl.text.trim(),
                       tempDob,
                       widget.caseId,
-                      widget.recordId,
                       widget.category
                   );
                   Navigator.pop(context);
@@ -385,76 +377,55 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
         ),
         onPressed: () async {
-          // 1. Check if children are selected
+          // 1. Validate Children
           if (provider.appliedChildrenList.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Please select at least one child.")),
-            );
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
             return;
           }
 
-          // 2. Validate Start and End Time/Date
-          if (provider.startDate != null && provider.startTime != null &&
-              provider.endDate != null && provider.endTime != null) {
+          // 2. Validate End Time (Only if both times exist)
+          if (provider.startTime != null && provider.endTime != null) {
+            final startMinutes = provider.startTime!.hour * 60 + provider.startTime!.minute;
+            final endMinutes = provider.endTime!.hour * 60 + provider.endTime!.minute;
 
-            final startDateTime = DateTime(
-              provider.startDate!.year,
-              provider.startDate!.month,
-              provider.startDate!.day,
-              provider.startTime!.hour,
-              provider.startTime!.minute,
-            );
-
-            final endDateTime = DateTime(
-              provider.endDate!.year,
-              provider.endDate!.month,
-              provider.endDate!.day,
-              provider.endTime!.hour,
-              provider.endTime!.minute,
-            );
-
-            if (startDateTime.isAtSameMomentAs(endDateTime)) {
+            if (endMinutes <= startMinutes) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text("Start time and End time cannot be the same.")),
-              );
-              return;
-            }
-
-            if (endDateTime.isBefore(startDateTime)) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("End time cannot be before Start time.")),
+                const SnackBar(content: Text("End time must be after Start time.")),
               );
               return;
             }
           }
 
-          // 3. Proceed with Firestore update
-          bool success = await provider.updateRuleInFirestore(
-            caseId: widget.caseId,
-            recordId: widget.recordId,
-            category: widget.category,
-          );
+          // 3. Execution
+          bool success = await provider.updateRuleInFirestore(caseId: widget.caseId, category: widget.category);
 
-          if (success) {
+          if (success && context.mounted) {
+            // Show Success SnackBar
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Rule Sync Successful")),
+              const SnackBar(
+                content: Text("Rule Sync Successful!"),
+              ),
             );
 
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (context) => const CalenderScreen()),
-                  (route) => false,
-            );
+            // Wait a brief moment so the user sees the SnackBar before navigating away
+            await Future.delayed(const Duration(milliseconds: 800));
+
+            if (context.mounted) {
+              Navigator.pushAndRemoveUntil(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CalenderScreen()),
+                      (route) => false
+              );
+            }
+          } else if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Failed to save. Check your connection.")));
           }
         },
-        child: const Text(
-          "Save Rule",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-        ),
+        child: const Text("Save Rule", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
       ),
     );
   }
+
 
   Widget _buildInteractiveField(String label, String value, IconData icon, VoidCallback onTap) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

@@ -28,29 +28,29 @@ class RuleConfigurationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _appliedChildrenList = [];
   List<Map<String, dynamic>> get appliedChildrenList => _appliedChildrenList;
 
-  void init(String? recordId, String? caseId, String category, List<ChildModel> available) {
+
+  void init(String? caseId, String category, List<ChildModel> available) {
     reset();
-    if (recordId != null) {
-      // Fetch existing rule data and its specific applied children
-      fetchExistingData(recordId, caseId!, category);
+    if (caseId != null) {
+      fetchExistingData(caseId, category);
     } else {
-      // For a new rule, start with the children already present in the case
       _appliedChildrenList = available.map((child) => child.toMap()).toList();
       notifyListeners();
     }
   }
 
-  Future<void> fetchExistingData(String recordId, String caseId, String category) async {
+  Future<void> fetchExistingData(String caseId, String category) async {
     _isLoading = true;
     notifyListeners();
 
-    print("Fetching from: users/${_auth.currentUser!.uid}/cases/$caseId/${category}Records/$recordId");
-
     try {
+      // Pointing to the new 'scheduledRules' collection
       final doc = await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
-          .collection('${category}Records').doc(recordId).get();
+          .collection('scheduledRules')
+          .doc(category.toLowerCase()) // Doc ID is the category name
+          .get();
 
       if (doc.exists) {
         final data = doc.data()!;
@@ -76,42 +76,36 @@ class RuleConfigurationProvider extends ChangeNotifier {
     }
   }
 
-  // --- Unified Child Management (Smart UI + DB Sync) ---
+  // --- Unified Child Management ---
 
-  void addChild(String name, DateTime dob, String? caseId, String? recordId, String category) async {
+
+
+  void addChild(String name, DateTime dob, String? caseId, String category) async {
     final newChild = {
       'id': DateTime.now().millisecondsSinceEpoch.toString(),
       'name': name,
       'dob': Timestamp.fromDate(dob),
     };
-
     _appliedChildrenList.add(newChild);
     notifyListeners();
-
-    // If we are editing an existing document, sync the new child to DB immediately
-    if (recordId != null && caseId != null) {
-      await _syncChildrenToDb(caseId, recordId, category);
-    }
+    if (caseId != null) await _syncChildrenToDb(caseId, category);
   }
 
-  void removeChild(int index, String? caseId, String? recordId, String category) async {
+  void removeChild(int index, String? caseId, String category) async {
     if (index >= 0 && index < _appliedChildrenList.length) {
       _appliedChildrenList.removeAt(index);
       notifyListeners();
-
-      // If we are editing an existing document, sync the removal to DB immediately
-      if (recordId != null && caseId != null) {
-        await _syncChildrenToDb(caseId, recordId, category);
-      }
+      if (caseId != null) await _syncChildrenToDb(caseId, category);
     }
   }
 
-  Future<void> _syncChildrenToDb(String caseId, String recordId, String category) async {
+  Future<void> _syncChildrenToDb(String caseId, String category) async {
     try {
       await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
-          .collection('${category}Records').doc(recordId)
+          .collection('scheduledRules')
+          .doc(category.toLowerCase())
           .update({
         "appliedChildren": _appliedChildrenList,
         "updatedAt": FieldValue.serverTimestamp(),
@@ -132,9 +126,9 @@ class RuleConfigurationProvider extends ChangeNotifier {
   void setNotification(String val) { notificationPref = val; notifyListeners(); }
   void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
 
+
   Future<bool> updateRuleInFirestore({
     required String? caseId,
-    required String? recordId,
     required String category
   }) async {
     if (caseId == null) return false;
@@ -156,16 +150,14 @@ class RuleConfigurationProvider extends ChangeNotifier {
         "updatedAt": FieldValue.serverTimestamp(),
       };
 
-      final collectionRef = _firestore
+      // Set with merge: true handles both creating new and updating existing
+      await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
-          .collection('${category}Records');
+          .collection('scheduledRules')
+          .doc(category.toLowerCase())
+          .set(data, SetOptions(merge: true));
 
-      if (recordId != null) {
-        await collectionRef.doc(recordId).update(data);
-      } else {
-        await collectionRef.add(data);
-      }
       return true;
     } catch (e) {
       debugPrint("Save Error: $e");
@@ -179,6 +171,34 @@ class RuleConfigurationProvider extends ChangeNotifier {
   TimeOfDay _parseTime(String timeStr) {
     final parts = timeStr.split(':');
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+
+  /// Returns null if valid, or an error message string if invalid
+  String? validateDates() {
+    if (startDate == null || startTime == null) return "Please set a Start Date and Time.";
+
+    // If end is not set, it's valid (one-time occurrence or indefinite)
+    if (endDate == null || endTime == null) return null;
+
+    final startDateTime = DateTime(
+      startDate!.year, startDate!.month, startDate!.day,
+      startTime!.hour, startTime!.minute,
+    );
+
+    final endDateTime = DateTime(
+      endDate!.year, endDate!.month, endDate!.day,
+      endTime!.hour, endTime!.minute,
+    );
+
+    if (endDateTime.isAtSameMomentAs(startDateTime)) {
+      return "End time cannot be the same as Start time.";
+    }
+    if (endDateTime.isBefore(startDateTime)) {
+      return "End time cannot be before Start time.";
+    }
+
+    return null; // All good
   }
 
   @override

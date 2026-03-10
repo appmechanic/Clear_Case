@@ -90,6 +90,7 @@ class CaseSetupProvider extends ChangeNotifier {
   }
 
   // --- SUBMIT (Updated Storage Paths) ---
+
   Future<void> submitCase(BuildContext context) async {
     final user = _auth.currentUser;
     if (user == null) return;
@@ -101,10 +102,9 @@ class CaseSetupProvider extends ChangeNotifier {
       _caseData.userId = user.uid;
       _caseData.createdAt = DateTime.now();
 
-      // 1. Prepare Main Case Data (Step 1 Info + Flags)
-      // We explicitly exclude the heavy rule maps from the main doc to keep it clean
+      // 1. Prepare Main Case Data
       Map<String, dynamic> mainCaseData = _caseData.toMap();
-      mainCaseData.remove('custodyRule'); 
+      mainCaseData.remove('custodyRule');
       mainCaseData.remove('paymentRule');
       mainCaseData.remove('customRule');
 
@@ -115,57 +115,42 @@ class CaseSetupProvider extends ChangeNotifier {
           .collection('users')
           .doc(user.uid)
           .collection('cases')
-          .doc(); // Auto-generate Case ID
+          .doc();
 
       batch.set(caseRef, mainCaseData);
-      _caseData.id = caseRef.id; // Update local model
+      _caseData.id = caseRef.id;
 
-      // 3. Save Rule Config to Specific Sub-collection
+      // 3. NEW LOGIC: Save ALL Rules to a dedicated 'scheduledRules' sub-collection
       if (_configuredRuleData != null && _selectedRuleType != null) {
-        String collectionName = '';
-        
-        switch (_selectedRuleType) {
-          case 'Custody':
-            collectionName = 'custodyRecords';
-            break;
-          case 'Payment':
-            collectionName = 'paymentEvents';
-            break;
-          case 'Custom':
-            collectionName = 'customEvents';
-            break;
-        }
+        // Use the lower-case category as the ID (e.g., 'custody', 'payment', 'custom')
+        // This ensures only one rule per category exists per case.
+        DocumentReference ruleRef = caseRef
+            .collection('scheduledRules')
+            .doc(_selectedRuleType!.toLowerCase());
 
-        if (collectionName.isNotEmpty) {
-          DocumentReference ruleRef = caseRef.collection(collectionName).doc(); // Auto-ID for the rule entry
-          
-          // Add creation timestamp to the rule data
-          Map<String, dynamic> rulePayload = Map.from(_configuredRuleData!);
-          rulePayload['createdAt'] = FieldValue.serverTimestamp();
-          
-          batch.set(ruleRef, rulePayload);
-        }
+        Map<String, dynamic> rulePayload = Map.from(_configuredRuleData!);
+        rulePayload['createdAt'] = FieldValue.serverTimestamp();
+        rulePayload['category'] = _selectedRuleType; // Store the readable category name
+
+        batch.set(ruleRef, rulePayload);
       }
 
-      // 4. Save Children to Global User Collection (users/{uid}/children)
+      // 4. Save Children
       List<Map<String, dynamic>> childrenList = _caseData.children.map((c) => c.toMap()).toList();
       DocumentReference userRef = _firestore.collection('users').doc(user.uid);
-      
+
       batch.set(
-        userRef, 
-        {
-          // arrayUnion adds elements only if they don't exist
-          'children': FieldValue.arrayUnion(childrenList)
-        }, 
-        SetOptions(merge: true) // Important: merge=true prevents overwriting other user fields
+          userRef,
+          {'children': FieldValue.arrayUnion(childrenList)},
+          SetOptions(merge: true)
       );
+
       await batch.commit();
 
       _isLoading = false;
       notifyListeners();
 
       if (context.mounted) {
-        // Redirect to Calendar (Index 1) or Home
         Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false, arguments: 0);
       }
     } catch (e) {
@@ -176,4 +161,4 @@ class CaseSetupProvider extends ChangeNotifier {
       }
     }
   }
-}
+ }

@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../widgets/attachment_picker_widget.dart';
+import '../widgets/custom_dropdown.dart';
 
 class NewPaymentScreen extends StatefulWidget {
   static const routeName = '/new-payment';
@@ -208,33 +209,31 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   // --- AppBar with Case Selector ---
   AppBar _buildAppBar(BuildContext context, NewEntryProvider provider) {
     return AppBar(
-      title: const Text("New Payment Record", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      title: const Text("New Custody Record",
+          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(40),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 5),
-          color: Colors.grey.shade100,
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<CaseModel>(
-              isExpanded: true,
-              hint: const Text("Select a Case"),
-              value: provider.selectedCase,
-              icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF4A148C)),
-              items: provider.userCases.map((c) => DropdownMenuItem(value: c, child: Text(c.caseNumber, style: const TextStyle(fontWeight: FontWeight.bold)))).toList(),
-              onChanged: (c) {
-                provider.selectCase(c);
-              },
-            ),
+        preferredSize: const Size.fromHeight(60),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: CustomDropDown<CaseModel>(
+            hint: "Select a Case",
+            value: provider.selectedCase,
+            items: provider.userCases.map((c) => DropdownMenuItem(
+              value: c,
+              child: Text(c.caseNumber, style: const TextStyle(fontWeight: FontWeight.bold)),
+            )).toList(),
+            onChanged: (c) {
+              provider.selectCase(c);
+              setState(() => selectedChildIds.clear());
+            },
           ),
         ),
       ),
     );
   }
-  
   // --- Widgets ---
   
   Widget _buildClickableField(String label, String value, IconData icon, VoidCallback onTap) {

@@ -183,7 +183,7 @@ class ScheduledDatesScreen extends StatelessWidget {
                           RuleConfigurationScreen.routeName,
                           arguments: {
                             'caseId': provider.selectedCase?.id,
-                            'recordId': recordId,
+
                             'category': category, // <--- ADD THIS LINEad
                             'availableChildren': provider.selectedCase?.children ?? [], // Pass the children!
                           },
@@ -217,7 +217,7 @@ class ScheduledDatesScreen extends StatelessWidget {
                       RuleConfigurationScreen.routeName,
                       arguments: {
                         'caseId': provider.selectedCase?.id,
-                        'recordId': null,
+
                         'category': category,
                         'availableChildren': provider.selectedCase?.children ?? [], // CRITICAL: This must not be empty
                       },

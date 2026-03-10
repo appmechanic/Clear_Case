@@ -45,7 +45,7 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     RuleConfigurationScreen.routeName: (context) {
       final args = ModalRoute.of(context)?.settings.arguments as Map<String, dynamic>?;
       return RuleConfigurationScreen(
-        recordId: args?['recordId'],
+
         caseId: args?['caseId'],
         category: args?['category'] ?? 'custody',
         availableChildren: (args?['availableChildren'] as List<dynamic>?)?.cast<ChildModel>() ?? [],

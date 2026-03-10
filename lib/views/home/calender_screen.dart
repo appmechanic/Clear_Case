@@ -30,36 +30,50 @@ class _CalenderScreenState extends State<CalenderScreen> {
           onPressed: () => Navigator.pushNamed(context, NewEntryScreen.routeName),
           child: const Icon(Icons.add, color: Colors.white, size: 28),
         ),
-        body: SafeArea(
-          child: Consumer<CalendarProvider>(
-            builder: (context, provider, child) {
-              return Column(
-                children: [
-                  _buildHeader(context),
-                  
-                  _buildCalendar(context, provider),
-                  
-                  const Spacer(),
-                  
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                    child: Column(
-                      children: [
-                        _buildBottomButton("Scheduled Dates", () {
-                           Navigator.pushNamed(context, ScheduledDatesScreen.routeName);
-                        }),
-                        const SizedBox(height: 12),
-                        _buildBottomButton("Calendar legends", () {
-                           _showLegendsPopup(context);
-                        }),
-                      ],
-                    ),
-                  )
-                ],
-              );
-            },
-          ),
+      // Inside _CalenderScreenState's build method
+      body: SafeArea(
+        child: Consumer<CalendarProvider>(
+          builder: (context, provider, child) {
+            return RefreshIndicator(
+              onRefresh: () async {
+                // Trigger the refresh: re-fetch data for the selected case
+                if (provider.selectedCase != null) {
+                  await provider.fetchEventsForCase(provider.selectedCase!.id);
+                }
+              },
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                ),child: SizedBox(
+
+                  height: MediaQuery.of(context).size.height - 100, // Adjust based on your header/nav
+                  child: Column(
+                    children: [
+                      _buildHeader(context),
+                      _buildCalendar(context, provider),
+                      const Spacer(),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                        child: Column(
+                          children: [
+                            _buildBottomButton("Scheduled Dates", () {
+                              Navigator.pushNamed(context, ScheduledDatesScreen.routeName);
+                            }),
+                            const SizedBox(height: 12),
+                            _buildBottomButton("Calendar legends", () {
+                              _showLegendsPopup(context);
+                            }),
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         ),
+      )
       );
   }
 

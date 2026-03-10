@@ -3,20 +3,24 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class PaymentRecordModel {
   String? id;
   String? caseId;
+  List<String>? childIds; // Added for child selection
+  List<String>? attachmentUrls; // Added for file storage
   double? amount;
   DateTime? date;
-  String? paymentType;     
-  String? category;        
-  String? paymentMethod;   
+  String? paymentType;
+  String? category;
+  String? paymentMethod;
   String? location;
   String? notes;
-  bool? isReceived;      
-  bool? flagEntry;          
+  bool? isReceived;
+  bool? flagEntry;
   DateTime? createdAt;
 
   PaymentRecordModel({
     this.id,
     this.caseId,
+    this.childIds,
+    this.attachmentUrls,
     this.amount,
     this.date,
     this.paymentType,
@@ -32,6 +36,8 @@ class PaymentRecordModel {
   Map<String, dynamic> toMap() {
     return {
       'caseId': caseId,
+      'childIds': childIds ?? [],
+      'attachmentUrls': attachmentUrls ?? [],
       'amount': amount,
       'date': date != null ? Timestamp.fromDate(date!) : null,
       'paymentType': paymentType,
@@ -49,8 +55,10 @@ class PaymentRecordModel {
     return PaymentRecordModel(
       id: documentId,
       caseId: map['caseId'] as String?,
-      amount: (map['amount'] is int) 
-          ? (map['amount'] as int).toDouble() 
+      childIds: (map['childIds'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      attachmentUrls: (map['attachmentUrls'] as List<dynamic>?)?.map((e) => e.toString()).toList(),
+      amount: (map['amount'] is int)
+          ? (map['amount'] as int).toDouble()
           : (map['amount'] as double?),
       date: (map['date'] as Timestamp?)?.toDate(),
       paymentType: map['paymentType'] as String?,

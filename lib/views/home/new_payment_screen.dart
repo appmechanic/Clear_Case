@@ -1,4 +1,6 @@
 
+import 'dart:io';
+
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/payment_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
@@ -6,6 +8,8 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+
+import '../widgets/attachment_picker_widget.dart';
 
 class NewPaymentScreen extends StatefulWidget {
   static const routeName = '/new-payment';
@@ -31,10 +35,12 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   String selectedPaymentType = "Child Support";
   String selectedPaymentMethod = "Bank Transfer";
   bool flagEntry = false; // Added flag option if needed
-  
+  List<File> _selectedFiles = [];
+
   // Dropdown Options
   final List<String> paymentTypes = ["Child Support", "School Fees", "Medical", "Other"];
   final List<String> paymentMethods = ["Bank Transfer", "Cash", "Cheque", "Online"];
+  Set<String> selectedChildIds = {};
 
   @override
   void dispose() {
@@ -78,6 +84,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
     // 3. Create Model
     final newRecord = PaymentRecordModel(
+      childIds: selectedChildIds.toList(),
       caseId: provider.selectedCase!.id,
       amount: amount,
       date: selectedDate,
@@ -92,7 +99,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     );
 
     // 4. Save via Provider
-    provider.addPaymentRecord(context, newRecord);
+    provider.addPaymentRecord(context, newRecord, _selectedFiles);
   }
 
   @override
@@ -109,6 +116,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    _buildChildSelector(provider), // Add this first
+                    const SizedBox(height: 20),
                     _buildSwitchTile("Payment Received", paymentReceived, (v) => setState(() => paymentReceived = v)),
                     const SizedBox(height: 15),
                     
@@ -162,8 +171,15 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       borderRadius: 8,
                       backgroundColor: Colors.grey.shade200,
                     ),
-                    
                     const SizedBox(height: 15),
+                    const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 10),
+                    AttachmentPickerWidget(
+                      onFilesChanged: (files) {
+                        setState(() => _selectedFiles = files);
+                      },
+                    ),
+                     const SizedBox(height: 15),
                      // Optional Flag Switch if needed
                     _buildSwitchTile("Flag this entry", flagEntry, (v) => setState(() => flagEntry = v)),
 
@@ -290,6 +306,32 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
         ),
         child: Text(text, style: TextStyle(color: isSelected ? const Color(0xFF4A148C) : Colors.black, fontWeight: FontWeight.bold)),
       ),
+    );
+  }
+
+  Widget _buildChildSelector(NewEntryProvider provider) {
+    final children = provider.selectedCase?.children ?? [];
+    if (children.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text("Select Children", style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 10),
+        ...children.map((child) {
+          final isSelected = selectedChildIds.contains(child.id);
+          return Container(
+            margin: const EdgeInsets.only(bottom: 10),
+            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+            child: ListTile(
+              leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
+              title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
+              onTap: () => setState(() => isSelected ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+            ),
+          );
+        }).toList(),
+      ],
     );
   }
 }

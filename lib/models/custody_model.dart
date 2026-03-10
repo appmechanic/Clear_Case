@@ -13,6 +13,7 @@ class CustodyRecordModel {
   String? notes;
   bool? flagEntry;
   DateTime? createdAt;
+  List<String>? attachmentUrls; // Added field for multiple files
 
   CustodyRecordModel({
     this.id,
@@ -27,6 +28,7 @@ class CustodyRecordModel {
     this.notes,
     this.flagEntry,
     this.createdAt,
+    this.attachmentUrls,
   });
 
   Map<String, dynamic> toMap() {
@@ -42,6 +44,7 @@ class CustodyRecordModel {
       'notes': notes,
       'flagEntry': flagEntry,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
+      'attachmentUrls': attachmentUrls, // Added to map
     };
   }
 
@@ -59,6 +62,7 @@ class CustodyRecordModel {
       notes: map['notes'] as String?,
       flagEntry: map['flagEntry'] as bool?,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
+      attachmentUrls: map['attachmentUrls'] != null ? List<String>.from(map['attachmentUrls']) : null, // Added from map
     );
   }
 }

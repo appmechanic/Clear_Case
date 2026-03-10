@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/custody_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart'; 
@@ -5,6 +7,8 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
 import 'package:provider/provider.dart';
+
+import '../widgets/attachment_picker_widget.dart';
 
 class NewCustodyScreen extends StatefulWidget {
   static const routeName = '/new-custody';
@@ -17,14 +21,17 @@ class NewCustodyScreen extends StatefulWidget {
 class _NewCustodyScreenState extends State<NewCustodyScreen> {
   final _locationController = TextEditingController();
   final _notesController = TextEditingController();
-  
+
   DateTime selectedDate = DateTime.now();
   TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
-  bool isScheduled = true;
+  bool isScheduled = false;
   bool isFulfilled = true;
   bool flagEntry = false;
-  
+
+  // Track the optional attachment
+  List<File> _selectedFiles = [];
+
   Set<String> selectedChildIds = {};
 
   @override
@@ -36,13 +43,13 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
 
   Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
-      context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
+        context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
     if (picked != null) setState(() => selectedDate = picked);
   }
 
   Future<void> _pickTime(bool isStart) async {
     final TimeOfDay? picked = await showTimePicker(
-      context: context, initialTime: isStart ? startTime : endTime);
+        context: context, initialTime: isStart ? startTime : endTime);
     if (picked != null) setState(() => isStart ? startTime = picked : endTime = picked);
   }
 
@@ -59,6 +66,22 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
     final startDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, startTime.hour, startTime.minute);
     final endDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, endTime.hour, endTime.minute);
 
+    // 1. Check if they are the same
+    if (startDateTime.isAtSameMomentAs(endDateTime)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Start time and End time cannot be the same.")),
+      );
+      return;
+    }
+
+    // 2. Check if End is before Start
+    if (endDateTime.isBefore(startDateTime)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("End time cannot be before Start time.")),
+      );
+      return;
+    }
+
     final newRecord = CustodyRecordModel(
       caseId: provider.selectedCase!.id,
       childIds: selectedChildIds.toList(),
@@ -73,8 +96,8 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
       createdAt: DateTime.now(),
     );
 
-    // Call the unified provider method
-    provider.addCustodyRecord(context, newRecord);
+    // Updated: Pass the optional _selectedFile to the provider
+    provider.addCustodyRecord(context, newRecord, _selectedFiles);
   }
 
   @override
@@ -86,48 +109,59 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
           return Scaffold(
             backgroundColor: const Color(0xFFF5F5F5),
             appBar: _buildAppBar(context, provider),
-            body: provider.isLoading 
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildChildSelector(provider),
-                    const SizedBox(height: 20),
-                    
-                    _buildClickableField("Start Date", DateFormat('dd MMM yyyy').format(selectedDate), Icons.calendar_today, _pickDate),
-                    const SizedBox(height: 15),
-                    
-                    Row(children: [
-                      Expanded(child: _buildClickableField("Start Time", startTime.format(context), Icons.access_time, () => _pickTime(true))),
-                      const SizedBox(width: 15),
-                      Expanded(child: _buildClickableField("End Time", endTime.format(context), Icons.access_time, () => _pickTime(false))),
-                    ]),
-                    
-                    const SizedBox(height: 20),
-                    _buildSwitchTile("It is a scheduled custody date", isScheduled, (v) => setState(() => isScheduled = v)),
-                    const SizedBox(height: 15),
-                    
-                    CustomTextField(labelText: "Location", hintText: "Enter location", controller: _locationController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
-                    const SizedBox(height: 15),
-                    
-                    _buildSwitchTile("Custody Fulfilled", isFulfilled, (v) => setState(() => isFulfilled = v)),
-                    const SizedBox(height: 15),
-                    
-                    CustomTextField(labelText: "Notes", hintText: "Enter details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
-                    const SizedBox(height: 20),
-                    
-                    _buildAttachmentBox(),
-                    const SizedBox(height: 20),
-                    
-                    _buildSwitchTile("Flag this entry", flagEntry, (v) => setState(() => flagEntry = v)),
-                    const SizedBox(height: 30),
-                    
-                    SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: () => _submitForm(provider), child: const Text("Save Record", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
-                  ],
-                ),
+            body: provider.isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildChildSelector(provider),
+                  const SizedBox(height: 20),
+
+                  _buildClickableField("Start Date", DateFormat('dd MMM yyyy').format(selectedDate), Icons.calendar_today, _pickDate),
+                  const SizedBox(height: 15),
+
+                  Row(children: [
+                    Expanded(child: _buildClickableField("Start Time", startTime.format(context), Icons.access_time, () => _pickTime(true))),
+                    const SizedBox(width: 15),
+                    Expanded(child: _buildClickableField("End Time", endTime.format(context), Icons.access_time, () => _pickTime(false))),
+                  ]),
+
+                  const SizedBox(height: 20),
+                  _buildSwitchTile("It is a scheduled custody date", isScheduled, (v) => setState(() => isScheduled = v)),
+                  const SizedBox(height: 15),
+
+                  CustomTextField(labelText: "Location", hintText: "Enter location", controller: _locationController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                  const SizedBox(height: 15),
+
+                  _buildSwitchTile("Custody Fulfilled", isFulfilled, (v) => setState(() => isFulfilled = v)),
+                  const SizedBox(height: 15),
+
+                  CustomTextField(labelText: "Notes", hintText: "Enter details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                  const SizedBox(height: 20),
+
+                  // Updated: Using the common widget with dotted border and state management
+                  Text("Attachments"),
+
+                  SizedBox(height: 20,),
+
+                  AttachmentPickerWidget(
+                    onFilesChanged: (files) { // Note: changed from onFileSelected to onFilesChanged
+                      setState(() => _selectedFiles = files);
+                    },
+                  ),
+
+
+
+                  const SizedBox(height: 20),
+                  _buildSwitchTile("Flag this entry", flagEntry, (v) => setState(() => flagEntry = v)),
+                  const SizedBox(height: 30),
+
+                  SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: () => _submitForm(provider), child: const Text("Save Record", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
+                ],
               ),
+            ),
           );
         },
       ),
@@ -186,6 +220,5 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   }
 
   Widget _buildClickableField(String l, String v, IconData i, VoidCallback t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(l, style: const TextStyle(fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: t, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(children: [Text(v), const Spacer(), Icon(i, size: 18, color: Colors.grey[700])])))]);
-  Widget _buildSwitchTile(String t, bool v, Function(bool) c) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w600)), Switch(value: v, activeColor: const Color(0xFF4A148C), onChanged: c)]);
-  Widget _buildAttachmentBox() => Container(height: 100, width: double.infinity, decoration: BoxDecoration(color: const Color(0xFFF8F5FB), borderRadius: BorderRadius.circular(8), border: Border.all(color: const Color(0xFF4A148C).withOpacity(0.3))), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [Icon(Icons.upload_file, color: Color(0xFF4A148C)), SizedBox(height: 5), Text("Upload Attachment", style: TextStyle(color: Colors.grey))]));
-}
+  Widget _buildSwitchTile(String t, bool v, Function(bool) c) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w600)), Switch(value: v,activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white, onChanged: c)]);
+ }

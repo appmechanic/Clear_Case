@@ -1,9 +1,12 @@
+import 'dart:io';
+
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/custody_model.dart';
 import 'package:clearcase/models/payment_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 class NewEntryProvider extends ChangeNotifier {
@@ -56,8 +59,34 @@ class NewEntryProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  final FirebaseStorage _storage = FirebaseStorage.instance;
+
+  // Helper method to upload file and get URL
+  Future<String?> uploadAttachment(File file, String category) async {
+    final user = _auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      // Path: users/{uid}/{category}/timestamp_filename
+      String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+      Reference ref = _storage.ref().child('users/${user.uid}/$category/$fileName');
+
+      UploadTask uploadTask = ref.putFile(file);
+      TaskSnapshot snapshot = await uploadTask;
+
+      return await snapshot.ref.getDownloadURL();
+    } catch (e) {
+      debugPrint("Storage Error: $e");
+      return null;
+    }
+  }
+
   // --- SAVE CUSTODY RECORD (Updated with Flag Logic) ---
-  Future<void> addCustodyRecord(BuildContext context, CustodyRecordModel record) async {
+  Future<void> addCustodyRecord(
+      BuildContext context,
+      CustodyRecordModel record,
+      List<File> imageFiles, // Accepting List<File>
+      ) async {
     final user = _auth.currentUser;
     if (user == null) return;
     if (_selectedCase == null) {
@@ -69,38 +98,51 @@ class NewEntryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      // 1. Upload all files to Firebase Storage
+      List<String> downloadUrls = [];
+
+      for (File file in imageFiles) {
+        final String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+        final Reference storageRef = _storage
+            .ref()
+            .child('users/${user.uid}/cases/${_selectedCase!.id}/custody_attachments/$fileName');
+
+        final UploadTask uploadTask = storageRef.putFile(file);
+        final TaskSnapshot snapshot = await uploadTask;
+
+        String url = await snapshot.ref.getDownloadURL();
+        downloadUrls.add(url);
+      }
+
+      // 2. Prepare the data map with the list of URLs
+      Map<String, dynamic> recordData = record.toMap();
+      // Save the list of strings (URLs)
+      recordData['attachmentUrls'] = downloadUrls;
+
       WriteBatch batch = _firestore.batch();
 
-      // 1. Reference for Standard Custody Record
-      // Path: users/{uid}/cases/{caseId}/custody_records/{newId}
+      // 3. Main Record Reference
       DocumentReference custodyRef = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('cases')
-          .doc(_selectedCase!.id)
-          .collection('custodyRecords')
-          .doc(); // Auto-ID
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(_selectedCase!.id)
+          .collection('custodyRecords').doc();
 
-      batch.set(custodyRef, record.toMap());
+      batch.set(custodyRef, recordData);
 
-      // 2. CHECK FLAG: Reference for Flagged Events
-      // Path: users/{uid}/flagged_events/{newId}
+      // 4. Handle Flagged Event (Include the same list of URLs)
       if (record.flagEntry == true) {
         DocumentReference flaggedRef = _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('flaggedEvents')
-            .doc(); // Auto-ID
+            .collection('users').doc(user.uid)
+            .collection('flaggedEvents').doc();
 
-        // Add extra metadata to identify origin
-        Map<String, dynamic> flaggedData = record.toMap();
+        Map<String, dynamic> flaggedData = Map.from(recordData);
         flaggedData['originCollection'] = 'custodyRecords';
-        flaggedData['originId'] = custodyRef.id; // Link back to original
-        
+        flaggedData['originId'] = custodyRef.id;
+
         batch.set(flaggedRef, flaggedData);
       }
 
-      // Commit both writes
+      // 5. Commit
       await batch.commit();
 
       _isLoading = false;
@@ -114,60 +156,55 @@ class NewEntryProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error saving record: $e")));
       }
     }
   }
-
-  Future<void> addPaymentRecord(BuildContext context, PaymentRecordModel record) async {
+  Future<void> addPaymentRecord(
+      BuildContext context,
+      PaymentRecordModel record,
+      List<File> imageFiles // Add this parameter
+      ) async {
     final user = _auth.currentUser;
-    // Basic Validation
-    if (user == null) return;
-    if (_selectedCase == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a case")));
-      return;
-    }
+    if (user == null || _selectedCase == null) return;
 
     _isLoading = true;
     notifyListeners();
 
     try {
+      // 1. Upload Attachments
+      List<String> downloadUrls = [];
+      for (File file in imageFiles) {
+        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+        Reference ref = _storage.ref().child('users/${user.uid}/cases/${_selectedCase!.id}/payment_attachments/$fileName');
+        TaskSnapshot snapshot = await ref.putFile(file);
+        downloadUrls.add(await snapshot.ref.getDownloadURL());
+      }
+
+      // 2. Add URLs to Map
+      Map<String, dynamic> recordData = record.toMap();
+      recordData['attachmentUrls'] = downloadUrls;
+
       WriteBatch batch = _firestore.batch();
-
-      // 1. Reference for Standard Payment Record
-      // Path: users/{uid}/cases/{caseId}/paymentRecords/{newId}
       DocumentReference paymentRef = _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('cases')
-          .doc(_selectedCase!.id)
-          .collection('paymentRecords') 
-          .doc(); // Auto-ID
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(_selectedCase!.id)
+          .collection('paymentRecords').doc();
 
-      batch.set(paymentRef, record.toMap());
+      batch.set(paymentRef, recordData);
 
-      // 2. CHECK FLAG: Reference for Flagged Events
+      // 3. Flagging logic
       if (record.flagEntry == true) {
-        DocumentReference flaggedRef = _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('flaggedEvents')
-            .doc(); 
-
-        // Add extra metadata to identify origin
-        Map<String, dynamic> flaggedData = record.toMap();
+        DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc();
+        Map<String, dynamic> flaggedData = Map.from(recordData);
         flaggedData['originCollection'] = 'paymentRecords';
-        flaggedData['originId'] = paymentRef.id; // Link back to original
-        
+        flaggedData['originId'] = paymentRef.id;
         batch.set(flaggedRef, flaggedData);
       }
 
-      // Commit both writes
       await batch.commit();
-
       _isLoading = false;
       notifyListeners();
-
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment record saved!")));
         Navigator.pop(context);
@@ -175,9 +212,6 @@ class NewEntryProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
-      }
+      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
-  }
-}
+  }}

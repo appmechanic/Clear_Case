@@ -48,9 +48,10 @@ class CustodyRecordModel {
     };
   }
 
-  factory CustodyRecordModel.fromMap(Map<String, dynamic> map, String documentId) {
+// Make documentId optional with [] or {}
+  factory CustodyRecordModel.fromMap(Map<String, dynamic> map, [String? documentId]) {
     return CustodyRecordModel(
-      id: documentId,
+      id: documentId ?? map['id'], // Use the passed ID or look for one in the map
       caseId: map['caseId'] as String?,
       childIds: map['childIds'] != null ? List<String>.from(map['childIds']) : null,
       startDate: (map['startDate'] as Timestamp?)?.toDate(),
@@ -62,7 +63,6 @@ class CustodyRecordModel {
       notes: map['notes'] as String?,
       flagEntry: map['flagEntry'] as bool?,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
-      attachmentUrls: map['attachmentUrls'] != null ? List<String>.from(map['attachmentUrls']) : null, // Added from map
+      attachmentUrls: map['attachmentUrls'] != null ? List<String>.from(map['attachmentUrls']) : null,
     );
-  }
-}
+  }}

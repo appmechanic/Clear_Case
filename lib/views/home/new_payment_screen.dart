@@ -1,6 +1,4 @@
-
 import 'dart:io';
-
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/payment_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
@@ -8,7 +6,6 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
-
 import '../widgets/attachment_picker_widget.dart';
 import '../widgets/custom_dropdown.dart';
 
@@ -29,19 +26,119 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   final _locationNode = FocusNode();
   final _notesNode = FocusNode();
 
-  // State
+  // State Variables
+  String? editRecordId;
+  bool isInitialized = false;
+  bool _isFetching = false;
+
   bool paymentReceived = true;
-  String paymentTypeToggle = "Additional"; 
+  String paymentTypeToggle = "Additional";
   DateTime selectedDate = DateTime.now();
   String selectedPaymentType = "Child Support";
   String selectedPaymentMethod = "Bank Transfer";
-  bool flagEntry = false; // Added flag option if needed
+  bool flagEntry = false;
   List<File> _selectedFiles = [];
+  List<String> _existingAttachmentUrls = [];
+  Set<String> selectedChildIds = {};
 
-  // Dropdown Options
+  // Dropdown Options (Defined inside State class)
   final List<String> paymentTypes = ["Child Support", "School Fees", "Medical", "Other"];
   final List<String> paymentMethods = ["Bank Transfer", "Cash", "Cheque", "Online"];
-  Set<String> selectedChildIds = {};
+
+  @override
+  void initState() {
+    super.initState();
+    // Initialize provider once when the screen is created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<NewEntryProvider>(context, listen: false).init();
+    });
+  }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check if we passed an ID for editing
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args != null && args is String && !isInitialized) {
+      editRecordId = args;
+      _loadExistingData();
+      isInitialized = true;
+    }
+  }
+
+  Future<void> _loadExistingData() async {
+    // Use listen: false to just get the instance
+    final provider = Provider.of<NewEntryProvider>(context, listen: false);
+
+    // Now that we aren't creating a new provider, this will have the actual data
+    if (provider.selectedCase == null) return;
+
+    setState(() => _isFetching = true);
+    final record = await provider.getPaymentRecordById(editRecordId!);
+
+    if (mounted && record != null) {
+      setState(() {
+        _isFetching = false;
+        _amountController.text = record.amount?.toString() ?? "";
+        selectedDate = record.date ?? DateTime.now();
+        selectedPaymentType = record.paymentType ?? "";
+        paymentTypeToggle = record.category ?? "";
+        selectedPaymentMethod = record.paymentMethod ?? "";
+        _locationController.text = record.location ?? "";
+        _notesController.text = record.notes ?? "";
+        paymentReceived = record.isReceived ?? true;
+        flagEntry = record.flagEntry ?? false;
+        selectedChildIds = Set.from(record.childIds ?? []);
+        _existingAttachmentUrls = record.attachmentUrls ?? [];
+      });
+    } else {
+      setState(() => _isFetching = false);
+    }
+  }
+  Future<void> _pickDate() async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2101),
+    );
+    if (picked != null) setState(() => selectedDate = picked);
+  }
+
+  void _submitForm(NewEntryProvider provider) {
+    if (provider.selectedCase == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a case")));
+      return;
+    }
+    double? amount = double.tryParse(_amountController.text);
+    if (amount == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid amount")));
+      return;
+    }
+
+
+    final newRecord = PaymentRecordModel(
+      id: editRecordId,
+      childIds: selectedChildIds.toList(),
+      caseId: provider.selectedCase!.id,
+      amount: amount,
+      date: selectedDate,
+      paymentType: selectedPaymentType,
+      category: paymentTypeToggle,
+      paymentMethod: selectedPaymentMethod,
+      location: _locationController.text.trim(),
+      notes: _notesController.text.trim(),
+      isReceived: paymentReceived,
+      flagEntry: flagEntry,
+      attachmentUrls: _existingAttachmentUrls,
+      createdAt: editRecordId == null ? DateTime.now() : null,
+    );
+
+    if (editRecordId == null) {
+      provider.addPaymentRecord(context, newRecord, _selectedFiles);
+    } else {
+      provider.updatePaymentRecord(context, newRecord, _selectedFiles);
+    }
+  }
 
   @override
   void dispose() {
@@ -53,64 +150,17 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     _notesNode.dispose();
     super.dispose();
   }
-  
-  Future<void> _pickDate() async {
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      initialDate: selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-    if (picked != null) setState(() => selectedDate = picked);
-  }
-
-  // --- SAVE LOGIC ---
-  void _submitForm(NewEntryProvider provider) {
-    // 1. Validate Case Selection
-    if (provider.selectedCase == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a case from the top bar")));
-      return;
-    }
-
-    // 2. Validate Amount
-    if (_amountController.text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter an amount")));
-      return;
-    }
-    double? amount = double.tryParse(_amountController.text);
-    if (amount == null) {
-       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid amount format")));
-       return;
-    }
-
-    // 3. Create Model
-    final newRecord = PaymentRecordModel(
-      childIds: selectedChildIds.toList(),
-      caseId: provider.selectedCase!.id,
-      amount: amount,
-      date: selectedDate,
-      paymentType: selectedPaymentType,
-      category: paymentTypeToggle, // Additional vs Compulsory
-      paymentMethod: selectedPaymentMethod,
-      location: _locationController.text.trim(),
-      notes: _notesController.text.trim(),
-      isReceived: paymentReceived,
-      flagEntry: flagEntry,
-      createdAt: DateTime.now(),
-    );
-
-    // 4. Save via Provider
-    provider.addPaymentRecord(context, newRecord, _selectedFiles);
-  }
 
   @override
   Widget build(BuildContext context) {
-    return  Consumer<NewEntryProvider>(
-        builder: (context, provider, child) {
-          return Scaffold(
-            backgroundColor: const Color(0xFFF5F5F5),
-            appBar: _buildAppBar(context, provider),
-            body: provider.isLoading 
+    // REMOVED ChangeNotifierProvider from here!
+    return Consumer<NewEntryProvider>(
+      builder: (context, provider, child) {
+        bool showLoader = provider.isLoading || _isFetching;
+        return Scaffold(
+          backgroundColor: const Color(0xFFF5F5F5),
+          appBar: _buildAppBar(context, provider),
+          body: showLoader
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
                 padding: const EdgeInsets.all(20),
@@ -174,8 +224,19 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                     ),
                     const SizedBox(height: 15),
                     const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),
+
+                    // Display Existing Attachments from Firebase (Edit Mode)
+                    if (_existingAttachmentUrls.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Wrap(
+                          spacing: 8,
+                          children: _existingAttachmentUrls.map((url) => _buildExistingFilePreview(url)).toList(),
+                        ),
+                      ),
+
                     const SizedBox(height: 10),
-                    AttachmentPickerWidget(
+                     AttachmentPickerWidget(
                       onFilesChanged: (files) {
                         setState(() => _selectedFiles = files);
                       },
@@ -195,22 +256,54 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                         ),
                         onPressed: () => _submitForm(provider),
-                        child: const Text("Save Record", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                      ),
+                        child: Text(editRecordId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),                      ),
                     ),
                   ],
                 ),
               ),
           );
         },
+     );
+  }
+
+  Widget _buildExistingFilePreview(String url) {
+    bool isPdf = url.toLowerCase().contains('.pdf');
+    return Stack(
+      children: [
+        Container(
+          width: 70,
+          height: 70,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+            image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+          ),
+          child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 40) : null,
+        ),
+        Positioned(
+          right: -5,
+          top: -5,
+          child: GestureDetector(
+            onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
+            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
+          ),
+        ),
+      ],
     );
   }
-  
+
+
   // --- AppBar with Case Selector ---
+
+
   AppBar _buildAppBar(BuildContext context, NewEntryProvider provider) {
     return AppBar(
-      title: const Text("New Custody Record",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      leading: IconButton(onPressed: (){
+        Navigator.pop(context);
+      }, icon: Icon(Icons.arrow_back, color: Colors.black)),
+
+      title: Text(editRecordId == null ? "New Payment Record" : "Edit Payment Record",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
@@ -234,6 +327,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       ),
     );
   }
+
   // --- Widgets ---
   
   Widget _buildClickableField(String label, String value, IconData icon, VoidCallback onTap) {
@@ -310,27 +404,23 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
   Widget _buildChildSelector(NewEntryProvider provider) {
     final children = provider.selectedCase?.children ?? [];
-    if (children.isEmpty) return const SizedBox.shrink();
+    if (children.isEmpty) return const Text("No children in this case");
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text("Select Children", style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 10),
-        ...children.map((child) {
-          final isSelected = selectedChildIds.contains(child.id);
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-            child: ListTile(
-              leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
-              title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-              trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
-              onTap: () => setState(() => isSelected ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
-            ),
-          );
-        }).toList(),
-      ],
+      children: children.map((child) {
+        final isSelected = selectedChildIds.contains(child.id);
+        return Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+          child: ListTile(
+            leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
+            title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+            trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
+            onTap: () => setState(() => isSelected ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+          ),
+        );
+      }).toList(),
     );
   }
-}
+
+ }

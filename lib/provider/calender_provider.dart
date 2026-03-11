@@ -110,7 +110,8 @@ class CalendarProvider extends ChangeNotifier {
             title: data['paymentType'] ?? 'Payment',
             date: recordDate,
             type: EventType.payment,
-            description: "Amount: ${data['amount']}",
+            description: data['notes'], // Map notes to description
+            amount: (data['amount'] as num?)?.toDouble(), // Map amount
           ));
         }
       }

@@ -7,9 +7,9 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart'; 
 import 'package:provider/provider.dart';
-
 import '../widgets/attachment_picker_widget.dart';
 import '../widgets/custom_dropdown.dart';
+
 
 class NewCustodyScreen extends StatefulWidget {
   static const routeName = '/new-custody';
@@ -23,6 +23,11 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   final _locationController = TextEditingController();
   final _notesController = TextEditingController();
 
+  // Mode tracking
+  String? editRecordId;
+  bool isInitialized = false;
+  bool _isFetching = false; // Add this
+
   DateTime selectedDate = DateTime.now();
   TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
@@ -30,18 +35,51 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   bool isFulfilled = true;
   bool flagEntry = false;
 
-  // Track the optional attachment
   List<File> _selectedFiles = [];
-
+  List<String> _existingAttachmentUrls = []; // To store existing Firebase links
   Set<String> selectedChildIds = {};
 
+
+
   @override
-  void dispose() {
-    _locationController.dispose();
-    _notesController.dispose();
-    super.dispose();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Check if we passed an ID for editing
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args != null && args is String && !isInitialized) {
+      editRecordId = args;
+      _loadExistingData();
+      isInitialized = true;
+    }
   }
 
+  Future<void> _loadExistingData() async {
+    // Show the loader when starting the fetch
+    setState(() => _isFetching = true);
+
+    final provider = Provider.of<NewEntryProvider>(context, listen: false);
+    final record = await provider.getCustodyRecordById(editRecordId!);
+
+    // Hide the loader once we have the result (whether null or not)
+    if (mounted) {
+      setState(() {
+        _isFetching = false;
+
+        if (record != null) {
+          selectedDate = record.startDate ?? DateTime.now();
+          startTime = TimeOfDay.fromDateTime(record.startTime ?? DateTime.now());
+          endTime = TimeOfDay.fromDateTime(record.endTime ?? DateTime.now());
+          isScheduled = record.isScheduled ?? false;
+          isFulfilled = record.isFulfilled ?? true;
+          flagEntry = record.flagEntry ?? false;
+          _locationController.text = record.location ?? "";
+          _notesController.text = record.notes ?? "";
+          selectedChildIds = Set.from(record.childIds ?? []);
+          _existingAttachmentUrls = record.attachmentUrls ?? [];
+        }
+      });
+    }
+  }
   Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
         context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
@@ -67,23 +105,18 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
     final startDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, startTime.hour, startTime.minute);
     final endDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, endTime.hour, endTime.minute);
 
-    // 1. Check if they are the same
     if (startDateTime.isAtSameMomentAs(endDateTime)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Start time and End time cannot be the same.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Start time and End time cannot be the same.")));
       return;
     }
 
-    // 2. Check if End is before Start
     if (endDateTime.isBefore(startDateTime)) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("End time cannot be before Start time.")),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("End time cannot be before Start time.")));
       return;
     }
 
-    final newRecord = CustodyRecordModel(
+    final record = CustodyRecordModel(
+      id: editRecordId, // Important for updates
       caseId: provider.selectedCase!.id,
       childIds: selectedChildIds.toList(),
       startDate: selectedDate,
@@ -94,23 +127,34 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
       isFulfilled: isFulfilled,
       notes: _notesController.text.trim(),
       flagEntry: flagEntry,
-      createdAt: DateTime.now(),
+      createdAt: editRecordId == null ? DateTime.now() : null,
+      attachmentUrls: _existingAttachmentUrls, // Keep existing ones
     );
 
-    // Updated: Pass the optional _selectedFile to the provider
-    provider.addCustodyRecord(context, newRecord, _selectedFiles);
+    if (editRecordId == null) {
+      provider.addCustodyRecord(context, record, _selectedFiles);
+    } else {
+      provider.updateCustodyRecord(context, record, _selectedFiles);
+    }
   }
 
   @override
+  void dispose() {
+    _locationController.dispose();
+    _notesController.dispose();
+    super.dispose();
+  }
+  @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider(
-      create: (_) => NewEntryProvider()..init(),
-      child: Consumer<NewEntryProvider>(
-        builder: (context, provider, child) {
+    // REMOVE: ChangeNotifierProvider(...)
+    // USE: Only Consumer<NewEntryProvider>
+    return Consumer<NewEntryProvider>(
+      builder: (context, provider, child) {
+        bool showLoader = provider.isLoading || _isFetching;
           return Scaffold(
             backgroundColor: const Color(0xFFF5F5F5),
             appBar: _buildAppBar(context, provider),
-            body: provider.isLoading
+            body:showLoader
                 ? const Center(child: CircularProgressIndicator())
                 : SingleChildScrollView(
               padding: const EdgeInsets.all(20),
@@ -119,60 +163,84 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
                 children: [
                   _buildChildSelector(provider),
                   const SizedBox(height: 20),
-
                   _buildClickableField("Start Date", DateFormat('dd MMM yyyy').format(selectedDate), Icons.calendar_today, _pickDate),
                   const SizedBox(height: 15),
-
                   Row(children: [
                     Expanded(child: _buildClickableField("Start Time", startTime.format(context), Icons.access_time, () => _pickTime(true))),
                     const SizedBox(width: 15),
                     Expanded(child: _buildClickableField("End Time", endTime.format(context), Icons.access_time, () => _pickTime(false))),
                   ]),
-
                   const SizedBox(height: 20),
                   _buildSwitchTile("It is a scheduled custody date", isScheduled, (v) => setState(() => isScheduled = v)),
                   const SizedBox(height: 15),
-
                   CustomTextField(labelText: "Location", hintText: "Enter location", controller: _locationController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
                   const SizedBox(height: 15),
-
                   _buildSwitchTile("Custody Fulfilled", isFulfilled, (v) => setState(() => isFulfilled = v)),
                   const SizedBox(height: 15),
-
                   CustomTextField(labelText: "Notes", hintText: "Enter details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
                   const SizedBox(height: 20),
 
-                  // Updated: Using the common widget with dotted border and state management
-                  Text("Attachments"),
+                  const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 10),
 
-                  SizedBox(height: 20,),
+                  // Display Existing Attachments from Firebase (Edit Mode)
+                  if (_existingAttachmentUrls.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Wrap(
+                        spacing: 8,
+                        children: _existingAttachmentUrls.map((url) => _buildExistingFilePreview(url)).toList(),
+                      ),
+                    ),
 
                   AttachmentPickerWidget(
-                    onFilesChanged: (files) { // Note: changed from onFileSelected to onFilesChanged
+                    onFilesChanged: (files) {
                       setState(() => _selectedFiles = files);
                     },
                   ),
-
-
-
                   const SizedBox(height: 20),
                   _buildSwitchTile("Flag this entry", flagEntry, (v) => setState(() => flagEntry = v)),
                   const SizedBox(height: 30),
-
-                  SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: () => _submitForm(provider), child: const Text("Save Record", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
+                  SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: () => _submitForm(provider), child: Text(editRecordId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)))),
                 ],
               ),
             ),
           );
         },
-      ),
+     );
+  }
+
+  // Preview for files already in Firebase Storage
+  Widget _buildExistingFilePreview(String url) {
+    bool isPdf = url.toLowerCase().contains('.pdf');
+    return Stack(
+      children: [
+        Container(
+          width: 70,
+          height: 70,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.grey.shade300),
+            image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+          ),
+          child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30) : null,
+        ),
+        Positioned(
+          right: -5,
+          top: -5,
+          child: GestureDetector(
+            onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
+            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
+          ),
+        ),
+      ],
     );
   }
 
   AppBar _buildAppBar(BuildContext context, NewEntryProvider provider) {
     return AppBar(
-      title: const Text("New Custody Record",
-          style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      title: Text(editRecordId == null ? "New Custody Record" : "Edit Custody Record",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
@@ -220,4 +288,4 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
 
   Widget _buildClickableField(String l, String v, IconData i, VoidCallback t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(l, style: const TextStyle(fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: t, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(children: [Text(v), const Spacer(), Icon(i, size: 18, color: Colors.grey[700])])))]);
   Widget _buildSwitchTile(String t, bool v, Function(bool) c) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w600)), Switch(value: v,activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white, onChanged: c)]);
- }
+}

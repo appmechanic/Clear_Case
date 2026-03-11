@@ -3,11 +3,12 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 enum EventType { custody, payment, dispute, breach }
 
 class CalendarEvent {
-  String id; // Changed to non-final so we can set it from Doc ID
+  String id;
   final String title;
   final DateTime date;
   final EventType type;
   final String? description;
+  final double? amount; // Added for Payment Records
 
   CalendarEvent({
     required this.id,
@@ -15,6 +16,7 @@ class CalendarEvent {
     required this.date,
     required this.type,
     this.description,
+    this.amount,
   });
 
   // --- FROM MAP (Reading from Firebase) ---
@@ -26,7 +28,8 @@ class CalendarEvent {
       date: (map['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
       // Safely converts String to Enum
       type: _parseEventType(map['type']),
-      description: map['description'],
+      description: map['description'] ?? map['notes'], // Fallback to 'notes' if 'description' is null
+      amount: (map['amount'] as num?)?.toDouble(), // Safely handle int/double from Firebase
     );
   }
 
@@ -35,8 +38,9 @@ class CalendarEvent {
     return {
       'title': title,
       'date': Timestamp.fromDate(date),
-      'type': type.name, // Saves enum as "custody", "payment", etc.
+      'type': type.name,
       'description': description,
+      'amount': amount, // Include amount in the map
     };
   }
 
@@ -44,7 +48,7 @@ class CalendarEvent {
   static EventType _parseEventType(dynamic type) {
     return EventType.values.firstWhere(
           (e) => e.name == type.toString(),
-      orElse: () => EventType.dispute, // Fallback type
+      orElse: () => EventType.dispute,
     );
   }
 }

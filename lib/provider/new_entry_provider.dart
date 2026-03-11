@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/custody_model.dart';
 import 'package:clearcase/models/payment_model.dart';
@@ -214,4 +213,171 @@ class NewEntryProvider extends ChangeNotifier {
       notifyListeners();
       if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
     }
-  }}
+  }
+
+  Future<CustodyRecordModel?> getCustodyRecordById(String recordId) async {
+    final user = _auth.currentUser;
+    if (user == null || _selectedCase == null) return null;
+
+    try {
+      final doc = await _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(_selectedCase!.id)
+          .collection('custodyRecords').doc(recordId)
+          .get();
+
+      if (doc.exists) {
+        // FIX: Pass both the data and the document ID
+        var record = CustodyRecordModel.fromMap(
+            doc.data() as Map<String, dynamic>,
+            doc.id
+        );
+        return record;
+      }
+    } catch (e) {
+      debugPrint("Error fetching single record: $e");
+    }
+    return null;
+  }
+  // --- NEW: UPDATE CUSTODY RECORD ---
+  Future<void> updateCustodyRecord(
+      BuildContext context,
+      CustodyRecordModel record,
+      List<File> newImageFiles,
+      ) async {
+    final user = _auth.currentUser;
+    if (user == null || _selectedCase == null || record.id == null) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // 1. Upload ONLY the new files
+      List<String> updatedUrls = List.from(record.attachmentUrls ?? []);
+
+      for (File file in newImageFiles) {
+        final String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+        final Reference storageRef = _storage
+            .ref()
+            .child('users/${user.uid}/cases/${_selectedCase!.id}/custody_attachments/$fileName');
+
+        final UploadTask uploadTask = storageRef.putFile(file);
+        final TaskSnapshot snapshot = await uploadTask;
+        String url = await snapshot.ref.getDownloadURL();
+        updatedUrls.add(url);
+      }
+
+      // 2. Prepare the data map
+      Map<String, dynamic> recordData = record.toMap();
+      recordData['attachmentUrls'] = updatedUrls;
+
+      WriteBatch batch = _firestore.batch();
+
+      // 3. Update the main record
+      DocumentReference custodyRef = _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(_selectedCase!.id)
+          .collection('custodyRecords').doc(record.id);
+
+      batch.update(custodyRef, recordData);
+
+      // 4. Update/Sync with Flagged Events
+      // Check if a flagged entry exists for this record
+      var flaggedQuery = await _firestore
+          .collection('users').doc(user.uid)
+          .collection('flaggedEvents')
+          .where('originId', isEqualTo: record.id)
+          .get();
+
+      if (record.flagEntry == true) {
+        if (flaggedQuery.docs.isEmpty) {
+          // Create new flagged entry if it didn't exist
+          DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc();
+          Map<String, dynamic> flaggedData = Map.from(recordData);
+          flaggedData['originCollection'] = 'custodyRecords';
+          flaggedData['originId'] = record.id;
+          batch.set(flaggedRef, flaggedData);
+        } else {
+          // Update existing flagged entry
+          batch.update(flaggedQuery.docs.first.reference, recordData);
+        }
+      } else {
+        // If flagEntry is false, remove from flaggedEvents if it exists
+        for (var doc in flaggedQuery.docs) {
+          batch.delete(doc.reference);
+        }
+      }
+
+      // 5. Commit batch
+      await batch.commit();
+
+      _isLoading = false;
+      notifyListeners();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Custody record updated!")));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint("Update Error: $e");
+    }
+  }
+
+  Future<PaymentRecordModel?> getPaymentRecordById(String recordId) async {
+    final user = _auth.currentUser;
+    if (user == null || _selectedCase == null) return null;
+    final doc = await _firestore.collection('users').doc(user.uid)
+        .collection('cases').doc(_selectedCase!.id)
+        .collection('paymentRecords').doc(recordId).get();
+    return doc.exists ? PaymentRecordModel.fromMap(doc.data()!, doc.id) : null;
+  }
+
+  Future<void> updatePaymentRecord(BuildContext context, PaymentRecordModel record, List<File> newFiles) async {
+    final user = _auth.currentUser;
+    if (user == null || _selectedCase == null || record.id == null) return;
+    _isLoading = true; notifyListeners();
+
+    try {
+      List<String> updatedUrls = List.from(record.attachmentUrls ?? []);
+      for (File file in newFiles) {
+        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
+        Reference ref = _storage.ref().child('users/${user.uid}/cases/${_selectedCase!.id}/payment_attachments/$fileName');
+        TaskSnapshot snapshot = await ref.putFile(file);
+        updatedUrls.add(await snapshot.ref.getDownloadURL());
+      }
+
+      Map<String, dynamic> data = record.toMap();
+      data['attachmentUrls'] = updatedUrls;
+
+      WriteBatch batch = _firestore.batch();
+      batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(_selectedCase!.id).collection('paymentRecords').doc(record.id), data);
+
+      // Sync Flag logic (Same as Custody update logic)
+      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
+      if (record.flagEntry == true) {
+        if (flaggedQuery.docs.isEmpty) {
+          batch.set(_firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc(), {...data, 'originCollection': 'paymentRecords', 'originId': record.id});
+        } else {
+          batch.update(flaggedQuery.docs.first.reference, data);
+        }
+      } else {
+        for (var doc in flaggedQuery.docs) batch.delete(doc.reference);
+      }
+
+      await batch.commit();
+      _isLoading = false;
+      notifyListeners();
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Payment record updated!")));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      _isLoading = false;
+      notifyListeners();
+      debugPrint("Update Error: $e");
+    }
+
+}}

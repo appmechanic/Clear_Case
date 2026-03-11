@@ -1,6 +1,8 @@
 import 'package:clearcase/models/calender_event_model.dart';
 import 'package:clearcase/provider/calender_provider.dart';
+import 'package:clearcase/views/home/new_custody_screen.dart';
 import 'package:clearcase/views/home/new_entry_screen.dart';
+import 'package:clearcase/views/home/new_payment_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
 import 'package:clearcase/views/home/scheduled_dates_screen.dart';
 import 'package:clearcase/views/widgets/custom_dialog.dart';
@@ -384,11 +386,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
   Widget _buildEventCard(CalendarEvent event) {
     Color typeColor = _getColorForType(event.type);
     Color lightColor = typeColor.withOpacity(0.1);
-    IconData icon = _getIconForType(event.type);
-    
-    // Customize text based on type (Mocking for visuals)
-    String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1); // e.g., "Custody"
-    if (event.type == EventType.payment) tagText = "Repeat Weekly"; // Match screenshot example
+
+    // Formatting the date from DB
+    String formattedDate = DateFormat('dd MMM yyyy').format(event.date);
+    String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -405,12 +406,33 @@ class _CalenderScreenState extends State<CalenderScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(event.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              Expanded(
+                child: Text(
+                  event.title,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
               Row(
                 children: [
-                  const Icon(Icons.edit, size: 20),
-                  const SizedBox(width: 10),
-                  const Icon(Icons.delete, color: Colors.red, size: 20),
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.pop(context); // Pop the bottom sheet/dialog just ONCE
+                      if (event.type == EventType.custody) {
+                        Navigator.pushNamed(context, NewCustodyScreen.routeName, arguments: event.id);
+                      } else if (event.type == EventType.payment) {
+                        Navigator.pushNamed(context, NewPaymentScreen.routeName, arguments: event.id);
+                      }
+                    },
+                    child: const Icon(Icons.edit, size: 20),
+                  ),
+                  const SizedBox(width: 15),
+                  GestureDetector(
+                    onTap: () {
+                      // We'll implement the delete confirmation dialog later
+                    },
+                    child: const Icon(Icons.delete, color: Colors.red, size: 20),
+                  ),
                 ],
               )
             ],
@@ -418,42 +440,43 @@ class _CalenderScreenState extends State<CalenderScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              if (event.type == EventType.custody) ...[
-                 Icon(Icons.person, size: 16, color: typeColor),
-                 const SizedBox(width: 5),
-              ],
-              Text("21 Jun 2025", style: TextStyle(color: Colors.grey[800], fontSize: 13)), // Mock start date
-              if (event.type == EventType.payment) ...[
-                 const Spacer(),
-                 Text("21 July 2025", style: TextStyle(color: Colors.grey[800], fontSize: 13)), // Mock end date
-              ] else ...[
-                 const SizedBox(width: 10),
-                 Container(
-                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                   decoration: BoxDecoration(color: lightColor, borderRadius: BorderRadius.circular(8)),
-                   child: Text(tagText, style: TextStyle(color: typeColor, fontSize: 11, fontWeight: FontWeight.bold)),
-                 )
-              ]
+              Icon(
+                  event.type == EventType.payment ? Icons.payment : Icons.person,
+                  size: 16,
+                  color: typeColor
+              ),
+              const SizedBox(width: 5),
+              Text(formattedDate, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: lightColor, borderRadius: BorderRadius.circular(8)),
+                child: Text(tagText, style: TextStyle(color: typeColor, fontSize: 11, fontWeight: FontWeight.bold)),
+              )
             ],
           ),
-          if (event.type == EventType.payment) ...[
-             const SizedBox(height: 10),
-             Container(
-               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-               decoration: BoxDecoration(color: Colors.blue[50], borderRadius: BorderRadius.circular(20)),
-               child: Text(tagText, style: const TextStyle(color: Colors.blue, fontSize: 12, fontWeight: FontWeight.bold)),
-             )
+
+          if (event.type == EventType.payment && event.amount != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              "Amount: ₹${event.amount!.toStringAsFixed(2)}", // Changed to ₹ based on your locale
+              style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14),
+            ),
           ],
-          if (event.description != null && event.type != EventType.payment) ...[
-             const SizedBox(height: 8),
-             Text(event.description!, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+
+          if (event.description != null && event.description!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              event.description!,
+              style: TextStyle(color: Colors.grey[600], fontSize: 13),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
           ]
         ],
       ),
     );
-  }
-
-  // --- 4. Action Button Builder ---
+  }  // --- 4. Action Button Builder ---
   Widget _buildActionButton(String label, IconData icon, Color iconColor, Color bgColor, bool isFilled, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,

@@ -66,32 +66,41 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   Future<void> _loadExistingData() async {
-    // Use listen: false to just get the instance
     final provider = Provider.of<NewEntryProvider>(context, listen: false);
 
-    // Now that we aren't creating a new provider, this will have the actual data
-    if (provider.selectedCase == null) return;
-
+    // Poll for the case if it's not ready yet
     setState(() => _isFetching = true);
+    int attempts = 0;
+    while (provider.selectedCase == null && attempts < 10) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      attempts++;
+    }
+
+    if (provider.selectedCase == null) {
+      debugPrint("Failed to load: No case selected.");
+      if (mounted) setState(() => _isFetching = false);
+      return;
+    }
+
     final record = await provider.getPaymentRecordById(editRecordId!);
 
-    if (mounted && record != null) {
+    if (mounted) {
       setState(() {
         _isFetching = false;
-        _amountController.text = record.amount?.toString() ?? "";
-        selectedDate = record.date ?? DateTime.now();
-        selectedPaymentType = record.paymentType ?? "";
-        paymentTypeToggle = record.category ?? "";
-        selectedPaymentMethod = record.paymentMethod ?? "";
-        _locationController.text = record.location ?? "";
-        _notesController.text = record.notes ?? "";
-        paymentReceived = record.isReceived ?? true;
-        flagEntry = record.flagEntry ?? false;
-        selectedChildIds = Set.from(record.childIds ?? []);
-        _existingAttachmentUrls = record.attachmentUrls ?? [];
+        if (record != null) {
+          _amountController.text = record.amount?.toString() ?? "";
+          selectedDate = record.date ?? DateTime.now();
+          selectedPaymentType = record.paymentType ?? "";
+          paymentTypeToggle = record.category ?? "";
+          selectedPaymentMethod = record.paymentMethod ?? "";
+          _locationController.text = record.location ?? "";
+          _notesController.text = record.notes ?? "";
+          paymentReceived = record.isReceived ?? true;
+          flagEntry = record.flagEntry ?? false;
+          selectedChildIds = Set.from(record.childIds ?? []);
+          _existingAttachmentUrls = record.attachmentUrls ?? [];
+        }
       });
-    } else {
-      setState(() => _isFetching = false);
     }
   }
   Future<void> _pickDate() async {
@@ -381,7 +390,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-        Switch(value: value, activeColor: const Color(0xFF4A148C), onChanged: onChanged),
+        Switch(value: value, activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white, onChanged: onChanged),
       ],
     );
   }

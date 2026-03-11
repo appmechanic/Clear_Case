@@ -251,6 +251,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                   case EventType.payment: color = Colors.green; break;
                   case EventType.dispute: color = Colors.orange; break;
                   case EventType.breach: color = Colors.red; break;
+                  case EventType.reminder: color = Colors.purpleAccent; break;
                 }
                 return Container(
                   margin: const EdgeInsets.symmetric(horizontal: 1),
@@ -416,13 +417,18 @@ class _CalenderScreenState extends State<CalenderScreen> {
               Row(
                 children: [
                   GestureDetector(
-                    onTap: () {
-                      Navigator.pop(context); // Pop the bottom sheet/dialog just ONCE
+                    onTap: () async {
+                      // Navigate first
                       if (event.type == EventType.custody) {
-                        Navigator.pushNamed(context, NewCustodyScreen.routeName, arguments: event.id);
+                        await Navigator.pushNamed(context, NewCustodyScreen.routeName, arguments: event.id);
                       } else if (event.type == EventType.payment) {
-                        Navigator.pushNamed(context, NewPaymentScreen.routeName, arguments: event.id);
+                        await Navigator.pushNamed(context, NewPaymentScreen.routeName, arguments: event.id);
+                      } else if (event.type == EventType.reminder) {
+                        await Navigator.pushNamed(context, NewReminderScreen.routeName, arguments: event.id);
                       }
+
+                      // Now pop the bottom sheet safely
+                      if (context.mounted) Navigator.pop(context);
                     },
                     child: const Icon(Icons.edit, size: 20),
                   ),
@@ -503,7 +509,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
     TopPopupDialog.show(
       context: context,
       child: Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min, // Keeps it tight to content
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -515,23 +521,37 @@ class _CalenderScreenState extends State<CalenderScreen> {
           const SizedBox(height: 10),
           Text(DateFormat('EEEE, MMMM d, y').format(date), style: const TextStyle(color: Colors.grey)),
           const SizedBox(height: 15),
+
+          // --- CHANGE HERE: Wrap in Expanded and ListView ---
+          // We use ConstrainedBox to limit the height so it doesn't take up the whole screen
           if (events.isEmpty)
-            const Text("No events found.")
+            const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Text("No events found."),
+            )
           else
-            Column(
-              children: events.map((e) => _buildEventCard(e)).toList(),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.5, // Limit to 50% of screen height
+              ),
+              child: ListView.builder(
+                shrinkWrap: true, // Crucial for using ListView inside Column/Dialog
+                physics: const BouncingScrollPhysics(),
+                itemCount: events.length,
+                itemBuilder: (context, index) => _buildEventCard(events[index]),
+              ),
             )
         ],
       ),
     );
   }
-
   Color _getColorForType(EventType type) {
     switch (type) {
       case EventType.custody: return Colors.purple;
       case EventType.payment: return Colors.blue; // Matches "Repeat Weekly" tag blue
       case EventType.dispute: return Colors.orange;
       case EventType.breach: return Colors.red;
+      case EventType.reminder: return Colors.purpleAccent;
     }
   }
 
@@ -541,6 +561,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
       case EventType.payment: return Icons.payment;
       case EventType.dispute: return Icons.warning;
       case EventType.breach: return Icons.cancel;
+      case EventType.reminder: return Icons.notifications_none;
     }
   }
 }

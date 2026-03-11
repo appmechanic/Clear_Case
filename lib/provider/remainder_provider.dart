@@ -96,4 +96,40 @@ class ReminderProvider extends ChangeNotifier {
       }
     }
   }
+
+  // --- Fetch single record by ID ---
+  Future<ReminderModel?> getReminderById(String caseId, String reminderId) async {
+    try {
+      final doc = await _firestore
+          .collection('users').doc(_auth.currentUser!.uid)
+          .collection('cases').doc(caseId)
+          .collection('reminders').doc(reminderId).get();
+
+      if (doc.exists) {
+        return ReminderModel.fromMap(doc.data()!, doc.id);
+      }
+    } catch (e) {
+      debugPrint("Error fetching reminder: $e");
+    }
+    return null;
+  }
+
+// --- Update record ---
+  Future<void> updateReminder(BuildContext context, ReminderModel reminder) async {
+    _isLoading = true; notifyListeners();
+    try {
+      await _firestore.collection('users').doc(_auth.currentUser!.uid)
+          .collection('cases').doc(reminder.caseId)
+          .collection('reminders').doc(reminder.id).update(reminder.toMap());
+
+      _isLoading = false; notifyListeners();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Reminder updated!")));
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      _isLoading = false; notifyListeners();
+      debugPrint("Error updating reminder: $e");
+    }
+  }
 }

@@ -54,18 +54,24 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   }
 
   Future<void> _loadExistingData() async {
-    // Show the loader when starting the fetch
     setState(() => _isFetching = true);
 
     final provider = Provider.of<NewEntryProvider>(context, listen: false);
-    final record = await provider.getCustodyRecordById(editRecordId!);
 
-    // Hide the loader once we have the result (whether null or not)
-    if (mounted) {
-      setState(() {
-        _isFetching = false;
+    // 1. ADD THIS: Wait for the provider to have a selected case if it's not ready
+    // This loop polls for up to 2 seconds to ensure the case is populated
+    int retryCount = 0;
+    while (provider.selectedCase == null && retryCount < 10) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      retryCount++;
+    }
 
-        if (record != null) {
+    // 2. Now attempt to fetch
+    if (provider.selectedCase != null && editRecordId != null) {
+      final record = await provider.getCustodyRecordById(editRecordId!);
+
+      if (mounted && record != null) {
+        setState(() {
           selectedDate = record.startDate ?? DateTime.now();
           startTime = TimeOfDay.fromDateTime(record.startTime ?? DateTime.now());
           endTime = TimeOfDay.fromDateTime(record.endTime ?? DateTime.now());
@@ -76,11 +82,19 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
           _notesController.text = record.notes ?? "";
           selectedChildIds = Set.from(record.childIds ?? []);
           _existingAttachmentUrls = record.attachmentUrls ?? [];
-        }
-      });
+        });
+      }
+    }
+
+    // 3. Always hide loader
+    if (mounted) {
+      setState(() => _isFetching = false);
     }
   }
+
   Future<void> _pickDate() async {
+
+
     final DateTime? picked = await showDatePicker(
         context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
     if (picked != null) setState(() => selectedDate = picked);

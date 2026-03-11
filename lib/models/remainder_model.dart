@@ -1,21 +1,21 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ReminderModel {
-  String id;
-  String caseId; // Links to specific case
+  String? id; // Make nullable
+  String caseId;
   DateTime date;
   String title;
   String type;
   String repeatOption;
-  String? days; // For custom interval
+  String? days;
   DateTime? ruleEndDate;
   String description;
   String remindMeOption;
   bool enableNotifications;
-  DateTime createdAt;
+  DateTime? createdAt; // Make nullable
 
   ReminderModel({
-    this.id = '',
+    this.id,
     required this.caseId,
     required this.date,
     required this.title,
@@ -26,8 +26,25 @@ class ReminderModel {
     required this.description,
     required this.remindMeOption,
     required this.enableNotifications,
-    required this.createdAt,
+    this.createdAt,
   });
+
+  factory ReminderModel.fromMap(Map<String, dynamic> map, String docId) {
+    return ReminderModel(
+      id: docId,
+      caseId: map['caseId'] ?? '',
+      date: (map['date'] as Timestamp).toDate(),
+      title: map['title'] ?? '',
+      type: map['type'] ?? '',
+      repeatOption: map['repeatOption'] ?? 'None',
+      days: map['days'],
+      ruleEndDate: (map['ruleEndDate'] as Timestamp?)?.toDate(),
+      description: map['description'] ?? '',
+      remindMeOption: map['remindMeOption'] ?? '',
+      enableNotifications: map['enableNotifications'] ?? true,
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
+    );
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -41,7 +58,7 @@ class ReminderModel {
       'description': description,
       'remindMeOption': remindMeOption,
       'enableNotifications': enableNotifications,
-      'createdAt': Timestamp.fromDate(createdAt),
+      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
     };
   }
 }

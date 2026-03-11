@@ -89,20 +89,19 @@ class CalendarProvider extends ChangeNotifier {
       _events.clear();
       final caseDocRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId);
 
+      // 1. Fetch records in parallel
       final snapshots = await Future.wait([
         caseDocRef.collection('paymentRecords').get(),
         caseDocRef.collection('custodyRecords').get(),
         caseDocRef.collection('disputeRecords').get(),
       ]);
 
-      // 1. Process Payments
+      // 2. Fetch reminders separately since it returns void
+      await fetchRemindersForCase(caseId);
+
+      // 3. Process Payments (snapshots[0])
       for (var doc in snapshots[0].docs) {
         final data = doc.data();
-
-        // ONLY show if it is explicitly marked as 'manual'
-        final String entryType = data['entryType'] ?? 'manual';
-        if (entryType == 'scheduled') continue;
-
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
         if (recordDate != null) {
           _addEventToMap(CalendarEvent(
@@ -110,21 +109,16 @@ class CalendarProvider extends ChangeNotifier {
             title: data['paymentType'] ?? 'Payment',
             date: recordDate,
             type: EventType.payment,
-            description: data['notes'], // Map notes to description
-            amount: (data['amount'] as num?)?.toDouble(), // Map amount
+            description: data['notes'],
+            amount: (data['amount'] as num?)?.toDouble(),
           ));
         }
       }
 
-      // 2. Process Custody (ONLY MANUAL ENTRIES)
+      // 4. Process Custody (snapshots[1])
       for (var doc in snapshots[1].docs) {
         final data = doc.data();
-
-        // FILTER: Only process if these specific keys are missing
-        // This confirms it's a "Manual" entry rather than a "Scheduled" one
-        if (data.containsKey('frequency') || data.containsKey('notificationPref')) {
-          continue;
-        }
+        if (data.containsKey('frequency') || data.containsKey('notificationPref')) continue;
 
         final Timestamp? timestamp = data['startDate'] as Timestamp?;
         if (timestamp != null) {
@@ -139,7 +133,7 @@ class CalendarProvider extends ChangeNotifier {
         }
       }
 
-      // 3. Process Disputes
+      // 5. Process Disputes (snapshots[2])
       for (var doc in snapshots[2].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
@@ -159,7 +153,6 @@ class CalendarProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
 
  // Helper to ensure events are grouped by day (removing time part)
   void _addEventToMap(CalendarEvent event) {
@@ -197,5 +190,61 @@ class CalendarProvider extends ChangeNotifier {
     if (caseItem.children.isEmpty) return caseItem.caseNumber;
     String childrenString = caseItem.children.map((c) => c.name.trim()).join(' & ');
     return "${caseItem.caseNumber} ($childrenString)";
+  }
+
+  // Inside CalendarProvider
+
+  Future<void> fetchRemindersForCase(String caseId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('cases')
+          .doc(caseId)
+          .collection('reminders') // Assuming this is your collection name
+          .get();
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        DateTime startDate = (data['date'] as Timestamp).toDate();
+        DateTime? endDate = (data['ruleEndDate'] as Timestamp?)?.toDate();
+        String repeat = data['repeatOption'] ?? "None";
+
+        // Generate instances based on repeat logic
+        List<DateTime> dates = _generateRecurringDates(startDate, endDate, repeat);
+
+        for (DateTime date in dates) {
+          _addEventToMap(CalendarEvent(
+            id: doc.id,
+            title: data['title'] ?? 'Reminder',
+            date: date,
+            type: EventType.reminder, // Make sure to add 'reminder' to your EventType enum
+            description: data['description'],
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching reminders: $e");
+    }
+  }
+
+// Logic to expand recurring events
+  List<DateTime> _generateRecurringDates(DateTime start, DateTime? end, String repeat) {
+    List<DateTime> dates = [start];
+    DateTime limit = end ?? start.add(const Duration(days: 365)); // Default 1 year if no end date
+
+    DateTime current = start;
+    while (current.isBefore(limit)) {
+      if (repeat == "Daily") current = current.add(const Duration(days: 1));
+      else if (repeat == "Weekly") current = current.add(const Duration(days: 7));
+      else if (repeat == "Monthly") current = DateTime(current.year, current.month + 1, current.day);
+      else break; // "None" or Custom not fully implemented here
+
+      if (!current.isAfter(limit)) dates.add(current);
+    }
+    return dates;
   }
 }

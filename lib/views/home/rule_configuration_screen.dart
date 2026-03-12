@@ -53,8 +53,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
-        title: Text("Rule Configuration",
-            style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text("Rule Configuration", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: const BackButton(color: Colors.black),
@@ -64,40 +63,24 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildInteractiveField(
-              "Rule Start Date *",
-              provider.startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.startDate!),
-              Icons.calendar_today,
-                  () => _pickDate(context, true),
-            ),
+            _buildInteractiveField("Rule Start Date *", provider.startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.startDate!), Icons.calendar_today, () => _pickDate(context, true)),
             const SizedBox(height: 15),
-            _buildInteractiveField(
-              "Start Time *",
-              provider.startTime == null ? "--:--" : provider.startTime!.format(context),
-              Icons.access_time,
-                  () => _pickTime(context, true),
-            ),
+            _buildInteractiveField("Start Time *", provider.startTime == null ? "--:--" : provider.startTime!.format(context), Icons.access_time, () => _pickTime(context, true)),
             const SizedBox(height: 15),
-            _buildInteractiveField(
-              "Rule End Date",
-              provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!),
-              Icons.calendar_today,
-                  () => _pickDate(context, false),
-            ),
-            const SizedBox(height: 15),
-            _buildInteractiveField(
-              "End Time",
-              provider.endTime == null ? "--:--" : provider.endTime!.format(context),
-              Icons.access_time,
-                  () => _pickTime(context, false),
-            ),
+            _buildRepeatToggle(provider),
+
+            if (provider.isRepeat) ...[
+              _buildFrequencySelector(provider),
+              const SizedBox(height: 15),
+
+              _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
+              const SizedBox(height: 15),
+              _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
+            ],
             const SizedBox(height: 20),
             const Text("Notification Preference", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 8),
             _buildNotificationDropdown(provider),
-            const SizedBox(height: 20),
-            _buildRepeatToggle(provider),
-            if (provider.isRepeat) _buildFrequencySelector(provider),
             const SizedBox(height: 20),
             CustomTextField(
               labelText: "Notes",
@@ -110,97 +93,57 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             ),
 
             const SizedBox(height: 25),
-
-// ... inside your Column in build()
-
-// ... inside your Column in build()
-
-// ... inside your Column in build()
-
-            const Text("Selected Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            const Text("Select Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
             const SizedBox(height: 10),
-
             _buildComplianceNote(),
             const SizedBox(height: 10),
 
-// --- UNIFIED ACTIONABLE LIST ---
-            if (provider.appliedChildrenList.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
-                  child: Text("No children applied. Click 'Add New Child' to start.",
-                      style: TextStyle(color: Colors.grey, fontSize: 13)),
-                ),
-              )
-            else
-              ...provider.appliedChildrenList.asMap().entries.map((entry) {
-                return _buildActionableChildCard(
-                    context,
-                    entry.value,
-                    entry.key,
-                    widget.caseId,
-                    widget.category
-                );
-              }).toList(),
+            // Selection List
+            // REPLACE THIS SECTION:
+            _buildChildItem(
+              "Select All",
+              null,
+              // Use allChildrenOptions instead of widget.availableChildren
+              provider.selectedChildIds.length == provider.allChildrenOptions.length && provider.allChildrenOptions.isNotEmpty,
+                  () {
+                if (provider.selectedChildIds.length == provider.allChildrenOptions.length) {
+                  provider.clearSelectedChildren();
+                } else {
+                  // Ensure this method is in your provider
+                  provider.selectAllChildrenFromMap(provider.allChildrenOptions);
+                }
+              },
+            ),
+            // 2. Individual Child List
+            ...provider.allChildrenOptions.map((childMap) {
+              final String id = childMap['id'].toString();
+              final String name = childMap['name'];
+
+              // Handle both Timestamp and DateTime for DOB
+              DateTime dob = (childMap['dob'] is Timestamp)
+                  ? (childMap['dob'] as Timestamp).toDate()
+                  : DateTime.parse(childMap['dob'].toString());
+
+              return _buildChildItem(
+                name,
+                DateFormat('dd MMM yyyy').format(dob),
+                provider.selectedChildIds.contains(id),
+                    () => provider.toggleChildSelection(id),
+              );
+            }).toList(),
 
             const SizedBox(height: 15),
-
-// ADD NEW CHILD BUTTON: Common for both modes
             _buildAddNewChildButton(context, provider),
-
             const SizedBox(height: 20),
             _buildEnableToggle(provider),
-           const SizedBox(height: 30),
+            const SizedBox(height: 30),
             _buildSaveButton(context, provider),
+            const SizedBox(height: 30),
           ],
         ),
       ),
     );
   }
-
-  // Card UI matching your uploaded image (Image_2fda5d.png)
-  Widget _buildActionableChildCard(BuildContext context, Map<String, dynamic> childData, int index, String? caseId,  String category) {
-    // Safe parsing of Timestamp
-    DateTime dobDate = (childData['dob'] is Timestamp)
-        ? (childData['dob'] as Timestamp).toDate()
-        : DateTime.parse(childData['dob'].toString());
-
-    String formattedDob = DateFormat('dd MMM yyyy').format(dobDate);
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE1F5FE)),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            backgroundColor: Color(0xFFF3E5F5),
-            child: Icon(Icons.person, color: Color(0xFF4A148C)),
-          ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(childData['name'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                Text(formattedDob, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-              ],
-            ),
-          ),
-          IconButton(
-            onPressed: () => context.read<RuleConfigurationProvider>().removeChild(index, widget.caseId, widget.category),
-            icon: const Icon(Icons.delete, size: 20, color: Colors.redAccent),
-          ),
-        ],
-      ),
-    );
-  }
-
-
 
   Widget _buildComplianceNote() {
     return Container(
@@ -338,7 +281,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text("Repeat Schedule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        Switch(value: provider.isRepeat, activeThumbColor: const Color(0xFF4A148C), onChanged: (v) => provider.toggleRepeat(v)),
+        Switch(value: provider.isRepeat,activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white, onChanged: (v) => provider.toggleRepeat(v)),
       ],
     );
   }
@@ -388,7 +331,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
         ),
         onPressed: () async {
           // 1. Validate Children
-          if (provider.appliedChildrenList.isEmpty) {
+          if (provider.selectedChildIds.isEmpty) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
             return;
           }
@@ -482,12 +425,37 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
   Future<void> _pickTime(BuildContext context, bool isStart) async {
     final picked = await showTimePicker(
       context: context,
-      initialTime: const TimeOfDay(hour: 9, minute: 0),
+      initialTime: const TimeOfDay(hour: 9, minute: 0)
     );
     if (picked != null) {
       final provider = context.read<RuleConfigurationProvider>();
       if (isStart) provider.updateStartTime(picked);
       else provider.updateEndTime(picked);
     }
+  }
+
+  Widget _buildChildItem(String title, String? subtitle, bool isSelected, VoidCallback onTap) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE1F5FE)),
+      ),
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFFF3E5F5),
+          child: Icon(Icons.person, color: Color(0xFF4A148C), size: 20),
+        ),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)) : null,
+        trailing: Icon(
+          isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+          color: const Color(0xFF4A148C),
+        ),
+      ),
+    );
   }
 }

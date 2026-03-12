@@ -350,7 +350,11 @@ class _CalenderScreenState extends State<CalenderScreen> {
               const SizedBox(height: 10),
               _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C), Colors.white, true, () {
                  Navigator.pop(context);
-                 Navigator.pushNamed(context, NewEntryScreen.routeName);
+                 Navigator.pushNamed(
+                     context,
+                     NewEntryScreen.routeName,
+                     arguments: date // <--- Pass the date here
+                 );
               }),
               const SizedBox(height: 10),
               _buildActionButton("Add Reminder", Icons.access_time, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {

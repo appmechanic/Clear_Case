@@ -468,7 +468,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
             ),
             Switch(
               value: isRepeat,
-              activeColor: const Color(0xFF7B1FA2),
+              activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white,
               onChanged: (v) => setState(() => isRepeat = v),
             ),
           ],
@@ -476,6 +476,39 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
         const SizedBox(height: 15),
         if(isRepeat)...[
+          if (isRepeat)
+            Row(
+              children: ["Weekly", "Fortnightly", "Monthly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
+                bool isSelected = repeatFrequency == freq;
+                return Expanded(
+                  child: GestureDetector(
+                    onTap: () => setState(() => repeatFrequency = freq),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 4),
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      decoration: BoxDecoration(
+                        color: isSelected ? const Color(0xFFE3F2FD) : Colors.white, // Light blue if selected
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                            color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
+                            width: 1
+                        ),
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                          freq,
+                          style: TextStyle(
+                              color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
+                              fontWeight: FontWeight.w500,
+                              fontSize: 12
+                          )
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          const SizedBox(height: 15),
           _buildFieldLabel("Rule End Date"),
         _buildInputContainer(
           text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
@@ -503,39 +536,8 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         // 3. End Date
         
 
-        // 7. Frequency Chips (Only if Repeat is ON)
-        if (isRepeat) 
-          Row(
-            children: ["Weekly", "Fortnightly", "Monthly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
-              bool isSelected = repeatFrequency == freq;
-              return Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => repeatFrequency = freq),
-                  child: Container(
-                    margin: const EdgeInsets.symmetric(horizontal: 4),
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isSelected ? const Color(0xFFE3F2FD) : Colors.white, // Light blue if selected
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
-                        width: 1
-                      ),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      freq, 
-                      style: TextStyle(
-                        color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
-                        fontWeight: FontWeight.w500,
-                        fontSize: 12
-                      )
-                    ),
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
+
+
           const SizedBox(height: 15),
 
         // 5. Notification Preference

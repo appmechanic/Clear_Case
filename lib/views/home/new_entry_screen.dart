@@ -35,7 +35,12 @@ class NewEntryScreen extends StatelessWidget {
               Icons.child_care, 
               Colors.purple,
               () {
-                Navigator.pushNamed(context, NewCustodyScreen.routeName);
+                final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
+                Navigator.pushNamed(
+                  context,
+                  NewCustodyScreen.routeName,
+                  arguments: date,
+                );
               }
             ),
             _buildEntryCard(
@@ -45,8 +50,13 @@ class NewEntryScreen extends StatelessWidget {
               Icons.payment, 
               Colors.green,
               () {
-                Navigator.pushNamed(context, NewPaymentScreen.routeName);
-              }
+                final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
+                Navigator.pushNamed(
+                  context,
+                  NewPaymentScreen.routeName,
+                  arguments: date, //
+                );
+               }
             ),
             _buildEntryCard(
               context, 

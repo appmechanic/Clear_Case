@@ -1,18 +1,18 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ReminderModel {
-  String? id; // Make nullable
+  String? id;
   String caseId;
   DateTime date;
   String title;
   String type;
-  String repeatOption;
+  bool isRepeat; // Replaced repeatOption String
   String? days;
   DateTime? ruleEndDate;
   String description;
   String remindMeOption;
   bool enableNotifications;
-  DateTime? createdAt; // Make nullable
+  DateTime? createdAt;
 
   ReminderModel({
     this.id,
@@ -20,7 +20,7 @@ class ReminderModel {
     required this.date,
     required this.title,
     required this.type,
-    required this.repeatOption,
+    required this.isRepeat,
     this.days,
     this.ruleEndDate,
     required this.description,
@@ -36,7 +36,7 @@ class ReminderModel {
       date: (map['date'] as Timestamp).toDate(),
       title: map['title'] ?? '',
       type: map['type'] ?? '',
-      repeatOption: map['repeatOption'] ?? 'None',
+      isRepeat: map['isRepeat'] ?? false, // Defaulting to false
       days: map['days'],
       ruleEndDate: (map['ruleEndDate'] as Timestamp?)?.toDate(),
       description: map['description'] ?? '',
@@ -47,18 +47,26 @@ class ReminderModel {
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    final Map<String, dynamic> data = {
       'caseId': caseId,
       'date': Timestamp.fromDate(date),
       'title': title,
       'type': type,
-      'repeatOption': repeatOption,
+      'isRepeat': isRepeat, // Storing as boolean
       'days': days,
       'ruleEndDate': ruleEndDate != null ? Timestamp.fromDate(ruleEndDate!) : null,
       'description': description,
       'remindMeOption': remindMeOption,
       'enableNotifications': enableNotifications,
-      'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : FieldValue.serverTimestamp(),
     };
+
+    // Only add createdAt if it's a new record
+    if (createdAt != null) {
+      data['createdAt'] = Timestamp.fromDate(createdAt!);
+    } else if (id == null) {
+      data['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    return data;
   }
 }

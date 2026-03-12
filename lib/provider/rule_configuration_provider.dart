@@ -24,19 +24,24 @@ class RuleConfigurationProvider extends ChangeNotifier {
   final TextEditingController notesController = TextEditingController();
   final FocusNode notesNode = FocusNode();
 
+  // --- NEW: Tracking selection state ---
+  Set<String> selectedChildIds = {};
+
   // Unified list for both Add and Edit modes
   List<Map<String, dynamic>> _appliedChildrenList = [];
   List<Map<String, dynamic>> get appliedChildrenList => _appliedChildrenList;
 
-
   void init(String? caseId, String category, List<ChildModel> available) {
     reset();
+    _masterAvailableChildren = available; // Store the original list
+
     if (caseId != null) {
       fetchExistingData(caseId, category);
     } else {
       _appliedChildrenList = available.map((child) => child.toMap()).toList();
-      notifyListeners();
+      selectedChildIds = available.map((child) => child.id).toSet();
     }
+    notifyListeners();
   }
 
   Future<void> fetchExistingData(String caseId, String category) async {
@@ -44,16 +49,17 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      // Pointing to the new 'scheduledRules' collection
       final doc = await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
           .collection('scheduledRules')
-          .doc(category.toLowerCase()) // Doc ID is the category name
+          .doc(category.toLowerCase())
           .get();
 
       if (doc.exists) {
         final data = doc.data()!;
+
+        // Parse basic form data
         startDate = DateTime.tryParse(data['startDate'] ?? "");
         endDate = DateTime.tryParse(data['endDate'] ?? "");
         if (data['startTime'] != null) startTime = _parseTime(data['startTime']);
@@ -65,8 +71,20 @@ class RuleConfigurationProvider extends ChangeNotifier {
         notesController.text = data['notes'] ?? "";
         isEnabled = data['isEnabled'] ?? true;
 
+        // --- CRITICAL: Sync Children Data ---
         final List<dynamic> applied = data['appliedChildren'] ?? [];
         _appliedChildrenList = List<Map<String, dynamic>>.from(applied);
+
+        // Identify which of the applied children are NOT in the master list
+        // This populates _addedChildrenOnly so the UI knows to render them
+        final Set<String> originalIds = _masterAvailableChildren.map((c) => c.id).toSet();
+
+        _addedChildrenOnly = _appliedChildrenList
+            .where((child) => !originalIds.contains(child['id'].toString()))
+            .toList();
+
+        // Update the selection set so existing selections show as checked
+        selectedChildIds = _appliedChildrenList.map((c) => c['id'].toString()).toSet();
       }
     } catch (e) {
       debugPrint("Provider Error: $e");
@@ -75,10 +93,28 @@ class RuleConfigurationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+  // --- NEW: Radio/Toggle Selection Logic ---
 
-  // --- Unified Child Management ---
+  void toggleChildSelection(String childId) {
+    if (selectedChildIds.contains(childId)) {
+      selectedChildIds.remove(childId);
+    } else {
+      selectedChildIds.add(childId);
+    }
+    notifyListeners();
+  }
 
+  void selectAllChildren(List<ChildModel> allAvailable) {
+    selectedChildIds = allAvailable.map((c) => c.id).toSet();
+    notifyListeners();
+  }
 
+  void clearSelectedChildren() {
+    selectedChildIds.clear();
+    notifyListeners();
+  }
+
+  // --- Keep Existing Child Management ---
 
   void addChild(String name, DateTime dob, String? caseId, String category) async {
     final newChild = {
@@ -86,11 +122,23 @@ class RuleConfigurationProvider extends ChangeNotifier {
       'name': name,
       'dob': Timestamp.fromDate(dob),
     };
+    // 1. Add to the list the UI is watching
+    _addedChildrenOnly.add(newChild);
+
+    // 2. ALSO add to the list that gets saved to Firestore
     _appliedChildrenList.add(newChild);
+
+    // 3. Automatically select it
+    selectedChildIds.add(newChild['id'] as String);
+
     notifyListeners();
-    if (caseId != null) await _syncChildrenToDb(caseId, category);
+
+    // Note: Only sync to DB if the case already exists
+    if (caseId != null) _syncChildrenToDb(caseId, category);
   }
 
+  // NOTE: We keep this for internal logic,
+  // but your UI won't show the delete button anymore.
   void removeChild(int index, String? caseId, String category) async {
     if (index >= 0 && index < _appliedChildrenList.length) {
       _appliedChildrenList.removeAt(index);
@@ -115,27 +163,58 @@ class RuleConfigurationProvider extends ChangeNotifier {
     }
   }
 
-  // --- Setters & Form Logic ---
-
+  // --- Existing Setters ---
   void updateStartDate(DateTime date) { startDate = date; notifyListeners(); }
   void updateEndDate(DateTime date) { endDate = date; notifyListeners(); }
   void updateStartTime(TimeOfDay time) { startTime = time; notifyListeners(); }
   void updateEndTime(TimeOfDay time) { endTime = time; notifyListeners(); }
-  void toggleRepeat(bool val) { isRepeat = val; notifyListeners(); }
+  void toggleRepeat(bool val) {
+    isRepeat = val;
+    // Optional: If turning off repeat, you might want to clear End Date/Time?
+    if (!val) {
+      endDate = null;
+      endTime = null;
+    }
+    notifyListeners();
+  }
   void setFrequency(String freq) { repeatFrequency = freq; notifyListeners(); }
   void setNotification(String val) { notificationPref = val; notifyListeners(); }
   void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
 
 
-  Future<bool> updateRuleInFirestore({
-    required String? caseId,
-    required String category
-  }) async {
+  // Add this getter
+  List<Map<String, dynamic>> get allChildrenOptions {
+    // 1. Start with children passed from the case (converted to Map)
+    // You need to pass the initial 'available' list to the provider during init
+    return _masterAvailableChildren.map((c) => c.toMap()).toList()
+      ..addAll(_addedChildrenOnly);
+  }
+
+// Add these tracking variables to your Provider class
+  List<ChildModel> _masterAvailableChildren = [];
+  List<Map<String, dynamic>> _addedChildrenOnly = [];
+
+  void selectAllChildrenFromMap(List<Map<String, dynamic>> allChildrenMap) {
+    selectedChildIds = allChildrenMap.map((c) => c['id'].toString()).toSet();
+    notifyListeners();
+  }
+
+
+  Future<bool> updateRuleInFirestore({required String? caseId, required String category}) async {
     if (caseId == null) return false;
     _isLoading = true;
     notifyListeners();
 
     try {
+      // 1. RECONCILE: Ensure allChildrenOptions (the UI list) are included in the applied list
+      // This merges the original master list and the newly added children
+      final currentMasterList = allChildrenOptions;
+
+      // 2. FILTER: Now filter the combined list based on what the user actually selected
+      _appliedChildrenList = currentMasterList
+          .where((c) => selectedChildIds.contains(c['id'].toString()))
+          .toList();
+
       final Map<String, dynamic> data = {
         "startDate": startDate?.toIso8601String(),
         "startTime": startTime != null ? "${startTime!.hour}:${startTime!.minute}" : null,
@@ -146,11 +225,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
         "notificationPref": notificationPref,
         "notes": notesController.text.trim(),
         "isEnabled": isEnabled,
-        "appliedChildren": _appliedChildrenList,
+        "appliedChildren": _appliedChildrenList, // Now contains selected children
         "updatedAt": FieldValue.serverTimestamp(),
       };
 
-      // Set with merge: true handles both creating new and updating existing
       await _firestore
           .collection('users').doc(_auth.currentUser!.uid)
           .collection('cases').doc(caseId)
@@ -167,38 +245,9 @@ class RuleConfigurationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
-
   TimeOfDay _parseTime(String timeStr) {
     final parts = timeStr.split(':');
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-  }
-
-
-  /// Returns null if valid, or an error message string if invalid
-  String? validateDates() {
-    if (startDate == null || startTime == null) return "Please set a Start Date and Time.";
-
-    // If end is not set, it's valid (one-time occurrence or indefinite)
-    if (endDate == null || endTime == null) return null;
-
-    final startDateTime = DateTime(
-      startDate!.year, startDate!.month, startDate!.day,
-      startTime!.hour, startTime!.minute,
-    );
-
-    final endDateTime = DateTime(
-      endDate!.year, endDate!.month, endDate!.day,
-      endTime!.hour, endTime!.minute,
-    );
-
-    if (endDateTime.isAtSameMomentAs(startDateTime)) {
-      return "End time cannot be the same as Start time.";
-    }
-    if (endDateTime.isBefore(startDateTime)) {
-      return "End time cannot be before Start time.";
-    }
-
-    return null; // All good
   }
 
   @override
@@ -218,7 +267,11 @@ class RuleConfigurationProvider extends ChangeNotifier {
     repeatFrequency = "Weekly";
     isEnabled = true;
     notesController.clear();
+
     _appliedChildrenList = [];
+    _addedChildrenOnly = []; // ADD THIS: Clear the temporary cache
+    _masterAvailableChildren = []; // ADD THIS: Clear the original reference
+    selectedChildIds = {};
     _isLoading = false;
   }
 }

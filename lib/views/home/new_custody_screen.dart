@@ -49,8 +49,14 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
     if (args != null && args is String && !isInitialized) {
       editRecordId = args;
       _loadExistingData();
-      isInitialized = true;
+
+    }// Check if we are adding and have a date passed from calendar
+    else if (args is DateTime) {
+      setState(() {
+        selectedDate = args; // <--- Set the date here
+      });
     }
+    isInitialized = true;
   }
 
   Future<void> _loadExistingData() async {

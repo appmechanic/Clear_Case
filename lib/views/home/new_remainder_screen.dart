@@ -27,8 +27,10 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   DateTime selectedDate = DateTime.now();
   DateTime? ruleEndDate;
   String selectedType = "Birthday";
-  String repeatOption = "None";
+
+  bool isRepeat = false; // Default to Off
   String remindMeOption = "On day of event";
+
   bool enableNotifications = true;
 
   bool _isInit = true;
@@ -74,7 +76,10 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
             _descController.text = reminder.description;
             selectedDate = reminder.date;
             selectedType = reminder.type;
-            repeatOption = reminder.repeatOption;
+            // Update to new boolean logic
+            isRepeat = reminder.isRepeat;
+            _daysController.text = reminder.days ?? "";
+
             _daysController.text = reminder.days ?? "";
             ruleEndDate = reminder.ruleEndDate;
             remindMeOption = reminder.remindMeOption;
@@ -92,7 +97,6 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   }
 
   Future<void> _pickDate(BuildContext context, bool isStart) async {
-    final now = DateTime.now();
 
     // 1. Logic:
     // 'isStart == true' -> First date is year 2000 (Flexible)
@@ -144,8 +148,8 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
       date: selectedDate,
       title: _titleController.text.trim(),
       type: selectedType,
-      repeatOption: repeatOption,
-      days: repeatOption == "Custom interval (user-defined)" ? _daysController.text.trim() : null,
+      isRepeat: isRepeat,
+      days: isRepeat ? _daysController.text.trim() : null,
       ruleEndDate: ruleEndDate,
       description: _descController.text.trim(),
       remindMeOption: remindMeOption,
@@ -202,12 +206,12 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                 const SizedBox(height: 15),
                 _buildDropdown("Type", selectedType, types, (val) => setState(() => selectedType = val!)),
                 const SizedBox(height: 15),
-                _buildDropdown("Repeat Reminder", repeatOption, repeatOptions, (val) => setState(() => repeatOption = val!)),
-                const SizedBox(height: 15),
-                if (repeatOption == "Custom interval (user-defined)") ...[
+                _buildRepeatToggle(),
+                if (isRepeat) ...[
+                  const SizedBox(height: 10),
                   CustomTextField(
-                    labelText: "Days",
-                    hintText: "10 days",
+                    labelText: "Repeat every (Days)",
+                    hintText: "e.g. 10",
                     isNum: true,
                     icon: Icons.calendar_today,
                     controller: _daysController,
@@ -215,8 +219,9 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                     borderRadius: 8,
                     backgroundColor: Colors.grey.shade200,
                   ),
-                  const SizedBox(height: 15),
+
                 ],
+                const SizedBox(height: 20),
                 _buildClickableField(
                   label: "Rule End Date",
                   value: ruleEndDate == null ? "Select Date" : DateFormat('dd/MM/yyyy').format(ruleEndDate!),
@@ -305,5 +310,19 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
 
   Widget _buildDropdown(String label, String value, List<String> items, Function(String?) onChanged) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)), const SizedBox(height: 8), CustomDropDown<String>(value: value, hint: "Select $label", items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(), onChanged: onChanged)]);
+  }
+  Widget _buildRepeatToggle() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        const Text("Repeat Reminder", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        Switch(
+          value: isRepeat,
+          activeTrackColor: const Color(0xFF4A148C),
+          activeThumbColor: Colors.white,
+          onChanged: (val) => setState(() => isRepeat = val),
+        ),
+      ],
+    );
   }
 }

@@ -63,6 +63,12 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       _loadExistingData();
       isInitialized = true;
     }
+    else if (args is DateTime) {
+      setState(() {
+        selectedDate = args; // <--- Set the date here
+      });
+    }
+    isInitialized = true;
   }
 
   Future<void> _loadExistingData() async {

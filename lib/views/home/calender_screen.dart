@@ -13,6 +13,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import '../../models/case_model.dart';
+import 'case_setup_screen.dart';
 
 class CalenderScreen extends StatefulWidget {
   const CalenderScreen({super.key});
@@ -38,7 +39,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
           builder: (context, provider, child) {
             return RefreshIndicator(
               onRefresh: () async {
-                // Trigger the refresh: re-fetch data for the selected case
+                // 1. Refresh the list of cases first
+                await provider.fetchUserCases();
+
+                // 2. Then refresh events for the currently selected case
                 if (provider.selectedCase != null) {
                   await provider.fetchEventsForCase(provider.selectedCase!.id);
                 }
@@ -46,14 +50,11 @@ class _CalenderScreenState extends State<CalenderScreen> {
               child: SingleChildScrollView(
                 physics: const AlwaysScrollableScrollPhysics(
                   parent: BouncingScrollPhysics(),
-                ),child: SizedBox(
-
-                  height: MediaQuery.of(context).size.height - 100, // Adjust based on your header/nav
-                  child: Column(
+                ),child:  Column(
                     children: [
                       _buildHeader(context),
                       _buildCalendar(context, provider),
-                      const Spacer(),
+                       const SizedBox(height: 20),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                         child: Column(
@@ -70,8 +71,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                       )
                     ],
                   ),
-                ),
-              ),
+               ),
             );
           },
         ),
@@ -86,9 +86,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
         return Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center, // Vertically center the Export button
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Left Side: Dropdown Section
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -98,74 +97,89 @@ class _CalenderScreenState extends State<CalenderScreen> {
                       "Select Case",
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
-                    const SizedBox(height: 2), // Tight spacing like the image
-                    DropdownButtonHideUnderline(
-                      child: DropdownButton2<dynamic>(
-                        isExpanded: true,
-                        value: provider.selectedCase,
-                        // Customizing the display of the selected item
-                        selectedItemBuilder: (context) {
-                          return provider.allCases.map((caseItem) {
-                            return Text(
-                              provider.getCaseDisplayName(caseItem),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18, // Slightly larger per screenshot
-                                color: Colors.black,
+                    const SizedBox(height: 2),
+
+                    // Handle loading state to prevent the "item not found" crash during fetch
+                    provider.isLoading
+                        ? _buildLoadingPlaceholder()
+                        : ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        minHeight: 45,
+                        maxHeight: 100,
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton2<String>( // Change type to String
+                          isExpanded: true,
+                          // Use the ID as the value. Fallback to null if not found.
+                          value: provider.allCases.any((c) => c.id == provider.selectedCase?.id)
+                              ? provider.selectedCase?.id
+                              : null,
+                          selectedItemBuilder: (context) {
+                            return provider.allCases.map((caseItem) {
+                              return Container(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  provider.getCaseDisplayName(caseItem),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 18,
+                                    color: Colors.black,
+                                    height: 1.2,
+                                  ),
+                                  maxLines: 3,
+                                  softWrap: true,
+                                ),
+                              );
+                            }).toList();
+                          },
+                          items: [
+                            ...provider.allCases.map((caseItem) => DropdownMenuItem<String>(
+                              value: caseItem.id, // Value is the ID
+                              child: Text(
+                                provider.getCaseDisplayName(caseItem),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                               ),
-                              maxLines: 2, // Allows wrapping for 3+ children
-                              overflow: TextOverflow.ellipsis,
-                            );
-                          }).toList();
-                        },
-                        items: [
-                          ...provider.allCases.map((caseItem) => DropdownMenuItem<dynamic>(
-                            value: caseItem,
-                            child: Text(
-                              provider.getCaseDisplayName(caseItem),
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            )),
+                            const DropdownMenuItem<String>(
+                              value: "add_new",
+                              child: Text(
+                                "Add New Case",
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                              ),
                             ),
-                          )),
-                          const DropdownMenuItem<dynamic>(
-                            value: "add_new",
-                            child: Text(
-                              "Add New Case",
-                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                          ],
+                          onChanged: (value) {
+                            if (value == "add_new") {
+                              Navigator.pushNamed(context, CaseSetupScreen.routeName);
+                            } else if (value != null) {
+                              // Find the actual object by the ID string
+                              final selected = provider.allCases.firstWhere((c) => c.id == value);
+                              provider.setSelectedCase(selected);
+                            }
+                          },
+                          buttonStyleData: const ButtonStyleData(
+                            padding: EdgeInsets.zero,
+                            height: null,
+                          ),
+                          iconStyleData: const IconStyleData(
+                            icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 24),
+                            openMenuIcon: Icon(Icons.keyboard_arrow_up, color: Colors.black, size: 24),
+                          ),
+                          dropdownStyleData: DropdownStyleData(
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(20),
+                              color: Colors.white,
                             ),
+                            offset: const Offset(0, -5),
+                            elevation: 4,
                           ),
-                        ],
-                        onChanged: (value) {
-                          if (value == "add_new") {
-                             Navigator.pushNamed(context, NewEntryScreen.routeName);
-                          } else {
-                            provider.setSelectedCase(value as CaseModel);
-                          }
-                        },
-                        buttonStyleData: const ButtonStyleData(
-                          padding: EdgeInsets.zero,
-                          height: 40, // Height to accommodate wrapped text
-                        ),
-                        iconStyleData: const IconStyleData(
-                          icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 24),
-                          openMenuIcon: Icon(Icons.keyboard_arrow_up, color: Colors.black, size: 24),
-                        ),
-                        dropdownStyleData: DropdownStyleData(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(20),
-                            color: Colors.white,
-                          ),
-                          offset: const Offset(0, -5),
-                          elevation: 4,
                         ),
                       ),
-                    ),
+                    )
                   ],
                 ),
               ),
-
-              const SizedBox(width: 10), // Gap between text and export button
-
-              // Right Side: Export Button
+              const SizedBox(width: 10),
               _buildExportButton(),
             ],
           ),
@@ -174,7 +188,18 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
 
-// Helper for the Export UI
+// Simple loading placeholder
+  Widget _buildLoadingPlaceholder() {
+    return Container(
+      height: 45,
+      alignment: Alignment.centerLeft,
+      child: const SizedBox(
+          height: 20,
+          width: 20,
+          child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)
+      ),
+    );
+  }
   Widget _buildExportButton() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -310,7 +335,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                 DateFormat('EEEE, MMMM d, y').format(date),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               Expanded(
                 child: events.isEmpty 
@@ -393,8 +418,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
     String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -520,7 +544,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
           ),
           const SizedBox(height: 10),
           Text(DateFormat('EEEE, MMMM d, y').format(date), style: const TextStyle(color: Colors.grey)),
-          const SizedBox(height: 15),
+
 
           // --- CHANGE HERE: Wrap in Expanded and ListView ---
           // We use ConstrainedBox to limit the height so it doesn't take up the whole screen

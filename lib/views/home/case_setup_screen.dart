@@ -506,7 +506,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         // 7. Frequency Chips (Only if Repeat is ON)
         if (isRepeat) 
           Row(
-            children: ["Weekly", "Fornightly", "Monthly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
+            children: ["Weekly", "Fortnightly", "Monthly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
               bool isSelected = repeatFrequency == freq;
               return Expanded(
                 child: GestureDetector(

@@ -5,6 +5,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:clearcase/models/case_model.dart'; // Ensure ChildModel is accessible
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import '../../provider/rule_configuration_provider.dart';
+import '../main_screen.dart';
+import '../widgets/custom_dropdown.dart';
 import 'calender_screen.dart';
 
 
@@ -307,19 +309,27 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
   // --- Core Form Components ---
 
   Widget _buildNotificationDropdown(RuleConfigurationProvider provider) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: provider.notificationPref,
-          isExpanded: true,
-          items: ["On the Scheduled day", "One day before", "X days before", "Turn off notifications"]
-              .map((val) => DropdownMenuItem(value: val, child: Text(val)))
-              .toList(),
-          onChanged: (val) => provider.setNotification(val!),
-        ),
-      ),
+    // Define the master list of options
+    final List<String> options = [
+      "On the Scheduled day", "1 Day Before", "7 Days Before", "Turn Off Notifications"
+    ];
+
+    // SAFETY CHECK: If the current value in provider isn't in our list,
+    // we must either add it or set the dropdown value to null to prevent a crash.
+    final String? currentValue = options.contains(provider.notificationPref)
+        ? provider.notificationPref
+        : null;
+
+    return CustomDropDown<String>(
+      value: currentValue,
+      hint: "Select Notification Preference",
+      items: options.map((val) => DropdownMenuItem(
+          value: val,
+          child: Text(val, style: const TextStyle(fontSize: 14))
+      )).toList(),
+      onChanged: (val) {
+        if (val != null) provider.setNotification(val);
+      },
     );
   }
 
@@ -411,10 +421,11 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             await Future.delayed(const Duration(milliseconds: 800));
 
             if (context.mounted) {
-              Navigator.pushAndRemoveUntil(
-                  context,
-                  MaterialPageRoute(builder: (context) => const CalenderScreen()),
-                      (route) => false
+              Navigator.pushNamedAndRemoveUntil(
+                context,
+                MainScreen.routeName,
+                arguments: 0,
+                    (route) => false,
               );
             }
           } else if (context.mounted) {

@@ -37,17 +37,25 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   final List<String> types = ["Birthday", "Medical", "School", "Court", "Other"];
   final List<String> remindMeOptions = ["On day of event", "1 day before", "A week before"];
 
+  // List of reminders to be saved in one go
+  final List<ReminderModel> _pendingReminders = [];
+  bool isDateSetFromArgs = false;
+  bool isInitialized = false;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args != null && args is String && _editingId == null) {
-      _editingId = args;
-      _loadReminderData();
-    } else if (args is DateTime) {
-      setState(() {
-        selectedDate = args; // <--- Set the date here
-      });
+    if (!isInitialized) {
+      if (args is String) {
+        // Handle Edit Mode
+        _editingId = args;
+        _loadReminderData();
+      } else if (args is DateTime && !isDateSetFromArgs) {
+        selectedDate = args;
+        isDateSetFromArgs = true;
+      }
+      isInitialized = true;
     }
   }
 
@@ -104,33 +112,70 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
     }
   }
 
-  void _submitForm(ReminderProvider provider, String caseId) {
+  // --- Logic ---
+  void _addToBuffer() {
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a title")));
       return;
     }
 
-    final reminder = ReminderModel(
-      id: _editingId,
-      caseId: caseId,
-      date: selectedDate,
-      title: _titleController.text.trim(),
-      type: selectedType,
-      isRepeat: isRepeat,
-      days: isRepeat ? _daysController.text.trim() : null,
-      ruleEndDate: ruleEndDate,
-      description: _descController.text.trim(),
-      remindMeOption: remindMeOption,
-      enableNotifications: enableNotifications,
-      createdAt: _editingId == null ? DateTime.now() : null, // keep old timestamp on update
-    );
+    setState(() {
+      _pendingReminders.add(ReminderModel(
+        caseId: "", // Temporary
+        date: selectedDate,
+        title: _titleController.text.trim(),
+        type: selectedType,
+        isRepeat: isRepeat,
+        days: isRepeat ? _daysController.text.trim() : null,
+        description: _descController.text.trim(),
+        remindMeOption: remindMeOption,
+        enableNotifications: enableNotifications,
+        createdAt: DateTime.now(),
+      ));
 
-    if (_editingId == null) {
-       provider.addReminder(context, caseId, reminder);
-    } else {
-      provider.updateReminder(context, reminder);
-    }
+      // Clear inputs for next one
+      _titleController.clear();
+      _descController.clear();
+      _daysController.clear();
+    });
   }
+
+  void _submitForm(ReminderProvider provider, String caseId) {
+    // 1. If we are editing an existing record, perform a standard update
+    if (_editingId != null) {
+      final reminder = ReminderModel(
+        id: _editingId,
+        caseId: caseId,
+        date: selectedDate,
+        title: _titleController.text.trim(),
+        type: selectedType,
+        isRepeat: isRepeat,
+        days: isRepeat ? _daysController.text.trim() : null,
+        ruleEndDate: ruleEndDate,
+        description: _descController.text.trim(),
+        remindMeOption: remindMeOption,
+        enableNotifications: enableNotifications,
+      );
+      provider.updateReminder(context, reminder);
+      return;
+    }
+
+    // 2. If the user hasn't added any to the buffer, but has typed in the fields,
+    // automatically add that to the buffer before saving.
+    if (_pendingReminders.isEmpty) {
+      if (_titleController.text.trim().isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a title")));
+        return;
+      }
+      // Add current form state to buffer
+      _addToBuffer();
+    }
+
+    // 3. Submit the collection of reminders
+    final finalReminders = _pendingReminders.map((r) => r.copyWith(caseId: caseId)).toList();
+    provider.addMultipleReminders(context, caseId, finalReminders);
+  }
+
   @override
   void dispose() {
     _titleController.dispose();
@@ -158,6 +203,57 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // 1. List of Added Cards
+                if (_editingId == null && _pendingReminders.isNotEmpty) ...[
+                  ListView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: _pendingReminders.length,
+                    itemBuilder: (context, index) {
+                      final item = _pendingReminders[index];
+                      return Card(
+                        color: Colors.white,
+                        margin: const EdgeInsets.only(bottom: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        elevation: 2,
+                        child: ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          title: Text(
+                              item.title,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 4),
+                              Text(
+                                "${item.type} • ${DateFormat('dd MMM yyyy').format(item.date)}",
+                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
+                              ),
+                              if (item.description.isNotEmpty) ...[
+                                const SizedBox(height: 4),
+                                Text(
+                                  item.description,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                                ),
+                              ],
+                            ],
+                          ),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.redAccent),
+                            onPressed: () => setState(() => _pendingReminders.removeAt(index)),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 10),
+                    child: Divider(thickness: 1),
+                  ),
+                ],
                 _buildClickableField(
                   label: "Date",
                   value: DateFormat('dd MMM yyyy').format(selectedDate),
@@ -232,7 +328,34 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                   ],
                 ),
                 const SizedBox(height: 30),
-                SizedBox(
+                // 3. Add Another Button (Only show if creating new)
+                if (_editingId == null) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton(
+                      onPressed: _addToBuffer,
+                      style: OutlinedButton.styleFrom(
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+                        backgroundColor: const Color(0xFFE3F2FD),
+                        side: const BorderSide(color: Color(0xFF6A1B9A), width: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.add, color: Color(0xFF6A1B9A)),
+                          SizedBox(width: 8),
+                          Text(
+                            "Add Another Reminder",
+                            style: TextStyle(color: Color(0xFF6A1B9A), fontWeight: FontWeight.bold, fontSize: 16),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+                ],
+                 SizedBox(
                   width: double.infinity,
                   height: 50,
                   child: ElevatedButton(

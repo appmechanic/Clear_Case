@@ -27,6 +27,7 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   String? editRecordId;
   bool isInitialized = false;
   bool _isFetching = false;
+  bool isDateSetFromArgs = false;
 
   DateTime selectedDate = DateTime.now();
   TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
@@ -43,13 +44,20 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   void didChangeDependencies() {
     super.didChangeDependencies();
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args != null && args is String && !isInitialized) {
-      editRecordId = args;
-      _loadExistingData();
-    } else if (args is DateTime) {
-      setState(() => selectedDate = args);
+    if (!isInitialized) {
+      if (args is String) {
+        // Handle Edit Mode
+        editRecordId = args;
+        _loadExistingData();
+      } else if (args is DateTime && !isDateSetFromArgs) {
+        // Handle Add Mode with passed date
+        // Use Future.microtask or check isDateSetFromArgs to prevent
+        // overwriting manual selection on rebuilds.
+        selectedDate = args;
+        isDateSetFromArgs = true;
+      }
+      isInitialized = true;
     }
-    isInitialized = true;
   }
     Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
@@ -248,31 +256,43 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   }
 
 
-    Widget _buildExistingFilePreview(String url) {
+  Widget _buildExistingFilePreview(String url) {
     bool isPdf = url.toLowerCase().contains('.pdf');
-    return Stack(
-      children: [
-        Container(
-          width: 70,
-          height: 70,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-            image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+
+    // Wrap the stack in a SizedBox or Padding to provide a "safe area" for the button
+    return Padding(
+      padding: const EdgeInsets.only(top: 5, right: 5),
+      child: Stack(
+        clipBehavior: Clip.none, // <--- CRITICAL: Allows the icon to sit outside the box
+        children: [
+          Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+              image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+            ),
+            child: isPdf
+                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30)
+                : null,
           ),
-          child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30) : null,
-        ),
-        Positioned(
-          right: -5,
-          top: -5,
-          child: GestureDetector(
-            onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
-            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
+          Positioned(
+            right: -8, // Adjusted to sit nicely on the corner
+            top: -8,
+            child: GestureDetector(
+              onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
+              child: const CircleAvatar(
+                  radius: 10,
+                  backgroundColor: Colors.red,
+                  child: Icon(Icons.close, size: 12, color: Colors.white)
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
-  }
-  Widget _buildClickableField(String l, String v, IconData i, VoidCallback t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(l, style: const TextStyle(fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: t, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(children: [Text(v), const Spacer(), Icon(i, size: 18, color: Colors.grey[700])])))]);
+  }  Widget _buildClickableField(String l, String v, IconData i, VoidCallback t) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(l, style: const TextStyle(fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: t, child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(children: [Text(v), const Spacer(), Icon(i, size: 18, color: Colors.grey[700])])))]);
   Widget _buildSwitchTile(String t, bool v, Function(bool) c) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(t, style: const TextStyle(fontWeight: FontWeight.w600)), Switch(value: v,activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white, onChanged: c)]);
 }

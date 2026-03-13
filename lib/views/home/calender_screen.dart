@@ -251,9 +251,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
           selectedDecoration: BoxDecoration(
             color: AppColors.primary,
             shape: BoxShape.rectangle,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
           ),
           markerSize: 6,
+          cellMargin: const EdgeInsets.symmetric(horizontal: 2, vertical:1),
         ),
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
@@ -266,26 +267,51 @@ class _CalenderScreenState extends State<CalenderScreen> {
         calendarBuilders: CalendarBuilders(
           markerBuilder: (context, date, events) {
             if (events.isEmpty) return null;
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: events.take(3).map((e) {
-                Color color;
-                switch (e.type) {
-                  case EventType.custody: color = Colors.purple; break;
-                  case EventType.payment: color = Colors.green; break;
-                  case EventType.dispute: color = Colors.orange; break;
-                  case EventType.breach: color = Colors.red; break;
-                  case EventType.reminder: color = Colors.purpleAccent; break;
-                }
-                return Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 1),
-                  child: Icon(Icons.circle, size: 6, color: color),
-                );
-              }).toList(),
+
+            double screenWidth = MediaQuery.of(context).size.width;
+            // Lower the icons slightly by increasing bottom value
+            double bottomPadding = screenWidth < 350 ? 2 : 4;
+            double iconSize = screenWidth > 600 ? 11 : 10; // Slightly smaller to prevent clipping
+
+            return Stack(
+              alignment: Alignment.bottomCenter, // Anchor to the bottom
+              children: [
+                Positioned(
+                  bottom: bottomPadding,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...events.take(2).map((e) {
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 1.0),
+                          child: Icon(
+                            _getIconForType(e.type),
+                            size: iconSize,
+                            color: provider.isSameDay(provider.selectedDay, date)
+                                ? Colors.white.withOpacity(0.9)
+                                : _getColorForType(e.type),
+                          ),
+                        );
+                      }),
+                      if (events.length > 2)
+                        FittedBox(
+                          child: Text(
+                            "+${events.length - 2}",
+                            style: TextStyle(
+                              fontSize: iconSize - 2,
+                              fontWeight: FontWeight.bold,
+                              color: provider.isSameDay(provider.selectedDay, date)
+                                  ? Colors.white
+                                  : Colors.grey.shade700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
             );
-          },
-        ),
-      ),
+          },   ),      ),
     );
   }
 
@@ -579,7 +605,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
   Color _getColorForType(EventType type) {
     switch (type) {
       case EventType.custody: return Colors.purple;
-      case EventType.payment: return Colors.blue; // Matches "Repeat Weekly" tag blue
+      case EventType.payment: return Colors.green; // Matches "Repeat Weekly" tag blue
       case EventType.dispute: return Colors.orange;
       case EventType.breach: return Colors.red;
       case EventType.reminder: return Colors.purpleAccent;
@@ -592,7 +618,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
       case EventType.payment: return Icons.payment;
       case EventType.dispute: return Icons.warning;
       case EventType.breach: return Icons.cancel;
-      case EventType.reminder: return Icons.notifications_none;
+      case EventType.reminder: return Icons.notifications;
     }
   }
 }

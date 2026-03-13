@@ -47,8 +47,16 @@ class ScheduledDatesProvider extends ChangeNotifier {
   }
 
   void setSelectedCase(dynamic caseModel) async {
+    // 1. Set to loading state
+    isLoading = true;
     _selectedCase = caseModel as CaseModel?;
+    notifyListeners(); // This notifies the UI to show the loader
+
+    // 2. Perform the async work
     await checkSubCollections();
+
+    // 3. Stop loading
+    isLoading = false;
     notifyListeners();
   }
 

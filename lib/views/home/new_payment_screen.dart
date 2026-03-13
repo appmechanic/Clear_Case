@@ -46,24 +46,23 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   // Dropdown Options (Defined inside State class)
   final List<String> paymentTypes = ["Child Support", "School Fees", "Medical", "Other"];
   final List<String> paymentMethods = ["Bank Transfer", "Cash", "Cheque", "Online"];
-
+  bool isDateSetFromArgs = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Check if we passed an ID for editing
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args != null && args is String && !isInitialized) {
-      editRecordId = args;
-      _loadExistingData();
+    if (!isInitialized) {
+      if (args is String) {
+        // Handle Edit Mode
+        editRecordId = args;
+        _loadExistingData();
+      } else if (args is DateTime && !isDateSetFromArgs) {
+        selectedDate = args;
+        isDateSetFromArgs = true;
+      }
       isInitialized = true;
     }
-    else if (args is DateTime) {
-      setState(() {
-        selectedDate = args; // <--- Set the date here
-      });
-    }
-    isInitialized = true;
   }
 
   Future<void> _loadExistingData() async {
@@ -263,30 +262,42 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
   Widget _buildExistingFilePreview(String url) {
     bool isPdf = url.toLowerCase().contains('.pdf');
-    return Stack(
-      children: [
-        Container(
-          width: 70,
-          height: 70,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
-            image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+
+    // Wrap the stack in a SizedBox or Padding to provide a "safe area" for the button
+    return Padding(
+      padding: const EdgeInsets.only(top: 5, right: 5),
+      child: Stack(
+        clipBehavior: Clip.none, // <--- CRITICAL: Allows the icon to sit outside the box
+        children: [
+          Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+              image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+            ),
+            child: isPdf
+                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30)
+                : null,
           ),
-          child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 40) : null,
-        ),
-        Positioned(
-          right: -5,
-          top: -5,
-          child: GestureDetector(
-            onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
-            child: const CircleAvatar(radius: 10, backgroundColor: Colors.red, child: Icon(Icons.close, size: 12, color: Colors.white)),
+          Positioned(
+            right: -8, // Adjusted to sit nicely on the corner
+            top: -8,
+            child: GestureDetector(
+              onTap: () => setState(() => _existingAttachmentUrls.remove(url)),
+              child: const CircleAvatar(
+                  radius: 10,
+                  backgroundColor: Colors.red,
+                  child: Icon(Icons.close, size: 12, color: Colors.white)
+              ),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
-
 
   // --- AppBar with Case Selector ---
 

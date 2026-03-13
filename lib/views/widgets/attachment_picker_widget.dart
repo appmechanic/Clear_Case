@@ -83,7 +83,7 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
     List<File> processed = [];
     for (var file in files) {
       if (await file.length() > 2 * 1024 * 1024) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${file.path.split('/').last} exceeds 2MB")));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("File exceeds 2MB")));
         continue;
       }
       final ext = file.path.split('.').last.toLowerCase();

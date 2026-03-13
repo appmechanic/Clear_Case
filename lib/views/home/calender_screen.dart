@@ -12,7 +12,6 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
-import '../../models/case_model.dart';
 import 'case_setup_screen.dart';
 
 class CalenderScreen extends StatefulWidget {
@@ -358,8 +357,12 @@ class _CalenderScreenState extends State<CalenderScreen> {
               }),
               const SizedBox(height: 10),
               _buildActionButton("Add Reminder", Icons.access_time, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                Navigator.pop(context); 
-                Navigator.pushNamed(context, NewReminderScreen.routeName);
+                Navigator.pop(context);
+                Navigator.pushNamed(
+                  context,
+                  NewReminderScreen.routeName,
+                  arguments: date, //
+                );
               }),
               const SizedBox(height: 10),
               _buildActionButton("View Events", Icons.calendar_today, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {

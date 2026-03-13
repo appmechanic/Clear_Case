@@ -38,10 +38,10 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
         ChangeNotifierProvider(create: (_) => CaseSetupProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
-        ChangeNotifierProvider(create: (_) => NewEntryProvider()..init()),
+        ChangeNotifierProvider(create: (_) => NewEntryProvider()),
         ChangeNotifierProvider(create: (_) => ScheduledDatesProvider()),
         ChangeNotifierProvider(create: (_) => RuleConfigurationProvider()),
-        ChangeNotifierProvider(create: (_) => ReminderProvider()..init()),
+        ChangeNotifierProvider(create: (_) => ReminderProvider())
       ],
       child: MaterialApp(
       title: 'ClearCase',

@@ -1,10 +1,10 @@
-import 'package:clearcase/models/case_model.dart';
-import 'package:clearcase/models/remainder_model.dart';
+ import 'package:clearcase/models/remainder_model.dart';
 import 'package:clearcase/provider/remainder_provider.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../provider/calender_provider.dart';
 import '../widgets/custom_dropdown.dart';
 
 class NewReminderScreen extends StatefulWidget {
@@ -24,87 +24,59 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   final _daysNode = FocusNode();
   final _descNode = FocusNode();
 
+  String? _editingId;
+  bool _isFetching = false;
+
   DateTime selectedDate = DateTime.now();
   DateTime? ruleEndDate;
   String selectedType = "Birthday";
-
-  bool isRepeat = false; // Default to Off
+  bool isRepeat = false;
   String remindMeOption = "On day of event";
-
   bool enableNotifications = true;
 
-  bool _isInit = true;
-  String? _editingId;
-  bool _isFetching = false; // Add this
-
   final List<String> types = ["Birthday", "Medical", "School", "Court", "Other"];
-  final List<String> repeatOptions = ["None", "Daily", "Weekly", "Monthly", "Custom interval (user-defined)"];
   final List<String> remindMeOptions = ["On day of event", "1 day before", "A week before"];
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_isInit) {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      if (args != null && args is String) {
-        _editingId = args;
-        _loadReminderData(_editingId!);
-      }
-      _isInit = false;
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args != null && args is String && _editingId == null) {
+      _editingId = args;
+      _loadReminderData();
+    } else if (args is DateTime) {
+      setState(() {
+        selectedDate = args; // <--- Set the date here
+      });
     }
   }
 
-  Future<void> _loadReminderData(String id) async {
+  Future<void> _loadReminderData() async {
     setState(() => _isFetching = true);
+    final reminderProvider = Provider.of<ReminderProvider>(context, listen: false);
+    final calProvider = Provider.of<CalendarProvider>(context, listen: false);
 
-    final provider = Provider.of<ReminderProvider>(context, listen: false);
-
-    // Poll for the case to be ready
-    int attempts = 0;
-    while (provider.selectedCase == null && attempts < 10) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      attempts++;
-    }
-
-    try {
-      if (provider.selectedCase != null) {
-        final reminder = await provider.getReminderById(provider.selectedCase!.id, id);
-
-        if (mounted && reminder != null) {
-          setState(() {
-            _titleController.text = reminder.title;
-            _descController.text = reminder.description;
-            selectedDate = reminder.date;
-            selectedType = reminder.type;
-            // Update to new boolean logic
-            isRepeat = reminder.isRepeat;
-            _daysController.text = reminder.days ?? "";
-
-            _daysController.text = reminder.days ?? "";
-            ruleEndDate = reminder.ruleEndDate;
-            remindMeOption = reminder.remindMeOption;
-            enableNotifications = reminder.enableNotifications;
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint("Error loading data: $e");
-    } finally {
-      if (mounted) {
-        setState(() => _isFetching = false);
+    if (calProvider.selectedCase != null && _editingId != null) {
+      final reminder = await reminderProvider.getReminderById(calProvider.selectedCase!.id, _editingId!);
+      if (mounted && reminder != null) {
+        setState(() {
+          _titleController.text = reminder.title;
+          _descController.text = reminder.description;
+          selectedDate = reminder.date;
+          selectedType = reminder.type;
+          isRepeat = reminder.isRepeat;
+          _daysController.text = reminder.days ?? "";
+          ruleEndDate = reminder.ruleEndDate;
+          remindMeOption = reminder.remindMeOption;
+          enableNotifications = reminder.enableNotifications;
+        });
       }
     }
+    if (mounted) setState(() => _isFetching = false);
   }
 
   Future<void> _pickDate(BuildContext context, bool isStart) async {
-
-    // 1. Logic:
-    // 'isStart == true' -> First date is year 2000 (Flexible)
-    // 'isStart == false' -> First date is 'selectedDate' (Strict)
     final DateTime firstDate = isStart ? DateTime(2000) : selectedDate;
-
-    // 2. Determine initial date
-    // For End Date, if it's null, default to the start date
     final DateTime initialDate = isStart
         ? selectedDate
         : (ruleEndDate ?? selectedDate);
@@ -132,11 +104,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
     }
   }
 
-  void _submitForm(ReminderProvider provider) {
-    if (provider.selectedCase == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a case")));
-      return;
-    }
+  void _submitForm(ReminderProvider provider, String caseId) {
     if (_titleController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a title")));
       return;
@@ -144,7 +112,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
 
     final reminder = ReminderModel(
       id: _editingId,
-      caseId: provider.selectedCase!.id,
+      caseId: caseId,
       date: selectedDate,
       title: _titleController.text.trim(),
       type: selectedType,
@@ -158,7 +126,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
     );
 
     if (_editingId == null) {
-      provider.addReminder(context, reminder);
+       provider.addReminder(context, caseId, reminder);
     } else {
       provider.updateReminder(context, reminder);
     }
@@ -175,13 +143,15 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   }
   @override
   Widget build(BuildContext context) {
-    return Consumer<ReminderProvider>(
-      builder: (context, provider, child) {
-        bool showLoader = provider.isLoading || _isFetching;
+    return Consumer2<CalendarProvider, ReminderProvider>(
+      builder: (context, calProvider, reminderProvider, child) {
+        final selectedCase = calProvider.selectedCase;
+        bool showLoader = reminderProvider.isLoading || _isFetching;
+
         return Scaffold(
           backgroundColor: const Color(0xFFF5F5F5),
-          appBar: _buildAppBar(context, provider),
-          body:showLoader
+          appBar: _buildAppBar(calProvider),
+          body: showLoader
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -206,11 +176,21 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                 const SizedBox(height: 15),
                 _buildDropdown("Type", selectedType, types, (val) => setState(() => selectedType = val!)),
                 const SizedBox(height: 15),
+                CustomTextField(
+                  labelText: "Description",
+                  hintText: "Describe the event...",
+                  maxLines: 3,
+                  controller: _descController,
+                  node: _descNode,
+                  borderRadius: 8,
+                  backgroundColor: Colors.grey.shade200,
+                ),
+                const SizedBox(height: 15),
                 _buildRepeatToggle(),
                 if (isRepeat) ...[
                   const SizedBox(height: 10),
                   CustomTextField(
-                    labelText: "Repeat every (Days)",
+                    labelText: "Days",
                     hintText: "e.g. 10",
                     isNum: true,
                     icon: Icons.calendar_today,
@@ -222,25 +202,17 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
 
                 ],
                 const SizedBox(height: 20),
-                _buildClickableField(
-                  label: "Rule End Date",
-                  value: ruleEndDate == null ? "Select Date" : DateFormat('dd/MM/yyyy').format(ruleEndDate!),
-                  icon: Icons.calendar_today,
-                  onTap: () => _pickDate(context, false),
-                ),
-                const SizedBox(height: 15),
-                CustomTextField(
-                  labelText: "Description",
-                  hintText: "Describe the event...",
-                  maxLines: 3,
-                  controller: _descController,
-                  node: _descNode,
-                  borderRadius: 8,
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 15),
                 _buildDropdown("Remind me", remindMeOption, remindMeOptions, (val) => setState(() => remindMeOption = val!)),
-                const SizedBox(height: 20),
+                 const SizedBox(height: 20),
+                // _buildClickableField(
+                //   label: "Rule End Date",
+                //   value: ruleEndDate == null ? "Select Date" : DateFormat('dd/MM/yyyy').format(ruleEndDate!),
+                //   icon: Icons.calendar_today,
+                //   onTap: () => _pickDate(context, false),
+                // ),
+                // const SizedBox(height: 15),
+
+
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -268,7 +240,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                       backgroundColor: const Color(0xFF4A148C),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                     ),
-                    onPressed: () => _submitForm(provider),
+                    onPressed: selectedCase == null ? null : () => _submitForm(reminderProvider, selectedCase.id),
                     child: Text(_editingId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 ),
@@ -280,9 +252,14 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
     );
   }
 
-  AppBar _buildAppBar(BuildContext context, ReminderProvider provider) {
+  AppBar _buildAppBar(CalendarProvider calProvider) {
     return AppBar(
-      title: Text(_editingId == null ? "Add Reminder" : "Edit Reminder", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      leading: IconButton(onPressed: (){
+        Navigator.pop(context);
+      }, icon: Icon(Icons.arrow_back, color: Colors.black)),
+
+      title: Text(_editingId == null ? "Add Reminder" : "Edit Reminder",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
@@ -290,14 +267,14 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
         preferredSize: const Size.fromHeight(60),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: CustomDropDown<CaseModel>(
+          child: CustomDropDown<String>(
             hint: "Select a Case",
-            value: provider.selectedCase,
-            items: provider.userCases.map((c) => DropdownMenuItem(
-              value: c,
-              child: Text("${c.caseNumber} (${c.children.map((e) => e.name).join(', ')})", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            value: calProvider.selectedCase?.id,
+            items: calProvider.allCases.map((c) => DropdownMenuItem(
+              value: c.id,
+              child: Text(c.caseNumber),
             )).toList(),
-            onChanged: provider.selectCase,
+            onChanged: (id) => calProvider.setSelectedCase(calProvider.allCases.firstWhere((c) => c.id == id)),
           ),
         ),
       ),

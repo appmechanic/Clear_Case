@@ -6,6 +6,7 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../provider/calender_provider.dart';
 import '../widgets/attachment_picker_widget.dart';
 import '../widgets/custom_dropdown.dart';
 
@@ -22,6 +23,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   final _amountController = TextEditingController();
   final _locationController = TextEditingController();
   final _notesController = TextEditingController();
+
   final _amountNode = FocusNode();
   final _locationNode = FocusNode();
   final _notesNode = FocusNode();
@@ -45,14 +47,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   final List<String> paymentTypes = ["Child Support", "School Fees", "Medical", "Other"];
   final List<String> paymentMethods = ["Bank Transfer", "Cash", "Cheque", "Online"];
 
-  @override
-  void initState() {
-    super.initState();
-    // Initialize provider once when the screen is created
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<NewEntryProvider>(context, listen: false).init();
-    });
-  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -72,43 +67,31 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   Future<void> _loadExistingData() async {
-    final provider = Provider.of<NewEntryProvider>(context, listen: false);
-
-    // Poll for the case if it's not ready yet
     setState(() => _isFetching = true);
-    int attempts = 0;
-    while (provider.selectedCase == null && attempts < 10) {
-      await Future.delayed(const Duration(milliseconds: 200));
-      attempts++;
-    }
+    final entryProvider = Provider.of<NewEntryProvider>(context, listen: false);
+    final calProvider = Provider.of<CalendarProvider>(context, listen: false);
 
-    if (provider.selectedCase == null) {
-      debugPrint("Failed to load: No case selected.");
-      if (mounted) setState(() => _isFetching = false);
-      return;
-    }
-
-    final record = await provider.getPaymentRecordById(editRecordId!);
-
-    if (mounted) {
-      setState(() {
-        _isFetching = false;
-        if (record != null) {
+    if (calProvider.selectedCase != null && editRecordId != null) {
+      final record = await entryProvider.getPaymentRecordById(calProvider.selectedCase!.id, editRecordId!);
+      if (mounted && record != null) {
+        setState(() {
           _amountController.text = record.amount?.toString() ?? "";
           selectedDate = record.date ?? DateTime.now();
-          selectedPaymentType = record.paymentType ?? "";
-          paymentTypeToggle = record.category ?? "";
-          selectedPaymentMethod = record.paymentMethod ?? "";
+          selectedPaymentType = record.paymentType ?? "Child Support";
+          paymentTypeToggle = record.category ?? "Additional";
+          selectedPaymentMethod = record.paymentMethod ?? "Bank Transfer";
           _locationController.text = record.location ?? "";
           _notesController.text = record.notes ?? "";
           paymentReceived = record.isReceived ?? true;
           flagEntry = record.flagEntry ?? false;
           selectedChildIds = Set.from(record.childIds ?? []);
           _existingAttachmentUrls = record.attachmentUrls ?? [];
-        }
-      });
+        });
+      }
     }
+    if (mounted) setState(() => _isFetching = false);
   }
+
   Future<void> _pickDate() async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -119,11 +102,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     if (picked != null) setState(() => selectedDate = picked);
   }
 
-  void _submitForm(NewEntryProvider provider) {
-    if (provider.selectedCase == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select a case")));
-      return;
-    }
+  void _submitForm(NewEntryProvider entryProvider, String caseId) {
     double? amount = double.tryParse(_amountController.text);
     if (amount == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid amount")));
@@ -133,8 +112,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
     final newRecord = PaymentRecordModel(
       id: editRecordId,
+      caseId: caseId,
       childIds: selectedChildIds.toList(),
-      caseId: provider.selectedCase!.id,
       amount: amount,
       date: selectedDate,
       paymentType: selectedPaymentType,
@@ -148,10 +127,11 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       createdAt: editRecordId == null ? DateTime.now() : null,
     );
 
+    // CHANGE 'record' to 'newRecord' here:
     if (editRecordId == null) {
-      provider.addPaymentRecord(context, newRecord, _selectedFiles);
+      entryProvider.addPaymentRecord(context, caseId, newRecord, _selectedFiles);
     } else {
-      provider.updatePaymentRecord(context, newRecord, _selectedFiles);
+      entryProvider.updatePaymentRecord(context, caseId, newRecord, _selectedFiles);
     }
   }
 
@@ -168,25 +148,23 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // REMOVED ChangeNotifierProvider from here!
-    return Consumer<NewEntryProvider>(
-      builder: (context, provider, child) {
-        bool showLoader = provider.isLoading || _isFetching;
+    return Consumer2<CalendarProvider, NewEntryProvider>(
+      builder: (context, calProvider, entryProvider, child) {
+        final selectedCase = calProvider.selectedCase;
         return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          appBar: _buildAppBar(context, provider),
-          body: showLoader
+          appBar: _buildAppBar(calProvider),
+          body: (entryProvider.isLoading || _isFetching)
               ? const Center(child: CircularProgressIndicator())
               : SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildChildSelector(provider), // Add this first
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: .start,
+              children: [
+                _buildChildSelector(selectedCase),
                     const SizedBox(height: 20),
                     _buildSwitchTile("Payment Received", paymentReceived, (v) => setState(() => paymentReceived = v)),
                     const SizedBox(height: 15),
-                    
+
                     CustomTextField(
                       labelText: "Amount",
                       hintText: "0.0",
@@ -198,13 +176,13 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       backgroundColor: Colors.grey.shade200,
                     ),
                     const SizedBox(height: 15),
-                    
+
                     _buildClickableField("Payment Date", DateFormat('dd MMM yyyy').format(selectedDate), Icons.calendar_today, _pickDate),
                     const SizedBox(height: 15),
-                    
+
                     _buildInteractiveDropdown("Payment Type", selectedPaymentType, paymentTypes, (val) => setState(() => selectedPaymentType = val!)),
                     const SizedBox(height: 15),
-                    
+
                     Row(
                       children: [
                         Expanded(child: _buildToggleButton("Additional", paymentTypeToggle == "Additional")),
@@ -213,10 +191,10 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       ],
                     ),
                     const SizedBox(height: 15),
-                      
+
                     _buildInteractiveDropdown("Payment Method", selectedPaymentMethod, paymentMethods, (val) => setState(() => selectedPaymentMethod = val!)),
                     const SizedBox(height: 15),
-                    
+
                     CustomTextField(
                       labelText: "Location",
                       hintText: "Enter Location",
@@ -227,7 +205,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       backgroundColor: Colors.grey.shade200,
                     ),
                     const SizedBox(height: 15),
-                      
+
                     CustomTextField(
                       labelText: "Notes (Optional)",
                       hintText: "Enter Any Additional Details",
@@ -261,7 +239,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                     _buildSwitchTile("Flag this entry", flagEntry, (v) => setState(() => flagEntry = v)),
 
                     const SizedBox(height: 20),
-                    
+
                     SizedBox(
                       width: double.infinity,
                       height: 50,
@@ -270,7 +248,9 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                           backgroundColor: const Color(0xFF4A148C),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                         ),
-                        onPressed: () => _submitForm(provider),
+                        onPressed: selectedCase == null
+                            ? null
+                            : () => _submitForm(entryProvider, selectedCase.id),
                         child: Text(editRecordId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),                      ),
                     ),
                   ],
@@ -311,7 +291,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   // --- AppBar with Case Selector ---
 
 
-  AppBar _buildAppBar(BuildContext context, NewEntryProvider provider) {
+  AppBar _buildAppBar(CalendarProvider calProvider) {
     return AppBar(
       leading: IconButton(onPressed: (){
         Navigator.pop(context);
@@ -326,17 +306,14 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
         preferredSize: const Size.fromHeight(60),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: CustomDropDown<CaseModel>(
+          child: CustomDropDown<String>(
             hint: "Select a Case",
-            value: provider.selectedCase,
-            items: provider.userCases.map((c) => DropdownMenuItem(
-              value: c,
-              child: Text(c.caseNumber, style: const TextStyle(fontWeight: FontWeight.bold)),
+            value: calProvider.selectedCase?.id,
+            items: calProvider.allCases.map((c) => DropdownMenuItem(
+              value: c.id,
+              child: Text(c.caseNumber),
             )).toList(),
-            onChanged: (c) {
-              provider.selectCase(c);
-              setState(() => selectedChildIds.clear());
-            },
+            onChanged: (id) => calProvider.setSelectedCase(calProvider.allCases.firstWhere((c) => c.id == id)),
           ),
         ),
       ),
@@ -344,7 +321,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   // --- Widgets ---
-  
+
   Widget _buildClickableField(String label, String value, IconData icon, VoidCallback onTap) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -390,7 +367,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       ],
     );
   }
-  
+
   Widget _buildSwitchTile(String title, bool value, Function(bool) onChanged) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -400,7 +377,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       ],
     );
   }
-  
+
   Widget _buildToggleButton(String text, bool isSelected) {
     return GestureDetector(
       onTap: () => setState(() => paymentTypeToggle = text),
@@ -416,13 +393,11 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       ),
     );
   }
+  Widget _buildChildSelector(CaseModel? selectedCase) {
+    if (selectedCase == null) return const Text("Select a case first");
 
-  Widget _buildChildSelector(NewEntryProvider provider) {
-    final children = provider.selectedCase?.children ?? [];
-    if (children.isEmpty) return const Text("No children in this case");
-
-    return Column(
-      children: children.map((child) {
+     return Column(
+      children: selectedCase.children.map((child) {
         final isSelected = selectedChildIds.contains(child.id);
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
@@ -437,5 +412,4 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       }).toList(),
     );
   }
-
- }
+  }

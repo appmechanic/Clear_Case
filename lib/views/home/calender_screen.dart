@@ -1,6 +1,8 @@
 import 'package:clearcase/models/calender_event_model.dart';
 import 'package:clearcase/provider/calender_provider.dart';
+import 'package:clearcase/views/home/new_breach_screen.dart';
 import 'package:clearcase/views/home/new_custody_screen.dart';
+import 'package:clearcase/views/home/new_dispute_screen.dart';
 import 'package:clearcase/views/home/new_entry_screen.dart';
 import 'package:clearcase/views/home/new_payment_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
@@ -326,7 +328,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(16),
-            side: BorderSide.none, 
+            side: BorderSide.none,
           ),
         ),
         onPressed: onTap,
@@ -336,7 +338,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
   }
   void _showDayDetailsSheet(BuildContext context, CalendarProvider provider, DateTime date) {
     final events = provider.getEventsForDay(date);
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -355,7 +357,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
             children: [
               Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 20),
-              
+
               Text(
                 DateFormat('EEEE, MMMM d, y').format(date),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
@@ -363,7 +365,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
               const SizedBox(height: 10),
 
               Expanded(
-                child: events.isEmpty 
+                child: events.isEmpty
                   ? const Center(child: Text("No events scheduled.", style: TextStyle(color: Colors.grey)))
                   : ListView.builder(
                       controller: controller,
@@ -392,8 +394,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
               }),
               const SizedBox(height: 10),
               _buildActionButton("View Events", Icons.calendar_today, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                 Navigator.pop(context); 
-                 _showEventsPopup(context, date, events); 
+                 Navigator.pop(context);
+                 _showEventsPopup(context, date, events);
               }),
               const SizedBox(height: 20),
             ],
@@ -412,14 +414,14 @@ class _CalenderScreenState extends State<CalenderScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text("Calendar legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+              const Text("Calendar Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
               IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
             ],
           ),
           const SizedBox(height: 10),
           _buildLegendItem("Custody", Icons.person, Colors.purple),
           _buildLegendItem("Payments", Icons.payment, Colors.green),
-          _buildLegendItem("Breach of Orders", Icons.cancel_presentation, Colors.red),
+          _buildLegendItem("Non-Compliance", Icons.cancel_presentation, Colors.red),
           _buildLegendItem("Flagged Events", Icons.flag, Colors.orange),
           _buildLegendItem("Reminders", Icons.notifications, Colors.purpleAccent),
           _buildLegendItem("Disputes", Icons.error, Colors.redAccent),
@@ -482,6 +484,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
                         await Navigator.pushNamed(context, NewPaymentScreen.routeName, arguments: event.id);
                       } else if (event.type == EventType.reminder) {
                         await Navigator.pushNamed(context, NewReminderScreen.routeName, arguments: event.id);
+                      }else if (event.type == EventType.dispute) {
+                        await Navigator.pushNamed(context, NewDisputeScreen.routeName, arguments: event.id);
+                      }else if (event.type == EventType.breach) {
+                        await Navigator.pushNamed(context, NewBreachScreen.routeName, arguments: event.id);
                       }
 
                       // Now pop the bottom sheet safely
@@ -605,9 +611,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
   Color _getColorForType(EventType type) {
     switch (type) {
       case EventType.custody: return Colors.purple;
-      case EventType.payment: return Colors.green; // Matches "Repeat Weekly" tag blue
-      case EventType.dispute: return Colors.orange;
-      case EventType.breach: return Colors.red;
+      case EventType.payment: return Colors.green;
+      case EventType.dispute: return Colors.red;
+      case EventType.breach: return Colors.redAccent;
       case EventType.reminder: return Colors.purpleAccent;
     }
   }
@@ -616,8 +622,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
     switch (type) {
       case EventType.custody: return Icons.person;
       case EventType.payment: return Icons.payment;
-      case EventType.dispute: return Icons.warning;
-      case EventType.breach: return Icons.cancel;
+      case EventType.dispute: return Icons.error_outlined;
+      case EventType.breach: return Icons.cancel_presentation;
       case EventType.reminder: return Icons.notifications;
     }
   }

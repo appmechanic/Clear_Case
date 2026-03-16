@@ -94,6 +94,7 @@ class CalendarProvider extends ChangeNotifier {
         caseDocRef.collection('paymentRecords').get(),
         caseDocRef.collection('custodyRecords').get(),
         caseDocRef.collection('disputeRecords').get(),
+        caseDocRef.collection('breachRecords').get(),
       ]);
 
       // 2. Fetch reminders separately since it returns void
@@ -143,6 +144,21 @@ class CalendarProvider extends ChangeNotifier {
             title: data['issue'] ?? 'Dispute',
             date: recordDate,
             type: EventType.dispute,
+          ));
+        }
+      }
+
+      for (var doc in snapshots[3].docs) {
+        final data = doc.data();
+        final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
+        if (recordDate != null) {
+          _addEventToMap(CalendarEvent(
+            id: doc.id,
+            title: data['type'] ?? 'Breach',
+            date: recordDate,
+            type: EventType.breach,
+            // This now matches your updated Enum
+            description: data['description'],
           ));
         }
       }

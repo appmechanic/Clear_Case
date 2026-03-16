@@ -65,18 +65,29 @@ class NewEntryScreen extends StatelessWidget {
               Icons.warning_amber, 
               Colors.orange,
               () {
-                Navigator.pushNamed(context, NewDisputeScreen.routeName);
-              }
+                final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
+                Navigator.pushNamed(
+                  context,
+                  NewDisputeScreen.routeName,
+                  arguments: date, //
+                );
+               }
             ),
             _buildEntryCard(
               context, 
-              "Breach Of Orders", 
+              "Non-Compliance",
               "Document violations of court orders", 
-              Icons.cancel_outlined, 
+              Icons.cancel_presentation,
               Colors.red,
-              () {
-                Navigator.pushNamed(context, NewBreachScreen.routeName);
-              }
+                    () {
+                  final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
+                  Navigator.pushNamed(
+                    context,
+                    NewBreachScreen.routeName,
+                    arguments: date, //
+                  );
+                }
+
             ),
           ],
         ),

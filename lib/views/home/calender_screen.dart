@@ -16,6 +16,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
 import 'case_setup_screen.dart';
 
+
 class CalenderScreen extends StatefulWidget {
   const CalenderScreen({super.key});
 
@@ -541,7 +542,31 @@ class _CalenderScreenState extends State<CalenderScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
-          ]
+
+            // Inside _buildEventCard:
+            if (event.childNames.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,         // Space between chips horizontally
+                runSpacing: 6,      // Space between rows if they wrap
+                children: event.childNames.map((name) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.purple.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    name,
+                    style: const TextStyle(
+                        color: Colors.purple,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold
+                    ),
+                  ),
+                )).toList(),
+              ),
+            ],
+           ]
         ],
       ),
     );

@@ -336,7 +336,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
   TimeOfDay? endTime;
   String notificationPref = "On the Scheduled day";
   bool isRepeat = true;
-  String repeatFrequency = "Weekly"; 
+  String repeatFrequency = "Indefinitely";
   Set<String> selectedChildIds = {};
 
   final List<String> notifOptions = ["On the Scheduled day", "1 Day Before", "7 Days Before", "Turn Off Notifications"];
@@ -478,7 +478,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         if(isRepeat)...[
           if (isRepeat)
             Row(
-              children: ["Weekly", "Fortnightly", "Monthly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
+              children: ["Indefinitely", "Fortnightly", "Monthly", "Weekly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
                 bool isSelected = repeatFrequency == freq;
                 return Expanded(
                   child: GestureDetector(

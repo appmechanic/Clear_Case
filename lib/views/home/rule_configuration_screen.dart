@@ -1,3 +1,4 @@
+import 'package:clearcase/views/widgets/loader.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
@@ -47,7 +48,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     final provider = context.watch<RuleConfigurationProvider>();
 
     if (provider.isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+      return const Scaffold(body: Center(child: AppLoader()));
     }
 
     return Scaffold(
@@ -290,7 +291,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Row(
-        children: ["Weekly", "Fortnightly", "Monthly"].map((freq) => Expanded(
+        children: ["Indefinitely", "Fortnightly", "Monthly","Weekly"].map((freq) => Expanded(
           child: GestureDetector(
             onTap: () => provider.setFrequency(freq),
             child: Container(

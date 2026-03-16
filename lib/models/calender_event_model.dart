@@ -8,7 +8,8 @@ class CalendarEvent {
   final DateTime date;
   final EventType type;
   final String? description;
-  final double? amount; // Added for Payment Records
+  final double? amount;
+  final List<String> childNames; // Added to display names in UI
 
   CalendarEvent({
     required this.id,
@@ -17,34 +18,32 @@ class CalendarEvent {
     required this.type,
     this.description,
     this.amount,
+    this.childNames = const [],
   });
 
-  // --- FROM MAP (Reading from Firebase) ---
   factory CalendarEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
     return CalendarEvent(
       id: docId ?? map['id'] ?? '',
       title: map['title'] ?? '',
-      // Handles Firestore Timestamp to DateTime conversion
       date: (map['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      // Safely converts String to Enum
       type: _parseEventType(map['type']),
-      description: map['description'] ?? map['notes'], // Fallback to 'notes' if 'description' is null
-      amount: (map['amount'] as num?)?.toDouble(), // Safely handle int/double from Firebase
+      description: map['description'] ?? map['notes'],
+      amount: (map['amount'] as num?)?.toDouble(),
+      childNames: List<String>.from(map['childNames'] ?? []),
     );
   }
 
-  // --- TO MAP (Saving to Firebase) ---
   Map<String, dynamic> toMap() {
     return {
       'title': title,
       'date': Timestamp.fromDate(date),
       'type': type.name,
       'description': description,
-      'amount': amount, // Include amount in the map
+      'amount': amount,
+      'childNames': childNames,
     };
   }
 
-  // Helper to safely parse the enum
   static EventType _parseEventType(dynamic type) {
     return EventType.values.firstWhere(
           (e) => e.name == type.toString(),

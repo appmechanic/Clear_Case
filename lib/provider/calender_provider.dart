@@ -100,7 +100,7 @@ class CalendarProvider extends ChangeNotifier {
       // 2. Fetch reminders separately since it returns void
       await fetchRemindersForCase(caseId);
 
-      // 3. Process Payments (snapshots[0])
+      // 3. Process Payments
       for (var doc in snapshots[0].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
@@ -112,6 +112,7 @@ class CalendarProvider extends ChangeNotifier {
             type: EventType.payment,
             description: data['notes'],
             amount: (data['amount'] as num?)?.toDouble(),
+            childNames: _resolveChildNames(data['childIds'] ?? []), // Uses helper
           ));
         }
       }
@@ -123,6 +124,14 @@ class CalendarProvider extends ChangeNotifier {
 
         final Timestamp? timestamp = data['startDate'] as Timestamp?;
         if (timestamp != null) {
+          // 1. Resolve child names from CaseModel
+          List<String> childIds = List<String>.from(data['childIds'] ?? []);
+          List<String> names = childIds.map((id) {
+            return _selectedCase?.children
+                .firstWhere((c) => c.id == id, orElse: () => ChildModel(id: '', name: 'Unknown', dob: DateTime.now()))
+                .name ?? 'Unknown';
+          }).toList();
+
           final DateTime recordDate = timestamp.toDate();
           _addEventToMap(CalendarEvent(
             id: doc.id,
@@ -130,6 +139,7 @@ class CalendarProvider extends ChangeNotifier {
             date: recordDate,
             type: EventType.custody,
             description: data['notes'],
+            childNames: names, // Pass resolved names here
           ));
         }
       }
@@ -262,5 +272,18 @@ class CalendarProvider extends ChangeNotifier {
       if (!current.isAfter(limit)) dates.add(current);
     }
     return dates;
+  }
+
+  List<String> _resolveChildNames(List<dynamic> childIds) {
+    if (_selectedCase == null) return [];
+
+    return childIds.map((id) {
+      return _selectedCase!.children
+          .firstWhere(
+            (c) => c.id == id,
+        orElse: () => ChildModel(id: '', name: 'Unknown', dob: DateTime.now()),
+      )
+          .name;
+    }).toList();
   }
 }

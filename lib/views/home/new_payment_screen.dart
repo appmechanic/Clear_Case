@@ -157,7 +157,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
               : SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
-              crossAxisAlignment: .start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildChildSelector(selectedCase),
                     const SizedBox(height: 20),

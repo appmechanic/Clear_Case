@@ -9,7 +9,8 @@ class CalendarEvent {
   final EventType type;
   final String? description;
   final double? amount;
-  final List<String> childNames; // Added to display names in UI
+  final List<String> childNames;
+  final bool isFlagged;
 
   CalendarEvent({
     required this.id,
@@ -19,6 +20,7 @@ class CalendarEvent {
     this.description,
     this.amount,
     this.childNames = const [],
+    this.isFlagged = false,
   });
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
@@ -30,6 +32,7 @@ class CalendarEvent {
       description: map['description'] ?? map['notes'],
       amount: (map['amount'] as num?)?.toDouble(),
       childNames: List<String>.from(map['childNames'] ?? []),
+      isFlagged: map['flagEntry'] ?? false,
     );
   }
 
@@ -41,6 +44,7 @@ class CalendarEvent {
       'description': description,
       'amount': amount,
       'childNames': childNames,
+      'flagEntry': isFlagged,
     };
   }
 

@@ -449,12 +449,12 @@ class _CalenderScreenState extends State<CalenderScreen> {
     Color typeColor = _getColorForType(event.type);
     Color lightColor = typeColor.withOpacity(0.1);
 
-    // Formatting the date from DB
     String formattedDate = DateFormat('dd MMM yyyy').format(event.date);
     String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
     return Container(
-       padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 12), // Add margin for spacing between cards
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -465,15 +465,35 @@ class _CalenderScreenState extends State<CalenderScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start, // Align icons to top of wrapped text
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
-                child: Text(
-                  event.title,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  overflow: TextOverflow.ellipsis,
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: event.title,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.black,
+                        ),
+                      ),
+                      if (event.isFlagged)
+                        WidgetSpan(
+                          alignment: PlaceholderAlignment.middle,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 6.0),
+                            child: Icon(Icons.flag, color: Colors.orange, size: 18),
+                          ),
+                        ),
+                    ],
+                  ),
+                  softWrap: true, // Allows automatic wrapping
                 ),
               ),
+              const SizedBox(width: 5),
               Row(
                 children: [
                   GestureDetector(

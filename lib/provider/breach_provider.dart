@@ -39,8 +39,18 @@ class BreachProvider extends ChangeNotifier {
       batch.set(ref, finalData);
 
       if (data['flagEntry'] == true) {
-        batch.set(_firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc(),
-            {...finalData, 'originCollection': 'breachRecords', 'originId': ref.id});
+        // UPDATED PATH: Moved inside the case
+        DocumentReference flaggedRef = _firestore
+            .collection('users').doc(user.uid)
+            .collection('cases').doc(caseId)
+            .collection('flaggedEvents').doc();
+
+        batch.set(flaggedRef, {
+          ...finalData,
+          'originCollection': 'breachRecords',
+          'originId': ref.id,
+          'caseId': caseId
+        });
       }
 
       await batch.commit();
@@ -71,10 +81,28 @@ class BreachProvider extends ChangeNotifier {
       WriteBatch batch = _firestore.batch();
       batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc(breachId), updatedData);
 
-      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('flaggedEvents').where('originId', isEqualTo: breachId).get();
+      // UPDATED QUERY: Look inside the specific case sub-collection
+      var flaggedQuery = await _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection('flaggedEvents')
+          .where('originId', isEqualTo: breachId)
+          .get();
+
       if (data['flagEntry'] == true) {
         if (flaggedQuery.docs.isEmpty) {
-          batch.set(_firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc(), {...updatedData, 'originCollection': 'breachRecords', 'originId': breachId});
+          // UPDATED PATH: Create new flagged entry inside the case
+          DocumentReference newFlagRef = _firestore
+              .collection('users').doc(user.uid)
+              .collection('cases').doc(caseId)
+              .collection('flaggedEvents').doc();
+
+          batch.set(newFlagRef, {
+            ...updatedData,
+            'originCollection': 'breachRecords',
+            'originId': breachId,
+            'caseId': caseId
+          });
         } else {
           batch.update(flaggedQuery.docs.first.reference, updatedData);
         }

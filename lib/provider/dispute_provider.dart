@@ -12,13 +12,11 @@ class DisputeProvider extends ChangeNotifier {
       app: Firebase.app(), databaseId: 'clearcase');
 
   bool _isLoading = false;
-
   bool get isLoading => _isLoading;
 
   void _showSnackBar(BuildContext context, String message) {
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
     }
   }
 
@@ -37,41 +35,51 @@ class DisputeProvider extends ChangeNotifier {
     try {
       List<String> fileUrls = [];
 
-      // 1. Upload Attachments to Firebase Storage
       for (var file in attachments) {
-        // IMPROVEMENT: Preserve the original file extension (e.g., .pdf, .jpg)
-        String extension = file.path
-            .split('.')
-            .last;
-        String fileName = "${DateTime
-            .now()
-            .millisecondsSinceEpoch}_${attachments.indexOf(file)}.$extension";
+        String extension = file.path.split('.').last;
+        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${attachments.indexOf(file)}.$extension";
 
         Reference ref = FirebaseStorage.instance
             .ref()
             .child('users/${user.uid}/cases/$caseId/disputeRecords/$fileName');
 
-        // Optional: Set metadata so the browser/app knows the file type
-        UploadTask uploadTask = ref.putFile(file);
-
-        TaskSnapshot snapshot = await uploadTask;
+        TaskSnapshot snapshot = await ref.putFile(file);
         String downloadUrl = await snapshot.ref.getDownloadURL();
         fileUrls.add(downloadUrl);
       }
 
-      // 2. Add Dispute to Firestore
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('cases')
-          .doc(caseId)
-          .collection('disputeRecords')
-          .add({
+      final Map<String, dynamic> recordData = {
         ...data,
         'caseId': caseId,
-        'attachments': fileUrls, // Now contains URLs for images AND docs
+        'attachments': fileUrls,
         'createdAt': FieldValue.serverTimestamp(),
-      });
+      };
+
+      WriteBatch batch = _firestore.batch();
+
+      // 1. Reference for Dispute Record
+      DocumentReference disputeRef = _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection('disputeRecords').doc();
+
+      batch.set(disputeRef, recordData);
+
+      // 2. Handle Flagged Events (NEW PATH)
+      if (data['flagEntry'] == true) {
+        DocumentReference flaggedRef = _firestore
+            .collection('users').doc(user.uid)
+            .collection('cases').doc(caseId) // Path changed
+            .collection('flaggedEvents').doc();
+
+        batch.set(flaggedRef, {
+          ...recordData,
+          'originCollection': 'disputeRecords',
+          'originId': disputeRef.id,
+        });
+      }
+
+      await batch.commit();
 
       _isLoading = false;
       notifyListeners();
@@ -81,8 +89,6 @@ class DisputeProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      // GENTLE CORRECTION: Provide more specific feedback if it's a storage issue
-      debugPrint("Upload Error: $e");
       _showSnackBar(context, "Failed to save: ${e.toString()}");
     }
   }
@@ -104,15 +110,9 @@ class DisputeProvider extends ChangeNotifier {
     try {
       List<String> finalUrls = List.from(existingUrls);
 
-      // 1. Upload only NEW files
       for (var file in newAttachments) {
-        String extension = file.path
-            .split('.')
-            .last;
-        String fileName = "${DateTime
-            .now()
-            .millisecondsSinceEpoch}_${newAttachments.indexOf(
-            file)}.$extension";
+        String extension = file.path.split('.').last;
+        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${newAttachments.indexOf(file)}.$extension";
 
         Reference ref = FirebaseStorage.instance
             .ref()
@@ -123,17 +123,14 @@ class DisputeProvider extends ChangeNotifier {
         finalUrls.add(downloadUrl);
       }
 
-      // Prepare updated data
       Map<String, dynamic> updatedData = {
         ...data,
         'attachments': finalUrls,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      // 2. Use WriteBatch for Atomic Operations
       WriteBatch batch = _firestore.batch();
 
-      // Reference to the main document
       DocumentReference disputeRef = _firestore
           .collection('users').doc(user.uid)
           .collection('cases').doc(caseId)
@@ -141,29 +138,31 @@ class DisputeProvider extends ChangeNotifier {
 
       batch.update(disputeRef, updatedData);
 
-      // 3. Handle Flagged Events
+      // 3. Handle Flagged Events (NEW PATH)
       var flaggedQuery = await _firestore
           .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId) // Path changed for query
           .collection('flaggedEvents')
           .where('originId', isEqualTo: disputeId)
           .get();
 
       if (data['flagEntry'] == true) {
         if (flaggedQuery.docs.isEmpty) {
-          // Create new flagged entry
-          DocumentReference newFlagRef = _firestore.collection('users').doc(
-              user.uid).collection('flaggedEvents').doc();
+          DocumentReference newFlagRef = _firestore
+              .collection('users').doc(user.uid)
+              .collection('cases').doc(caseId) // Path changed for new doc
+              .collection('flaggedEvents').doc();
+
           batch.set(newFlagRef, {
             ...updatedData,
             'originCollection': 'disputeRecords',
-            'originId': disputeId
+            'originId': disputeId,
+            'caseId': caseId
           });
         } else {
-          // Update existing flagged entry
           batch.update(flaggedQuery.docs.first.reference, updatedData);
         }
       } else {
-        // Remove flag if flagEntry is false
         for (var doc in flaggedQuery.docs) {
           batch.delete(doc.reference);
         }
@@ -178,7 +177,6 @@ class DisputeProvider extends ChangeNotifier {
     } catch (e) {
       _isLoading = false;
       notifyListeners();
-      debugPrint("Update Error: $e");
       _showSnackBar(context, "Error updating: ${e.toString()}");
     }
   }

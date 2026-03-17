@@ -64,21 +64,32 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // 1. Start Date & Time (Always Visible)
             _buildInteractiveField("Rule Start Date *", provider.startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.startDate!), Icons.calendar_today, () => _pickDate(context, true)),
             const SizedBox(height: 15),
             _buildInteractiveField("Start Time *", provider.startTime == null ? "--:--" : provider.startTime!.format(context), Icons.access_time, () => _pickTime(context, true)),
+
             const SizedBox(height: 15),
+
+            // 2. Repeat Toggle
             _buildRepeatToggle(provider),
 
-            if (provider.isRepeat) ...[
-              _buildFrequencySelector(provider),
-              const SizedBox(height: 15),
+            const SizedBox(height: 15),
 
+            // 3. Conditional UI logic
+            if (provider.isRepeat) ...[
+              // Toggle is ON: Show Frequency Options
+              _buildFrequencySelector(provider),
+            ] else ...[
+              // Toggle is OFF: Show End Date and End Time
               _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
               const SizedBox(height: 15),
               _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
             ],
+
             const SizedBox(height: 20),
+
+            // 4. Notification & Notes
             const Text("Notification Preference", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
             const SizedBox(height: 8),
             _buildNotificationDropdown(provider),
@@ -99,28 +110,23 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             _buildComplianceNote(),
             const SizedBox(height: 10),
 
-            // Selection List
-            // REPLACE THIS SECTION:
+            // 5. Children Selection List
             _buildChildItem(
               "Select All",
               null,
-              // Use allChildrenOptions instead of widget.availableChildren
               provider.selectedChildIds.length == provider.allChildrenOptions.length && provider.allChildrenOptions.isNotEmpty,
                   () {
                 if (provider.selectedChildIds.length == provider.allChildrenOptions.length) {
                   provider.clearSelectedChildren();
                 } else {
-                  // Ensure this method is in your provider
                   provider.selectAllChildrenFromMap(provider.allChildrenOptions);
                 }
               },
             ),
-            // 2. Individual Child List
+
             ...provider.allChildrenOptions.map((childMap) {
               final String id = childMap['id'].toString();
               final String name = childMap['name'];
-
-              // Handle both Timestamp and DateTime for DOB
               DateTime dob = (childMap['dob'] is Timestamp)
                   ? (childMap['dob'] as Timestamp).toDate()
                   : DateTime.parse(childMap['dob'].toString());
@@ -336,20 +342,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
             return;
           }
-
-          // 2. Validate End Time (Only if both times exist)
-          if (provider.startTime != null && provider.endTime != null) {
-            final startMinutes = provider.startTime!.hour * 60 + provider.startTime!.minute;
-            final endMinutes = provider.endTime!.hour * 60 + provider.endTime!.minute;
-
-            if (endMinutes <= startMinutes) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("End time must be after Start time.")),
-              );
-              return;
-            }
-          }
-
           // 3. Execution
           bool success = await provider.updateRuleInFirestore(caseId: widget.caseId, category: widget.category);
 

@@ -348,22 +348,20 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
   }
 
   void _onSaveRule() {
-    // 1. Basic Null Checks
+    // 1. Basic Null Checks (Always required)
     if (startDate == null || startTime == null) {
       showSnackBar(context, "Start Date and Time required");
       return;
     }
 
-    // 2. Validate End Time logic only (if both exist)
-    if (isRepeat && endDate != null && endTime != null) {
-      final startMinutes = startTime!.hour * 60 + startTime!.minute;
-      final endMinutes = endTime!.hour * 60 + endTime!.minute;
-
-      if (endMinutes <= startMinutes) {
-        showSnackBar(context, "End time must be after Start time.");
+    // 2. Conditional Validation
+    if (!isRepeat) {
+      // If NOT repeating, End Date and End Time are now mandatory
+      if (endDate == null || endTime == null) {
+        showSnackBar(context, "End Date and Time are required for non-recurring rules");
         return;
       }
-    }
+     }
 
     // 3. Child Selection Check
     if (selectedChildIds.isEmpty) {
@@ -380,8 +378,9 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
     Map<String, dynamic> ruleData = {
       "startDate": startDate!.toIso8601String(),
       "startTime": "${startTime!.hour}:${startTime!.minute}",
-      "endDate": endDate?.toIso8601String(),
-      "endTime": endTime != null ? "${endTime!.hour}:${endTime!.minute}" : null,
+      // If repeating, we typically don't send end dates unless it's a "repeat until" logic
+      "endDate": !isRepeat ? endDate?.toIso8601String() : null,
+      "endTime": !isRepeat && endTime != null ? "${endTime!.hour}:${endTime!.minute}" : null,
       "notificationPref": notificationPref,
       "isRepeat": isRepeat,
       "frequency": isRepeat ? repeatFrequency : null,
@@ -389,13 +388,11 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       "appliedChildren": childrenData,
     };
 
-    // 5. Success Feedback
-    showSnackBar(context, "Rule saved successfully!");
-
-    // 6. Submit
+    // 5. Submit
     widget.provider.setRuleConfiguration(ruleData);
     widget.provider.submitCase(context);
   }
+
   // Pickers
   Future<void> _pickDate(bool isStart) async {
     final now = DateTime.now();
@@ -454,7 +451,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
         const SizedBox(height: 15),
 
-        // 6. Repeat Schedule Toggle
+        // 2. Repeat Schedule Toggle
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -463,83 +460,70 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
               children: const [
                 Text("Repeat Schedule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                 SizedBox(height: 2),
-                Text("Enable recurring schedule patternse", style: TextStyle(color: Colors.grey, fontSize: 11)), // Typo in SS "patternse", fixed here? No, let's keep clean.
+                Text("Enable recurring schedule patterns", style: TextStyle(color: Colors.grey, fontSize: 11)),
               ],
             ),
             Switch(
               value: isRepeat,
-              activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white,
+              activeTrackColor: const Color(0xFF4A148C),
+              activeThumbColor: Colors.white,
               onChanged: (v) => setState(() => isRepeat = v),
             ),
           ],
         ),
 
         const SizedBox(height: 15),
-        if(isRepeat)...[
-          if (isRepeat)
-            Row(
-              children: ["Indefinitely", "Fortnightly", "Monthly", "Weekly"].map((freq) { // "Fornightly" matches SS typo or standard spelling? Using SS "Fornightly"
-                bool isSelected = repeatFrequency == freq;
-                return Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => repeatFrequency = freq),
-                    child: Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: BoxDecoration(
-                        color: isSelected ? const Color(0xFFE3F2FD) : Colors.white, // Light blue if selected
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(
-                            color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
-                            width: 1
-                        ),
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                          freq,
-                          style: TextStyle(
-                              color: isSelected ? const Color(0xFF7B1FA2) : const Color(0xFF7B1FA2),
-                              fontWeight: FontWeight.w500,
-                              fontSize: 12
-                          )
-                      ),
+
+        // 3. Conditional UI based on Toggle
+        if (isRepeat) ...[
+          // Show 4 Options (Frequency) when Toggle is ON
+          Row(
+            children: ["Indefinitely", "Fortnightly", "Monthly", "Weekly"].map((freq) {
+              bool isSelected = repeatFrequency == freq;
+              return Expanded(
+                child: GestureDetector(
+                  onTap: () => setState(() => repeatFrequency = freq),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(horizontal: 4),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected ? const Color(0xFFE3F2FD) : Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFF7B1FA2), width: 1),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                        freq,
+                        style: TextStyle(
+                            color: const Color(0xFF7B1FA2),
+                            fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 12
+                        )
                     ),
                   ),
-                );
-              }).toList(),
-            ),
-          const SizedBox(height: 15),
+                ),
+              );
+            }).toList(),
+          ),
+        ] else ...[
+          // Show End Date and End Time when Toggle is OFF
           _buildFieldLabel("Rule End Date"),
-        _buildInputContainer(
-          text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
-          icon: Icons.calendar_today_outlined,
-          onTap: () => _pickDate(false)
-        ),
-
-        const SizedBox(height: 15),
-
-        // 4. End Time
-        _buildFieldLabel("End Time"),
-        _buildInputContainer(
-          text: endTime == null ? "00 : 00" : endTime!.format(context),
-          icon: Icons.access_time,
-          onTap: () => _pickTime(false)
-        ),
-
-        
-
-        
-
-        const SizedBox(height: 15),
-        ],
-
-        // 3. End Date
-        
-
-
+          _buildInputContainer(
+              text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
+              icon: Icons.calendar_today_outlined,
+              onTap: () => _pickDate(false)
+          ),
 
           const SizedBox(height: 15),
 
+          _buildFieldLabel("End Time"),
+          _buildInputContainer(
+              text: endTime == null ? "00 : 00" : endTime!.format(context),
+              icon: Icons.access_time,
+              onTap: () => _pickTime(false)
+          ),
+        ],
+          const SizedBox(height: 15),
         // 5. Notification Preference
         _buildFieldLabel("Notification Preference"),
         Container(

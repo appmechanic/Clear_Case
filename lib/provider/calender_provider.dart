@@ -97,7 +97,7 @@ class CalendarProvider extends ChangeNotifier {
         caseDocRef.collection('breachRecords').get(),
       ]);
 
-      // 2. Fetch reminders separately since it returns void
+      // 2. Fetch reminders
       await fetchRemindersForCase(caseId);
 
       // 3. Process Payments
@@ -112,19 +112,19 @@ class CalendarProvider extends ChangeNotifier {
             type: EventType.payment,
             description: data['notes'],
             amount: (data['amount'] as num?)?.toDouble(),
-            childNames: _resolveChildNames(data['childIds'] ?? []), // Uses helper
+            childNames: _resolveChildNames(data['childIds'] ?? []),
+            isFlagged: data['flagEntry'] ?? false, // <-- Added
           ));
         }
       }
 
-      // 4. Process Custody (snapshots[1])
+      // 4. Process Custody
       for (var doc in snapshots[1].docs) {
         final data = doc.data();
         if (data.containsKey('frequency') || data.containsKey('notificationPref')) continue;
 
         final Timestamp? timestamp = data['startDate'] as Timestamp?;
         if (timestamp != null) {
-          // 1. Resolve child names from CaseModel
           List<String> childIds = List<String>.from(data['childIds'] ?? []);
           List<String> names = childIds.map((id) {
             return _selectedCase?.children
@@ -139,12 +139,13 @@ class CalendarProvider extends ChangeNotifier {
             date: recordDate,
             type: EventType.custody,
             description: data['notes'],
-            childNames: names, // Pass resolved names here
+            childNames: names,
+            isFlagged: data['flagEntry'] ?? false, // <-- Added
           ));
         }
       }
 
-      // 5. Process Disputes (snapshots[2])
+      // 5. Process Disputes
       for (var doc in snapshots[2].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
@@ -154,10 +155,13 @@ class CalendarProvider extends ChangeNotifier {
             title: data['issue'] ?? 'Dispute',
             date: recordDate,
             type: EventType.dispute,
+            description: data['description'], // Added description if needed
+            isFlagged: data['flagEntry'] ?? false, // <-- Added
           ));
         }
       }
 
+      // 6. Process Breaches
       for (var doc in snapshots[3].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
@@ -167,8 +171,8 @@ class CalendarProvider extends ChangeNotifier {
             title: data['type'] ?? 'Breach',
             date: recordDate,
             type: EventType.breach,
-            // This now matches your updated Enum
             description: data['description'],
+            isFlagged: data['flagEntry'] ?? false, // <-- Added
           ));
         }
       }

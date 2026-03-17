@@ -41,7 +41,8 @@ class NewEntryProvider extends ChangeNotifier {
     }
   }
 
-  // --- CUSTODY METHODS ---
+
+// --- CUSTODY METHODS ---
 
   Future<void> addCustodyRecord(
       BuildContext context, String caseId, CustodyRecordModel record, List<File> imageFiles) async {
@@ -63,8 +64,9 @@ class NewEntryProvider extends ChangeNotifier {
       batch.set(ref, recordData);
 
       if (record.flagEntry == true) {
-        DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc();
-        batch.set(flaggedRef, {...recordData, 'originCollection': 'custodyRecords', 'originId': ref.id});
+        // Updated Path: Now inside the case
+        DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').doc();
+        batch.set(flaggedRef, {...recordData, 'originCollection': 'custodyRecords', 'originId': ref.id, 'caseId': caseId});
       }
 
       await batch.commit();
@@ -100,10 +102,12 @@ class NewEntryProvider extends ChangeNotifier {
       WriteBatch batch = _firestore.batch();
       batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('custodyRecords').doc(record.id), recordData);
 
-      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
+      // Updated Path for Query: Searching inside the specific case
+      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
+
       if (record.flagEntry == true) {
         if (flaggedQuery.docs.isEmpty) {
-          batch.set(_firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc(), {...recordData, 'originCollection': 'custodyRecords', 'originId': record.id});
+          batch.set(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').doc(), {...recordData, 'originCollection': 'custodyRecords', 'originId': record.id, 'caseId': caseId});
         } else {
           batch.update(flaggedQuery.docs.first.reference, recordData);
         }
@@ -152,6 +156,8 @@ class NewEntryProvider extends ChangeNotifier {
     return doc.exists ? PaymentRecordModel.fromMap(doc.data()!, doc.id) : null;
   }
 
+  // --- PAYMENT METHODS ---
+
   Future<void> addPaymentRecord(
       BuildContext context, String caseId, PaymentRecordModel record, List<File> imageFiles) async {
     final user = _auth.currentUser;
@@ -173,8 +179,9 @@ class NewEntryProvider extends ChangeNotifier {
       batch.set(ref, data);
 
       if (record.flagEntry == true) {
-        DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc();
-        batch.set(flaggedRef, {...data, 'originCollection': 'paymentRecords', 'originId': ref.id});
+        // Updated Path: Now inside the case
+        DocumentReference flaggedRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').doc();
+        batch.set(flaggedRef, {...data, 'originCollection': 'paymentRecords', 'originId': ref.id, 'caseId': caseId});
       }
 
       await batch.commit();
@@ -211,14 +218,16 @@ class NewEntryProvider extends ChangeNotifier {
       WriteBatch batch = _firestore.batch();
       batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('paymentRecords').doc(record.id), data);
 
-      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
+      // Updated Path for Query: Searching inside the specific case
+      var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
 
       if (record.flagEntry == true) {
         if (flaggedQuery.docs.isEmpty) {
-          batch.set(_firestore.collection('users').doc(user.uid).collection('flaggedEvents').doc(), {
+          batch.set(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').doc(), {
             ...data,
             'originCollection': 'paymentRecords',
-            'originId': record.id
+            'originId': record.id,
+            'caseId': caseId
           });
         } else {
           batch.update(flaggedQuery.docs.first.reference, data);

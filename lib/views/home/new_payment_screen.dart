@@ -4,6 +4,8 @@ import 'package:clearcase/models/payment_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/calender_provider.dart';
@@ -47,6 +49,59 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   final List<String> paymentTypes = ["Child Support", "School Fees", "Medical", "Other"];
   final List<String> paymentMethods = ["Bank Transfer", "Cash", "Cheque", "Online"];
   bool isDateSetFromArgs = false;
+
+  bool _isLocationLoading = false;
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLocationLoading = true);
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showSnackBar(context, "Location services are disabled.");
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          _showSnackBar(context, "Location permissions are denied.");
+          return;
+        }
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.high);
+
+      List<Placemark> placemarks = await placemarkFromCoordinates(
+          position.latitude, position.longitude);
+
+      if (placemarks.isNotEmpty) {
+        Placemark place = placemarks[0];
+
+        // Extracting requested components
+        List<String> addressParts = [];
+        if (place.street != null && place.street!.isNotEmpty) addressParts.add(place.street!);
+        if (place.locality != null && place.locality!.isNotEmpty) addressParts.add(place.locality!);
+        if (place.country != null && place.country!.isNotEmpty) addressParts.add(place.country!);
+        if (place.postalCode != null && place.postalCode!.isNotEmpty) addressParts.add(place.postalCode!);
+
+        setState(() {
+          _locationController.text = addressParts.join(", ");
+        });
+      }
+    } catch (e) {
+      _showSnackBar(context, "Could not fetch location: $e");
+    } finally {
+      setState(() => _isLocationLoading = false);
+    }
+  }
+// Small helper for internal class use
+  void _showSnackBar(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
+
 
   @override
   void didChangeDependencies() {
@@ -194,16 +249,47 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                     _buildInteractiveDropdown("Payment Method", selectedPaymentMethod, paymentMethods, (val) => setState(() => selectedPaymentMethod = val!)),
                     const SizedBox(height: 15),
 
-                    CustomTextField(
-                      labelText: "Location",
-                      hintText: "Enter Location",
-                      controller: _locationController,
-                      node: _locationNode,
-                      nextNode: _notesNode,
-                      borderRadius: 8,
-                      backgroundColor: Colors.grey.shade200,
+                CustomTextField(
+                  labelText: "Location",
+                  hintText: "Tap to auto-fill or type manually",
+                  controller: _locationController,
+                  node: FocusNode(),
+                  borderRadius: 8,
+                  backgroundColor: Colors.grey.shade200,
+                  onTap: () {
+                    // Only fetch if empty to allow manual editing afterward
+                    if (_locationController.text.isEmpty && !_isLocationLoading) {
+                      _getCurrentLocation();
+                    }
+                  },
+                ),
+
+                // Status Indicator below the field
+                Padding(
+                  padding: const EdgeInsets.only(top: 6, left: 4),
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 300),
+                    child: _isLocationLoading
+                        ? const Row(
+                      children: [
+                        SizedBox(
+                          height: 12,
+                          width: 12,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A148C)),
+                        ),
+                        SizedBox(width: 8),
+                        Text("Fetching current location...", style: TextStyle(fontSize: 12, color: Color(0xFF4A148C))),
+                      ],
+                    )
+                        : _locationController.text.isEmpty
+                        ? const Text("Tip: Tap field to auto-fill current address", style: TextStyle(fontSize: 11, color: Colors.grey))
+                        : GestureDetector(
+                      onTap: () => setState(() => _locationController.clear()),
+                      child: const Text("Clear location", style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold)),
                     ),
-                    const SizedBox(height: 15),
+                  ),
+                ),
+                const SizedBox(height: 15),
 
                     CustomTextField(
                       labelText: "Notes (Optional)",

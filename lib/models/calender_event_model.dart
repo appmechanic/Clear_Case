@@ -11,6 +11,7 @@ class CalendarEvent {
   final double? amount;
   final List<String> childNames;
   final bool isFlagged;
+  final List<String> attachmentUrls; // Added for storage cleanup
 
   CalendarEvent({
     required this.id,
@@ -21,6 +22,7 @@ class CalendarEvent {
     this.amount,
     this.childNames = const [],
     this.isFlagged = false,
+    this.attachmentUrls = const [], // Default to empty list
   });
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
@@ -33,6 +35,7 @@ class CalendarEvent {
       amount: (map['amount'] as num?)?.toDouble(),
       childNames: List<String>.from(map['childNames'] ?? []),
       isFlagged: map['flagEntry'] ?? false,
+      attachmentUrls: List<String>.from(map['attachmentUrls'] ?? []), // Added
     );
   }
 
@@ -45,6 +48,7 @@ class CalendarEvent {
       'amount': amount,
       'childNames': childNames,
       'flagEntry': isFlagged,
+      'attachmentUrls': attachmentUrls, // Added
     };
   }
 

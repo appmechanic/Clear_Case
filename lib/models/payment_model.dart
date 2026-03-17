@@ -3,16 +3,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class PaymentRecordModel {
   String? id;
   String? caseId;
-  List<String>? childIds; // Added for child selection
-  List<String>? attachmentUrls; // Added for file storage
+  List<String>? childIds;
+  List<String>? attachmentUrls;
   double? amount;
   DateTime? date;
   String? paymentType;
-  String? category;
+  String? paymentCategory; // The modern field name
+  String? transactionType; // "PaymentReceived" | "PaymentPaid"
   String? paymentMethod;
   String? location;
   String? notes;
-  bool? isReceived;
+  bool? isReceived; // Kept for legacy compatibility
   bool? flagEntry;
   DateTime? createdAt;
 
@@ -24,7 +25,8 @@ class PaymentRecordModel {
     this.amount,
     this.date,
     this.paymentType,
-    this.category,
+    this.paymentCategory,
+    this.transactionType,
     this.paymentMethod,
     this.location,
     this.notes,
@@ -41,17 +43,25 @@ class PaymentRecordModel {
       'amount': amount,
       'date': date != null ? Timestamp.fromDate(date!) : null,
       'paymentType': paymentType,
-      'category': category,
+      'paymentCategory': paymentCategory, // Primary field for category
+      'transactionType': transactionType,
       'paymentMethod': paymentMethod,
       'location': location,
       'notes': notes,
       'isReceived': isReceived,
       'flagEntry': flagEntry,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
+      // 'category' has been removed to avoid duplicate data
     };
   }
 
   factory PaymentRecordModel.fromMap(Map<String, dynamic> map, String documentId) {
+    // Determine transactionType from legacy 'isReceived' if 'transactionType' is missing
+    String? tType = map['transactionType'];
+    if (tType == null && map['isReceived'] != null) {
+      tType = (map['isReceived'] == true) ? "PaymentReceived" : "PaymentPaid";
+    }
+
     return PaymentRecordModel(
       id: documentId,
       caseId: map['caseId'] as String?,
@@ -62,7 +72,9 @@ class PaymentRecordModel {
           : (map['amount'] as double?),
       date: (map['date'] as Timestamp?)?.toDate(),
       paymentType: map['paymentType'] as String?,
-      category: map['category'] as String?,
+      // Logic: Try to get 'paymentCategory' first; if null, look for the old 'category' key
+      paymentCategory: map['paymentCategory'] as String? ?? map['category'] as String?,
+      transactionType: tType,
       paymentMethod: map['paymentMethod'] as String?,
       location: map['location'] as String?,
       notes: map['notes'] as String?,

@@ -267,7 +267,7 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
                  const SizedBox(height: 15),
                 _buildSwitchTile("Custody Fulfilled", isFulfilled, (v) => setState(() => isFulfilled = v)),
                 const SizedBox(height: 15),
-                CustomTextField(labelText: "Notes", hintText: "Enter details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Notes", hintText: "Enter Additional Details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
                 const SizedBox(height: 20),
 
                 const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),

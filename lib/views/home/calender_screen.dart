@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
+import '../widgets/delete_entries_confirmation.dart';
 import 'case_setup_screen.dart';
 
 
@@ -337,6 +338,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
       ),
     );
   }
+
   void _showDayDetailsSheet(BuildContext context, CalendarProvider provider, DateTime date) {
     final events = provider.getEventsForDay(date);
 
@@ -345,60 +347,78 @@ class _CalenderScreenState extends State<CalenderScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.55,
+        initialChildSize: 0.6, // Increased slightly for better initial view
         minChildSize: 0.4,
-        maxChildSize: 0.9,
+        maxChildSize: 0.95,
         builder: (_, controller) => Container(
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.only(topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+            borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(30), topRight: Radius.circular(30)),
           ),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-          child: Column(
+          child: Column( // Main container remains a column
             children: [
-              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
+              // Handle bar
+              Center(
+                  child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 20),
 
               Text(
                 DateFormat('EEEE, MMMM d, y').format(date),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 15),
 
+              // Use Expanded to let the scrollable area take up remaining space
               Expanded(
-                child: events.isEmpty
-                  ? const Center(child: Text("No events scheduled.", style: TextStyle(color: Colors.grey)))
-                  : ListView.builder(
-                      controller: controller,
-                      itemCount: events.length,
-                      itemBuilder: (context, index) => _buildEventCard(events[index]),
-                    ),
-              ),
+                child: ListView(
+                  controller: controller, // Attach the sheet's controller here
+                  physics: const BouncingScrollPhysics(),
+                  children: [
+                    // 1. Show Events List first
+                    if (events.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 30),
+                        child: Center(
+                            child: Text("No events scheduled.",
+                                style: TextStyle(color: Colors.grey))),
+                      )
+                    else
+                      ...events.map((event) => _buildEventCard(event)).toList(),
 
-              const SizedBox(height: 10),
-              _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C), Colors.white, true, () {
-                 Navigator.pop(context);
-                 Navigator.pushNamed(
-                     context,
-                     NewEntryScreen.routeName,
-                     arguments: date // <--- Pass the date here
-                 );
-              }),
-              const SizedBox(height: 10),
-              _buildActionButton("Add Reminder", Icons.access_time, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                Navigator.pop(context);
-                Navigator.pushNamed(
-                  context,
-                  NewReminderScreen.routeName,
-                  arguments: date, //
-                );
-              }),
-              const SizedBox(height: 10),
-              _buildActionButton("View Events", Icons.calendar_today, const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                 Navigator.pop(context);
-                 _showEventsPopup(context, date, events);
-              }),
-              const SizedBox(height: 20),
+                    const SizedBox(height: 20),
+
+                    // 2. Action Buttons are now INSIDE the scrollview
+                    _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C),
+                        Colors.white, true, () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, NewEntryScreen.routeName,
+                              arguments: date);
+                        }),
+                    const SizedBox(height: 12),
+                    _buildActionButton("Add Reminder", Icons.access_time,
+                        const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
+                          Navigator.pop(context);
+                          Navigator.pushNamed(context, NewReminderScreen.routeName,
+                              arguments: date);
+                        }),
+                    const SizedBox(height: 12),
+                    _buildActionButton("View Events", Icons.calendar_today,
+                        const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
+                          Navigator.pop(context);
+                          _showEventsPopup(context, date, events);
+                        }),
+                    const SizedBox(height: 30), // Padding at the bottom
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -519,11 +539,26 @@ class _CalenderScreenState extends State<CalenderScreen> {
                   const SizedBox(width: 15),
                   GestureDetector(
                     onTap: () {
-                      // We'll implement the delete confirmation dialog later
+                      final calProvider = Provider.of<CalendarProvider>(context, listen: false);
+
+                      DeleteEntriesConfirmation.show(context, () async {
+                        // 1. Close the Bottom Sheet immediately (if one is open)
+                        // This ensures the Snackbar has a clean Scaffold to display on
+                        Navigator.pop(context);
+
+                        // 2. Trigger the delete
+                        await calProvider.deleteRecord(
+                          context: context,
+                          recordId: event.id,
+                          type: event.type,
+                          attachmentUrls: event.attachmentUrls,
+                        );
+                      });
                     },
                     child: const Icon(Icons.delete, color: Colors.red, size: 20),
                   ),
-                ],
+                  
+                 ],
               )
             ],
           ),

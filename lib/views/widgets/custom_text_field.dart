@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../core/theme/app_colors.dart';
 
 // ignore: must_be_immutable
@@ -47,6 +46,7 @@ class CustomTextField extends StatefulWidget {
     this.isReadOnly = false,
     this.borderRadius = 0,
   });
+
   String? hintText;
   Function()? tapOn;
   final bool isNum;
@@ -61,106 +61,110 @@ class CustomTextField extends StatefulWidget {
 }
 
 class _CustomTextFieldState extends State<CustomTextField> {
-  @override
-  void dispose() {
-    super.dispose();
-    // widget.controller.dispose();
-  }
-
   bool isHide = true;
 
   @override
   Widget build(BuildContext context) {
-    return
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(widget.labelText, style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 14)),
-            const SizedBox(height: 5),
-            TextField(
-              readOnly: widget.isReadOnly,
-              onTap: widget.onTap,
-              maxLines: widget.maxLength == 1 ? null : widget.maxLines,
-              textCapitalization: widget.isCap
-                  ? TextCapitalization.characters
-                  : TextCapitalization.none,
-              onChanged: (val) {
-                if (widget.onChange != null) {
-                  widget.onChange!(val);
-                }
-              },
-              maxLength: widget.maxLength,
-              keyboardType: widget.isNum
-                  ? const TextInputType.numberWithOptions(decimal: true)
-                  : TextInputType.text,
-              controller: widget.controller,
-              obscureText: widget.isPassword ? isHide : false,
-              autofillHints: widget.autofillHints,
-              focusNode: widget.node,
-              textInputAction: widget.nextNode == null
-                  ? TextInputAction.done
-                  : TextInputAction.next,
-              onSubmitted: (value) {
-                if (widget.nextNode != null) {
-                  widget.node.unfocus();
-                  FocusScope.of(context).requestFocus(widget.nextNode);
-                }
-              },
-              enabled:
-              widget.isWritable,
-              style: TextStyle(
-                  color: widget.textFieldTextColor, fontSize: 18),
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                floatingLabelBehavior: FloatingLabelBehavior.always,
-                suffixIcon: widget.isPassword
-                    ? IconButton(
-                  onPressed: () {
-                    setState(() {
-                      isHide = !isHide;
-                    });
-                  },
-                  icon: Icon(
-                    isHide ? Icons.visibility : Icons.visibility_off,
-                    color: AppColors.greyColor,
-                  ),
-                )
-                    : widget.icon != null
-                    ? Icon(widget.icon, color: AppColors.greyColor)
-                    : null,
-                filled: true,
-                fillColor: widget.backgroundColor,
-                hintText: widget.hintText,
-                counterText: '',
-                labelStyle: const TextStyle(color: AppColors.greyColor),
-                hintStyle: const TextStyle(color: AppColors.greyColor, fontSize: 16),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius:
-                  BorderRadius.all(Radius.circular(widget.borderRadius)),
-                  borderSide: const BorderSide(
-                      color: Colors.transparent, width: 1
-                  ),
-                ),
-                disabledBorder: OutlineInputBorder(
-                  borderRadius:
-                  BorderRadius.all(Radius.circular(widget.borderRadius)),
-                  borderSide: BorderSide(
-                      color: Colors.grey, width: 1
-                  ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius:
-                  BorderRadius.all(Radius.circular(widget.borderRadius)),
-                  borderSide: BorderSide(
-                      color: widget.borderActiveColor, width: 1
-                  ),
-                ),
-              ),
+    // Logic for dynamic multi-line support
+    final bool isMultiLine = widget.maxLines > 1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.labelText,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w500,
+            fontSize: 14,
+          ),
+        ),
+        const SizedBox(height: 5),
+        TextField(
+          readOnly: widget.isReadOnly,
+          onTap: widget.onTap,
+
+          // If multi-line, we set maxLines to null (infinite growth)
+          // and minLines to your provided value (starting height).
+          maxLines: isMultiLine ? null : 1,
+          minLines: isMultiLine ? widget.maxLines : 1,
+
+          textCapitalization: widget.isCap
+              ? TextCapitalization.characters
+              : TextCapitalization.none,
+          onChanged: (val) {
+            if (widget.onChange != null) {
+              widget.onChange!(val);
+            }
+          },
+
+          // Disable hard length limit for multi-line notes if preferred
+          maxLength: isMultiLine ? null : widget.maxLength,
+
+          keyboardType: widget.isNum
+              ? const TextInputType.numberWithOptions(decimal: true)
+              : (isMultiLine ? TextInputType.multiline : TextInputType.text),
+
+          controller: widget.controller,
+          obscureText: widget.isPassword ? isHide : false,
+          autofillHints: widget.autofillHints,
+          focusNode: widget.node,
+
+          // Action is "newline" for multi-line, otherwise "next" or "done"
+          textInputAction: isMultiLine
+              ? TextInputAction.newline
+              : (widget.nextNode == null ? TextInputAction.done : TextInputAction.next),
+
+          onSubmitted: (value) {
+            if (!isMultiLine && widget.nextNode != null) {
+              widget.node.unfocus();
+              FocusScope.of(context).requestFocus(widget.nextNode);
+            }
+          },
+          enabled: widget.isWritable,
+          style: TextStyle(color: widget.textFieldTextColor, fontSize: 18),
+          decoration: InputDecoration(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(4),
             ),
-          ],
-        );
+            floatingLabelBehavior: FloatingLabelBehavior.always,
+            suffixIcon: widget.isPassword
+                ? IconButton(
+              onPressed: () {
+                setState(() {
+                  isHide = !isHide;
+                });
+              },
+              icon: Icon(
+                isHide ? Icons.visibility : Icons.visibility_off,
+                color: AppColors.greyColor,
+              ),
+            )
+                : widget.icon != null
+                ? Icon(widget.icon, color: AppColors.greyColor)
+                : null,
+            filled: true,
+            fillColor: widget.backgroundColor,
+            hintText: widget.hintText,
+            counterText: '',
+            labelStyle: const TextStyle(color: AppColors.greyColor),
+            hintStyle: const TextStyle(color: AppColors.greyColor, fontSize: 16),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
+              borderSide: const BorderSide(color: Colors.transparent, width: 1),
+            ),
+            disabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
+              borderSide: const BorderSide(color: Colors.grey, width: 1),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(widget.borderRadius)),
+              borderSide: BorderSide(color: widget.borderActiveColor, width: 1),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

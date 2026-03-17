@@ -274,7 +274,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                 const SizedBox(height: 15),
                 CustomTextField(
                   labelText: "Description",
-                  hintText: "Describe the event...",
+                  hintText: "Describe the remainder...",
                   maxLines: 3,
                   controller: _descController,
                   node: _descNode,

@@ -2,6 +2,7 @@ import 'package:clearcase/models/calender_event_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../models/case_model.dart';
@@ -114,6 +115,7 @@ class CalendarProvider extends ChangeNotifier {
             amount: (data['amount'] as num?)?.toDouble(),
             childNames: _resolveChildNames(data['childIds'] ?? []),
             isFlagged: data['flagEntry'] ?? false, // <-- Added
+            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []), // ADD THIS
           ));
         }
       }
@@ -141,6 +143,7 @@ class CalendarProvider extends ChangeNotifier {
             description: data['notes'],
             childNames: names,
             isFlagged: data['flagEntry'] ?? false, // <-- Added
+            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []), // ADD THIS
           ));
         }
       }
@@ -157,6 +160,7 @@ class CalendarProvider extends ChangeNotifier {
             type: EventType.dispute,
             description: data['description'], // Added description if needed
             isFlagged: data['flagEntry'] ?? false, // <-- Added
+            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []), // ADD THIS
           ));
         }
       }
@@ -173,6 +177,7 @@ class CalendarProvider extends ChangeNotifier {
             type: EventType.breach,
             description: data['description'],
             isFlagged: data['flagEntry'] ?? false, // <-- Added
+            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []), // ADD THIS
           ));
         }
       }
@@ -268,8 +273,9 @@ class CalendarProvider extends ChangeNotifier {
 
     DateTime current = start;
     while (current.isBefore(limit)) {
-      if (repeat == "Daily") current = current.add(const Duration(days: 1));
-      else if (repeat == "Weekly") current = current.add(const Duration(days: 7));
+      if (repeat == "Daily") {
+        current = current.add(const Duration(days: 1));
+      } else if (repeat == "Weekly") current = current.add(const Duration(days: 7));
       else if (repeat == "Monthly") current = DateTime(current.year, current.month + 1, current.day);
       else break; // "None" or Custom not fully implemented here
 
@@ -289,5 +295,89 @@ class CalendarProvider extends ChangeNotifier {
       )
           .name;
     }).toList();
+  }
+
+  // Inside CalendarProvider class
+
+  Future<void> deleteRecord({
+    required BuildContext context,
+    required String recordId, // caseId can be taken from _selectedCase
+    required EventType type,
+    required List<String> attachmentUrls,
+  }) async {
+    final user = _auth.currentUser;
+    final caseId = _selectedCase?.id;
+
+    if (user == null || caseId == null) return;
+
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      // 1. Delete Attachments from Storage
+      // Use FirebaseStorage.instance directly if not defined as a variable
+      final storage = FirebaseStorage.instance;
+      for (String url in attachmentUrls) {
+        try {
+          await storage.refFromURL(url).delete();
+        } catch (e) {
+          debugPrint("Storage delete skip: $e");
+        }
+      }
+
+      // 2. Collection Mapping
+      String collectionName;
+      switch (type) {
+        case EventType.custody: collectionName = 'custodyRecords'; break;
+        case EventType.payment: collectionName = 'paymentRecords'; break;
+        case EventType.dispute: collectionName = 'disputeRecords'; break;
+        case EventType.breach: collectionName = 'breachRecords'; break;
+        case EventType.reminder: collectionName = 'reminders'; break;
+      }
+
+      WriteBatch batch = _firestore.batch();
+
+      // 3. Delete from flaggedEvents
+      var flaggedQuery = await _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection('flaggedEvents')
+          .where('originId', isEqualTo: recordId)
+          .get();
+
+      for (var doc in flaggedQuery.docs) {
+        batch.delete(doc.reference);
+      }
+
+      // 4. Delete main record
+      DocumentReference mainDoc = _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection(collectionName).doc(recordId);
+
+      batch.delete(mainDoc);
+
+      await batch.commit();
+
+      // 5. Refresh local data
+      await fetchEventsForCase(caseId);
+
+      if (context.mounted) {
+        // Clear existing snackbars first to make sure this one shows up immediately
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Record deleted successfully"),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Delete Error: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 }

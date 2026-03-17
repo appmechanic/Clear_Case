@@ -18,7 +18,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
   TimeOfDay? endTime;
   String notificationPref = "On the Scheduled day";
   bool isRepeat = true;
-  String repeatFrequency = "Weekly";
+  String repeatFrequency = "Indefinitely";
   bool isEnabled = true;
 
   final TextEditingController notesController = TextEditingController();
@@ -66,7 +66,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
         if (data['endTime'] != null) endTime = _parseTime(data['endTime']);
 
         isRepeat = data['isRepeat'] ?? true;
-        repeatFrequency = data['frequency'] ?? "Weekly";
+        repeatFrequency = data['frequency'] ?? "Indefinitely";
         notificationPref = data['notificationPref'] ?? "On the Scheduled day";
         notesController.text = data['notes'] ?? "";
         isEnabled = data['isEnabled'] ?? true;
@@ -264,7 +264,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     endTime = null;
     notificationPref = "On the Scheduled day";
     isRepeat = true;
-    repeatFrequency = "Weekly";
+    repeatFrequency = "Indefinitely";
     isEnabled = true;
     notesController.clear();
 

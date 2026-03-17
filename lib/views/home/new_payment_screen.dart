@@ -102,6 +102,10 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  // State Variables
+  String transactionType = "PaymentReceived"; // "PaymentReceived" | "PaymentPaid"
+  String paymentCategory = "Additional"; // Renamed from paymentTypeToggle
+
 
   @override
   void didChangeDependencies() {
@@ -132,11 +136,14 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
           _amountController.text = record.amount?.toString() ?? "";
           selectedDate = record.date ?? DateTime.now();
           selectedPaymentType = record.paymentType ?? "Child Support";
-          paymentTypeToggle = record.category ?? "Additional";
+
+          // CORRECTED FALLBACK
+          paymentCategory = record.paymentCategory ?? record.paymentCategory ?? "Additional";
+          transactionType = record.transactionType ?? (record.isReceived == true ? "PaymentReceived" : "PaymentPaid");
+
           selectedPaymentMethod = record.paymentMethod ?? "Bank Transfer";
           _locationController.text = record.location ?? "";
           _notesController.text = record.notes ?? "";
-          paymentReceived = record.isReceived ?? true;
           flagEntry = record.flagEntry ?? false;
           selectedChildIds = Set.from(record.childIds ?? []);
           _existingAttachmentUrls = record.attachmentUrls ?? [];
@@ -163,7 +170,6 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       return;
     }
 
-
     final newRecord = PaymentRecordModel(
       id: editRecordId,
       caseId: caseId,
@@ -171,17 +177,17 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       amount: amount,
       date: selectedDate,
       paymentType: selectedPaymentType,
-      category: paymentTypeToggle,
+      paymentCategory: paymentCategory, // New Field
+      transactionType: transactionType, // New Field
       paymentMethod: selectedPaymentMethod,
       location: _locationController.text.trim(),
       notes: _notesController.text.trim(),
-      isReceived: paymentReceived,
+      isReceived: transactionType == "PaymentReceived", // Keep for legacy if needed
       flagEntry: flagEntry,
       attachmentUrls: _existingAttachmentUrls,
       createdAt: editRecordId == null ? DateTime.now() : null,
     );
 
-    // CHANGE 'record' to 'newRecord' here:
     if (editRecordId == null) {
       entryProvider.addPaymentRecord(context, caseId, newRecord, _selectedFiles);
     } else {
@@ -216,8 +222,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
               children: [
                 _buildChildSelector(selectedCase),
                     const SizedBox(height: 20),
-                    _buildSwitchTile("Payment Received", paymentReceived, (v) => setState(() => paymentReceived = v)),
-                    const SizedBox(height: 15),
+                _buildTransactionToggle(),
+                     const SizedBox(height: 15),
 
                     CustomTextField(
                       labelText: "Amount",
@@ -237,13 +243,14 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                     _buildInteractiveDropdown("Payment Type", selectedPaymentType, paymentTypes, (val) => setState(() => selectedPaymentType = val!)),
                     const SizedBox(height: 15),
 
-                    Row(
-                      children: [
-                        Expanded(child: _buildToggleButton("Additional", paymentTypeToggle == "Additional")),
-                        const SizedBox(width: 10),
-                        Expanded(child: _buildToggleButton("Compulsory", paymentTypeToggle == "Compulsory")),
-                      ],
-                    ),
+                Row(
+                  children: [
+                    Expanded(child: _buildCategoryButton("Additional", paymentCategory == "Additional")),
+                    const SizedBox(width: 10),
+                    Expanded(child: _buildCategoryButton("Compulsory", paymentCategory == "Compulsory")),
+                  ],
+                ),
+
                     const SizedBox(height: 15),
 
                     _buildInteractiveDropdown("Payment Method", selectedPaymentMethod, paymentMethods, (val) => setState(() => selectedPaymentMethod = val!)),
@@ -475,21 +482,64 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     );
   }
 
-  Widget _buildToggleButton(String text, bool isSelected) {
-    return GestureDetector(
-      onTap: () => setState(() => paymentTypeToggle = text),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF4A148C).withOpacity(0.1) : Colors.transparent, // Updated to match app theme
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: isSelected ? const Color(0xFF4A148C) : Colors.grey),
-        ),
-        child: Text(text, style: TextStyle(color: isSelected ? const Color(0xFF4A148C) : Colors.black, fontWeight: FontWeight.bold)),
+
+  // --- UI NEW TOGGLE WIDGET ---
+  Widget _buildTransactionToggle() {
+    return Container(
+      width: double.infinity,
+      height: 55,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE1F5FE), // Light blue background from your image
+        borderRadius: BorderRadius.circular(30),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildToggleButton(
+                "Payment Made",
+                transactionType == "PaymentPaid",
+                    () => setState(() => transactionType = "PaymentPaid")
+            ),
+          ),
+          Expanded(
+            child: _buildToggleButton(
+                "Payment Received",
+                transactionType == "PaymentReceived",
+                    () => setState(() => transactionType = "PaymentReceived")
+            ),
+          ),
+        ],
       ),
     );
   }
+
+  Widget _buildToggleButton(String text, bool isSelected, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 250),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(25),
+          border: isSelected ? Border.all(color: const Color(0xFF4A148C), width: 1.5) : null,
+          boxShadow: isSelected
+              ? [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4, offset: const Offset(0, 2))]
+              : [],
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: const Color(0xFF4A148C),
+            fontWeight: FontWeight.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildChildSelector(CaseModel? selectedCase) {
     if (selectedCase == null) return const Text("Select a case first");
 
@@ -509,4 +559,30 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       }).toList(),
     );
   }
+
+
+  Widget _buildCategoryButton(String text, bool isSelected) {
+    return GestureDetector(
+      onTap: () => setState(() => paymentCategory = text),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: isSelected ? const Color(0xFF4A148C).withOpacity(0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? const Color(0xFF4A148C) : Colors.grey.shade400,
+          ),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: isSelected ? const Color(0xFF4A148C) : Colors.black87,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+
   }

@@ -62,8 +62,8 @@ class NewEntryScreen extends StatelessWidget {
               context, 
               "Disputes", 
               "Record communication disputes and conflicts", 
-              Icons.warning_amber, 
-              Colors.orange,
+              Icons.error_outlined,
+              Colors.red,
               () {
                 final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
                 Navigator.pushNamed(
@@ -76,9 +76,9 @@ class NewEntryScreen extends StatelessWidget {
             _buildEntryCard(
               context, 
               "Non-Compliance",
-              "Document violations of court orders", 
+              "Document violations of court orders",
               Icons.cancel_presentation,
-              Colors.red,
+              Colors.redAccent,
                     () {
                   final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
                   Navigator.pushNamed(

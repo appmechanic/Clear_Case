@@ -94,6 +94,7 @@ class ScheduledDatesScreen extends StatelessWidget {
     );
   }
 
+
   Widget _buildDropdownSection(ScheduledDatesProvider provider) {
     return DropdownButtonHideUnderline(
       child: DropdownButton2<dynamic>(
@@ -101,15 +102,19 @@ class ScheduledDatesScreen extends StatelessWidget {
         value: provider.selectedCase,
         selectedItemBuilder: (context) {
           return provider.allCases.map((caseItem) {
-            return Text(
-              provider.getCaseDisplayName(caseItem),
-              style: const TextStyle(
+            return Container(
+              alignment: Alignment.centerLeft,
+              constraints: const BoxConstraints(minHeight: 48), // Gives enough vertical space
+              child: Text(
+                provider.getCaseDisplayName(caseItem),
+                style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 16,
-                  color: Colors.black
+                  color: Colors.black,
+                ),
+                // REMOVED: maxLines: 1 and TextOverflow.ellipsis
+                softWrap: true, // This allows the text to wrap
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             );
           }).toList();
         },
@@ -118,10 +123,14 @@ class ScheduledDatesScreen extends StatelessWidget {
           child: Text(
             provider.getCaseDisplayName(caseItem),
             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            softWrap: true, // Also allow wrapping inside the menu
           ),
         )).toList(),
         onChanged: (value) => provider.setSelectedCase(value),
-        buttonStyleData: const ButtonStyleData(padding: EdgeInsets.zero, height: 40),
+        buttonStyleData: const ButtonStyleData(
+          padding: EdgeInsets.zero,
+          height: 60, // INCREASED height to accommodate two lines
+        ),
         iconStyleData: const IconStyleData(
           icon: Icon(Icons.keyboard_arrow_down, color: Colors.black, size: 24),
           openMenuIcon: Icon(Icons.keyboard_arrow_up, color: Colors.black, size: 24),

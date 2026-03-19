@@ -1,10 +1,13 @@
 import 'package:clearcase/provider/auth_provider.dart';
 import 'package:clearcase/provider/breach_provider.dart';
+import 'package:clearcase/provider/breach_provider_insight.dart';
 import 'package:clearcase/provider/calender_provider.dart';
 import 'package:clearcase/provider/case_setup_provider.dart';
 import 'package:clearcase/provider/dispute_provider.dart';
+import 'package:clearcase/provider/insight_provider.dart';
 import 'package:clearcase/provider/main_provider.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
+import 'package:clearcase/provider/payment_analysis.dart';
 import 'package:clearcase/provider/remainder_provider.dart';
 import 'package:clearcase/provider/rule_configuration_provider.dart';
 import 'package:clearcase/provider/scheduled_dates_provider.dart';
@@ -46,6 +49,9 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ReminderProvider()),
         ChangeNotifierProvider(create: (_) => DisputeProvider()),
         ChangeNotifierProvider(create: (_) => BreachProvider()),
+        ChangeNotifierProvider(create: (_) => InsightProvider()),
+        ChangeNotifierProvider(create: (_) => PaymentProvider()),
+        ChangeNotifierProvider(create: (_) => BreachProviderInsight()),
       ],
       child: MaterialApp(
       title: 'ClearCase',

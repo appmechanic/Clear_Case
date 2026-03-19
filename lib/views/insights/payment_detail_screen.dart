@@ -1,4 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../models/case_model.dart';
+import '../../provider/insight_provider.dart';
+
 
 class PaymentDetailsScreen extends StatelessWidget {
   static const routeName = '/payment-details';
@@ -6,6 +11,16 @@ class PaymentDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final record = ModalRoute.of(context)!.settings.arguments as dynamic;
+    final insightProv = Provider.of<InsightProvider>(context, listen: false);
+
+    if (record == null) return const Scaffold(body: Center(child: Text("No data found")));
+
+    final bool isReceived = record.transactionType == "PaymentReceived";
+    final Color statusColor = isReceived ? Colors.green : const Color(0xFF6200EE);
+    final String statusText = isReceived ? "Payment Received" : "Paid by me";
+    final Color categoryColor = (record.paymentCategory == "Compulsory") ? Colors.orange : Colors.green;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
       appBar: AppBar(
@@ -18,7 +33,7 @@ class PaymentDetailsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            // Top Card
+            // --- TOP SUMMARY CARD ---
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
@@ -27,23 +42,31 @@ class PaymentDetailsScreen extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("Dec 25", style: TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          const Text("Swimming Lessons", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        ],
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              record.date != null ? DateFormat('MMM dd').format(record.date!) : "N/A",
+                              style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              record.paymentType ?? "General Payment",
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                          ],
+                        ),
                       ),
-                      Row(children: [_buildTag("Emma", Colors.blue), const SizedBox(width: 8), _buildTag("Compulsory", Colors.orange)]),
+                      _buildTag(record.paymentCategory ?? "Additional", categoryColor),
                     ],
                   ),
                   const SizedBox(height: 15),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text("Payment Recieved", style: TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold)),
-                      Text("\$250", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                    children: [
+                      Text(statusText, style: TextStyle(color: statusColor, fontWeight: FontWeight.bold)),
+                      Text("\$${record.amount?.toInt() ?? 0}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 24)),
                     ],
                   )
                 ],
@@ -51,33 +74,46 @@ class PaymentDetailsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 15),
 
-            // Main Info Card
+            // --- MAIN INFO CARD ---
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text("Child Support", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Text("Compulsory", style: TextStyle(color: Colors.grey))]),
+                  const Text("Transaction Details", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                   const SizedBox(height: 8),
-                  const Text("12 Jan 2015   12:56 PM", style: TextStyle(color: Colors.black87, fontSize: 13)),
+                  Text(
+                    record.date != null ? DateFormat('dd MMM yyyy   hh:mm a').format(record.date!) : "",
+                    style: const TextStyle(color: Colors.black87, fontSize: 13),
+                  ),
                   const SizedBox(height: 20),
-                  
-                  _buildRow("Payment Method", "Bank Transfer"),
+
+                  _buildRow("Payment Method", record.paymentMethod ?? "Not Specified"),
                   const SizedBox(height: 10),
-                  _buildRow("Payment Location", "New Jersey, USA"),
-                  
-                  const SizedBox(height: 15),
-                  const Text("The payment was directly transferred to bank account, 50 \$ of compulsory payment is still remaining.", style: TextStyle(color: Colors.grey, height: 1.4, fontSize: 13)),
-                  
-                  const SizedBox(height: 20),
-                  // Children List
-                  _buildChildTile("Alex Smile", "12 Jan 2009"),
-                  const SizedBox(height: 10),
-                  _buildChildTile("Samuel Smile", "12 Jan 2009"),
-                  
-                  const SizedBox(height: 20),
-                  Row(children: [_buildThumbnail(), const SizedBox(width: 10), _buildThumbnail()]),
+                  // Updated to display actual location string
+                  _buildRow("Payment Location", record.location ?? "Not Specified"),
+
+                  if (record.notes != null && record.notes!.isNotEmpty) ...[
+                    const SizedBox(height: 15),
+                    Text(record.notes!, style: const TextStyle(color: Colors.grey, height: 1.4, fontSize: 13)),
+                  ],
+
+                  const SizedBox(height: 25),
+                  const Text("Associated Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  const SizedBox(height: 12),
+
+                  ... (record.childIds as List<String>).map((id) {
+                    final child = insightProv.selectedCase?.children.firstWhere(
+                            (c) => c.id == id,
+                        orElse: () => ChildModel(id: '', name: 'Unknown', dob: DateTime.now())
+                    );
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildChildTile(child!.name, DateFormat('dd MMM yyyy').format(child.dob)),
+                    );
+                  }).toList(),
                 ],
               ),
             ),
@@ -87,31 +123,66 @@ class PaymentDetailsScreen extends StatelessWidget {
     );
   }
 
+  // --- REUSABLE HELPERS ---
+
   Widget _buildRow(String label, String value) {
-    return Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: const TextStyle(color: Colors.black54)), Text(value, style: const TextStyle(fontWeight: FontWeight.w600))]);
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(label, style: const TextStyle(color: Colors.black54)),
+        // Added Expanded/Flexible for long location strings
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        )
+      ],
+    );
   }
 
+  // Updated Children UI to match image_fc9489.png
   Widget _buildChildTile(String name, String dob) {
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(border: Border.all(color: Colors.blue.shade50), borderRadius: BorderRadius.circular(12)),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE1F5FE), width: 2), // Light blue border
+      ),
       child: Row(
         children: [
-          CircleAvatar(backgroundColor: Colors.purple.shade50, child: const Icon(Icons.person, color: Colors.purple)),
-          const SizedBox(width: 12),
-          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(name, style: const TextStyle(fontWeight: FontWeight.bold)), Text(dob, style: const TextStyle(fontSize: 12, color: Colors.grey))]),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3E5F5), // Light purple background for icon
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.person, color: Color(0xFF7B1FA2), size: 24),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 4),
+              Text(dob, style: const TextStyle(fontSize: 13, color: Colors.grey))
+            ],
+          ),
           const Spacer(),
-          const Icon(Icons.radio_button_checked, color: Color(0xFF4A148C)),
+          // Custom purple radio-style icon from image
+          const Icon(Icons.radio_button_checked, color: Color(0xFF6200EE), size: 24),
         ],
       ),
     );
   }
 
   Widget _buildTag(String text, Color color) {
-    return Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(20)), child: Text(text, style: TextStyle(color: color.withOpacity(0.8), fontWeight: FontWeight.bold, fontSize: 12)));
-  }
-
-  Widget _buildThumbnail() {
-    return Container(width: 80, height: 80, decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(8)));
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
+      child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11)),
+    );
   }
 }

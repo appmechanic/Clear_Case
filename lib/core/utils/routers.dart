@@ -8,6 +8,7 @@ import 'package:clearcase/views/home/new_payment_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
 import 'package:clearcase/views/home/rule_configuration_screen.dart';
 import 'package:clearcase/views/home/scheduled_dates_screen.dart';
+import 'package:clearcase/views/insights/bench_detail_screen.dart';
 import 'package:clearcase/views/insights/breach_history_screen.dart';
 import 'package:clearcase/views/insights/custody_compliance_screen.dart';
 import 'package:clearcase/views/insights/custody_detail_screen.dart';
@@ -57,6 +58,7 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     DisputesLogScreen.routeName: (context) => const DisputesLogScreen(),
     BreachHistoryScreen.routeName: (context) => const BreachHistoryScreen(),
     PaymentDetailsScreen.routeName: (context) => const PaymentDetailsScreen(),
+    BreachDetailsScreen.routeName: (context) => const BreachDetailsScreen(),
     CustodyDetailsScreen.routeName: (context) => const CustodyDetailsScreen(),
     DisputeDetailsScreen.routeName: (context) => const DisputeDetailsScreen(),
   };

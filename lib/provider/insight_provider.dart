@@ -24,6 +24,11 @@ class InsightProvider with ChangeNotifier {
   int totalFlagged = 0;
   double custodyCompliance = 0.0;
 
+  int totalDisputes = 0;
+  int communicationCount = 0;
+  int transferIssuesCount = 0;
+  int paymentDisputesCount = 0;
+
   bool get isLoading => _isLoading;
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
@@ -90,7 +95,8 @@ class InsightProvider with ChangeNotifier {
     await Future.wait([
       calculatePaymentInsights(),
       calculateBreachInsights(),
-      // calculateFlaggedEvents(),
+      calculateDisputeInsights(),
+      calculateFlaggedInsights(),
     ]);
 
     notifyListeners();
@@ -106,6 +112,8 @@ class InsightProvider with ChangeNotifier {
       Future.wait([
         calculatePaymentInsights(),
         calculateBreachInsights(),
+        calculateDisputeInsights(),
+        calculateFlaggedInsights(),
       ]).then((_) => notifyListeners());
     }
     notifyListeners();
@@ -193,6 +201,104 @@ class InsightProvider with ChangeNotifier {
     }
   }
 
+  /// 4. Dispute Specific Logic
+  Future<void> calculateDisputeInsights() async {
+    if (_selectedCase == null) return;
+
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('cases')
+          .doc(caseId)
+          .collection('disputeRecords')
+          .get();
+
+      int tempComm = 0;
+      int tempTransfer = 0;
+      int tempPayment = 0;
+
+      for (var doc in snapshot.docs) {
+        final category = doc.data()['category'] ?? "";
+
+        if (category == "Communication") {
+          tempComm++;
+        } else if (category == "Transfer Issues") {
+          tempTransfer++;
+        } else if (category == "Payment Disputes") {
+          tempPayment++;
+        }
+      }
+
+      communicationCount = tempComm;
+      transferIssuesCount = tempTransfer;
+      paymentDisputesCount = tempPayment;
+      totalDisputes = snapshot.docs.length;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Dispute Insight Error: $e");
+    }
+  }
+
+  // Add these variables to your InsightProvider class
+  int flaggedCustodyCount = 0;
+  int flaggedPaymentsCount = 0;
+  int flaggedDisputesCount = 0;
+  int flaggedBreachCount = 0;
+
+// Update the total getter
+  int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedBreachCount;
+
+  Future<void> calculateFlaggedInsights() async {
+    if (_selectedCase == null) return;
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(userId)
+          .collection('cases')
+          .doc(caseId)
+          .collection('flaggedEvents')
+          .get();
+
+      int tempCustody = 0;
+      int tempPayments = 0;
+      int tempDisputes = 0;
+      int tempBreach = 0;
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        final String origin = data['originCollection'] ?? "";
+
+        // Logic to categorize based on originCollection
+        if (origin == "paymentRecords") {
+          tempPayments++;
+        } else if (origin == "disputeRecords") {
+          tempDisputes++;
+        } else if (origin == "breachRecords") {
+          tempBreach++;
+        } else if (origin == "custodyRecords" || origin == "eventRecords") {
+          tempCustody++;
+        }
+      }
+
+      flaggedCustodyCount = tempCustody;
+      flaggedPaymentsCount = tempPayments;
+      flaggedDisputesCount = tempDisputes;
+      flaggedBreachCount = tempBreach;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Flagged Insight Error: $e");
+    }
+  }
+
   void _resetStats() {
     totalPaid = 0.0;
     totalReceived = 0.0;
@@ -201,6 +307,14 @@ class InsightProvider with ChangeNotifier {
     totalFlagged = 0;
     custodyCompliance = 0.0;
     totalBreachCount = 0;
+    totalDisputes = 0;
+    communicationCount = 0;
+    transferIssuesCount = 0;
+    paymentDisputesCount = 0;
+    flaggedCustodyCount = 0;
+    flaggedPaymentsCount = 0;
+    flaggedDisputesCount = 0;
+    flaggedBreachCount = 0;
   }
 
 }

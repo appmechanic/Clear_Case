@@ -26,7 +26,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
   final _descNode = FocusNode();
 
   DateTime selectedDate = DateTime.now();
-  String selectedCategory = "Child Support";
+  String selectedCategory = "Payment Disputes";
   String selectedParty = "Mother";
   bool flagEntry = false;
   bool isInitialized = false;
@@ -36,7 +36,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
   List<File> _selectedFiles = [];
   List<String> _existingAttachmentUrls = [];
 
-  final List<String> categories = ["Child Support", "Custody Time", "Communication"];
+  final List<String> categories = ["Payment Disputes", "Transfer Issues", "Communication"];
   final List<String> parties = ["Mother", "Father", "Grandparent"];
 
   final _nameController = TextEditingController();
@@ -84,7 +84,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
         setState(() {
           _descController.text = data['description'] ?? '';
           selectedDate = (data['date'] as Timestamp).toDate();
-          selectedCategory = data['category'] ?? "Child Support"; // Set default if null
+          selectedCategory = data['category'] ?? "Payment Disputes"; // Set default if null
           selectedParty = data['party'] ?? "Mother";
           flagEntry = data['flagEntry'] ?? false;
           _nameController.text = data['name'] ?? '';
@@ -109,8 +109,9 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
       'name': _nameController.text.trim(), // Added
       'party': selectedParty,
       'flagEntry': flagEntry,
+      'disputeStatus': _editingDisputeId == null ? 'Open' : null, // Set 'Open' only for new entries
     };
-
+     data.removeWhere((key, value) => value == null);
     if (_editingDisputeId == null) {
       provider.addDispute(context: context, caseId: caseId, data: data, attachments: _selectedFiles);
     } else {

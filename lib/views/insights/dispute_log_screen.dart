@@ -1,78 +1,177 @@
-import 'package:clearcase/views/insights/dispute_log_details_screen.dart';
+ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+ import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:dropdown_button2/dropdown_button2.dart';
+import '../../provider/dispute_insight_provider.dart';
+import '../../provider/insight_provider.dart';
+ import '../../models/case_model.dart';
+import '../widgets/custom_search_box.dart';
+import 'dispute_log_details_screen.dart';
 
-class DisputesLogScreen extends StatelessWidget {
+class DisputesLogScreen extends StatefulWidget {
   static const routeName = '/disputes-log';
   const DisputesLogScreen({super.key});
+
+  @override
+  State<DisputesLogScreen> createState() => _DisputesLogScreenState();
+}
+
+class _DisputesLogScreenState extends State<DisputesLogScreen> {
+  final TextEditingController _searchController = TextEditingController();
+  bool _isInit = true;
+
+  @override
+  void didChangeDependencies() {
+    if (_isInit) {
+      final selectedCase = ModalRoute.of(context)!.settings.arguments as dynamic;
+      if (selectedCase != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final insightProv = Provider.of<InsightProvider>(context, listen: false);
+          insightProv.setSelectedCase(selectedCase);
+          Provider.of<DisputeInsightsProvider>(context, listen: false).fetchDisputes(selectedCase.id);
+        });
+      }
+      _isInit = false;
+    }
+    super.didChangeDependencies();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
-      appBar: _buildAppBar("Insights"),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          children: [
-            _buildHeaderCard(),
-            const SizedBox(height: 20),
-            _buildSearchBar(),
-            const SizedBox(height: 20),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child: 
-            _buildDisputeItem("Dec 25", "Communication", "5 logs", "Open", Colors.red)),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child: 
-            _buildDisputeItem("Dec 15", "Payments", "5 logs", "In Progress", Colors.orange)),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child: 
-            _buildDisputeItem("Dec 15", "Schedule", "5 logs", "In Progress", Colors.orange)),
-            const SizedBox(height: 20),
-            const Align(alignment: Alignment.centerLeft, child: Text("November 2025", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
-            const SizedBox(height: 10),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child:
-            _buildDisputeItem("Dec 25", "Communication", "5 logs", "Open", Colors.red)),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child: 
-            _buildDisputeItem("Dec 15", "Payments", "5 logs", "In Progress", Colors.orange)),
-            GestureDetector(onTap: () {
-              Navigator.pushNamed(context, DisputeDetailsScreen.routeName);
-            }, child: 
-            _buildDisputeItem("Dec 15", "Schedule", "5 logs", "Resolved", Colors.green)),
-          ],
-        ),
+      appBar: AppBar(
+        title: const Text("Disputes Log", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent, elevation: 0,
+        iconTheme: const IconThemeData(color: Colors.black),
+      ),
+      body: Consumer2<DisputeInsightsProvider, InsightProvider>(
+        builder: (context, disputeProv, insightProv, child) {
+          return RefreshIndicator(
+            onRefresh: () => disputeProv.fetchDisputes(insightProv.selectedCase!.id),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(20),
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              child: Column(
+                children: [
+                  _buildDropdownSection(insightProv, disputeProv),
+                  const SizedBox(height: 20),
+
+                  if (disputeProv.isLoading)
+                    const Center(child: Padding(padding: EdgeInsets.symmetric(vertical: 50), child: CircularProgressIndicator()))
+                  else ...[
+                    _buildHeaderCard(disputeProv),
+                    const SizedBox(height: 20),
+                    CustomSearchBar(
+                      controller: _searchController,
+                      hintText: "Search by status, category, name",
+                      onChanged: (val) => disputeProv.filterDisputes(val),
+                      onClear: () => disputeProv.filterDisputes(""),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: const [
+                        Text("Dispute Analytics", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Icon(Icons.error, color: Colors.redAccent),
+                      ],
+                    ),
+
+                    if (disputeProv.disputes.isEmpty)
+                      const Column(
+                        children: [
+                          SizedBox(height: 10,),
+                          Text("No disputes found.", style: TextStyle(color: Colors.grey))
+                        ],
+                      )
+                    else
+                      ListView.builder(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: disputeProv.disputes.length,
+                        itemBuilder: (context, index) {
+                          final data = disputeProv.disputes[index];
+                          final date = (data['date'] as Timestamp).toDate();
+
+                          bool showMonthHeader = false;
+                          if (index == 0) showMonthHeader = true;
+                          else {
+                            final prevDate = (disputeProv.disputes[index - 1]['date'] as Timestamp).toDate();
+                            if (date.month != prevDate.month || date.year != prevDate.year) showMonthHeader = true;
+                          }
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (showMonthHeader) _buildMonthHeader(date),
+                              _buildDisputeItem(context, data, date),
+                            ],
+                          );
+                        },
+                      ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
 
-  Widget _buildHeaderCard() {
+  Widget _buildDropdownSection(InsightProvider insightProv, DisputeInsightsProvider disputeProv) {
+    return DropdownButtonHideUnderline(
+      child: DropdownButton2<dynamic>(
+        isExpanded: true,
+        value: insightProv.selectedCase,
+        items: insightProv.allCases.map((c) => DropdownMenuItem<dynamic>(
+          value: c,
+          child: Text(insightProv.getCaseDisplayName(c), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        )).toList(),
+        onChanged: (value) {
+          insightProv.setSelectedCase(value);
+          if (value != null) disputeProv.fetchDisputes((value as CaseModel).id);
+        },
+        buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
+        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12))),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCard(DisputeInsightsProvider prov) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
       child: Column(
         children: [
-          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const [Text("Disputes Log", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)), Icon(Icons.error, color: Colors.red)]),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("Disputes Log", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                ],
+              ),
+              const Icon(Icons.error, color: Colors.redAccent, size: 28),
+            ],
+          ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStat("16", "Communication"),
-              _buildStat("2", "Transfer\nIssues"),
-              _buildStat("16", "Payment\nDisputes"),
+              _buildStat("${prov.commCount}", "Communication"),
+              _buildStat("${prov.transferCount}", "Transfer\nIssues"),
+              _buildStat("${prov.paymentCount}", "Payment\nDisputes"),
             ],
           ),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStat("2", "Open"),
-              _buildStat("16", "Resolved"),
+              _buildStat("${prov.openCount}", "Open", color: Colors.red),
+              _buildStat("${prov.resolvedCount}", "Resolved", color: Colors.green),
             ],
           ),
         ],
@@ -80,36 +179,72 @@ class DisputesLogScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDisputeItem(String date, String title, String logs, String status, Color color) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(date, style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
-              const SizedBox(height: 4),
-              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 4),
-              Text(logs, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            ],
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-            child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
-          )
-        ],
+  Widget _buildDisputeItem(BuildContext context, Map<String, dynamic> data, DateTime date) {
+    final status = data['disputeStatus'] ?? "Open";
+    final color = status == "Open" ? Colors.red : Colors.green;
+    final hasAttachments = (data['attachments'] as List?)?.isNotEmpty ?? false;
+    final int logCount = data['logCount'] ?? 0;
+
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, DisputeDetailsScreen.routeName, arguments: data),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(DateFormat('MMM dd').format(date), style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
+                      if (hasAttachments) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          margin: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+                          child: const Icon(Icons.attachment, size: 14, color: Color(0xFF6200EE)),
+                        ),                      ]
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(data['category'] ?? "General", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                  const SizedBox(height: 4),
+                  Text(
+                      "$logCount ${logCount == 1 ? 'log' : 'logs'}",
+                      style: const TextStyle(color: Colors.grey, fontSize: 12)
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+              child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+            )
+          ],
+        ),
       ),
     );
   }
-  
-  // (Helpers same as previous)
-  PreferredSizeWidget _buildAppBar(String title) { return AppBar(title: Text(title, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)), backgroundColor: Colors.transparent, elevation: 0, iconTheme: const IconThemeData(color: Colors.black)); }
-  Widget _buildSearchBar() { return TextField(decoration: InputDecoration(hintText: "Search", prefixIcon: const Icon(Icons.search), filled: true, fillColor: Colors.grey[200], border: OutlineInputBorder(borderRadius: BorderRadius.circular(30), borderSide: BorderSide.none), contentPadding: const EdgeInsets.symmetric(vertical: 0))); }
-  Widget _buildStat(String val, String label) { return Column(children: [Text(val, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.grey))]); }
+
+  Widget _buildMonthHeader(DateTime date) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 15),
+      child: Text(DateFormat('MMMM yyyy').format(date),
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
+    );
+  }
+
+  Widget _buildStat(String val, String label, {Color color = Colors.black}) {
+    return Column(children: [
+      Text(val, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+      const SizedBox(height: 4),
+      Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.grey))
+    ]);
+  }
 }

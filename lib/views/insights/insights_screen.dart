@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import '../../provider/insight_provider.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 
+import '../widgets/dispute_overview.dart';
+import '../widgets/flagged_events_overview.dart';
 import '../widgets/non_complicance_overview.dart';
 import '../widgets/payment_overview_card.dart';
 import 'breach_history_screen.dart';
+import 'dispute_log_screen.dart';
 
 class InsightsScreen extends StatelessWidget {
   static const routeName = '/insights';
@@ -99,6 +102,17 @@ class InsightsScreen extends StatelessWidget {
                   ),
 
                   const SizedBox(height: 20),
+                  DisputeOverview(
+                    provider: insightProvider,
+                    onTap: () {
+                      Navigator.pushNamed(
+                        context,
+                        DisputesLogScreen.routeName,
+                        arguments: insightProvider.selectedCase,
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
                   BreachOverview(
                     provider: insightProvider,
                     onTap: () {
@@ -114,42 +128,13 @@ class InsightsScreen extends StatelessWidget {
                   const SizedBox(height: 20),
 
                   // 3. Flagged Events Card
-                  _buildCard(
-                    title: "Flagged Events",
-                    subtitle: "Requires attention",
-                    icon: Icons.flag,
-                    iconColor: Colors.orange,
-                    onTap: () {
-                      // Navigate to a filtered list of flagged items
-                    },
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            _buildStatItem("0", "Custody", color: const Color(0xFF6200EE)),
-                            _buildStatItem("0", "Payments", color: const Color(0xFF00C853)),
-                          ],
-                        ),
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            _buildStatItem("0", "Disputes"),
-                            _buildStatItem("0", "Breach Orders"),
-                          ],
-                        ),
-                        const SizedBox(height: 15),
-                        const Divider(),
-                        const SizedBox(height: 10),
-                        const Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text("Total Flagged", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
-                            Text("0", style: TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
-                          ],
-                        )
-                      ],
-                    ),
+                  // Inside your Screen build method or ListView
+                  FlaggedEventsOverview(
+                    custodyCount: insightProvider.flaggedCustodyCount,
+                    paymentsCount: insightProvider.flaggedPaymentsCount,
+                    disputesCount: insightProvider.flaggedDisputesCount,
+                    breachCount: insightProvider.flaggedBreachCount,
+                    totalCount: insightProvider.totalFlaggedCount,
                   ),
 
                  ],

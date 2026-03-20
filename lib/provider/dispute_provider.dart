@@ -51,6 +51,7 @@ class DisputeProvider extends ChangeNotifier {
       final Map<String, dynamic> recordData = {
         ...data,
         'caseId': caseId,
+        'disputeStatus': data['disputeStatus'] ?? 'Open', // Ensure default here
         'attachments': fileUrls,
         'createdAt': FieldValue.serverTimestamp(),
       };

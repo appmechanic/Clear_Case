@@ -1,5 +1,11 @@
-import 'package:clearcase/views/widgets/custom_text_field.dart';
+import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../provider/dispute_insight_provider.dart';
+import '../widgets/attachment_picker_widget.dart';
+import '../widgets/custom_text_field.dart';
 
 class DisputeDetailsScreen extends StatefulWidget {
   static const routeName = '/dispute-details';
@@ -10,168 +16,139 @@ class DisputeDetailsScreen extends StatefulWidget {
 }
 
 class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
-  // --- State ---
-  bool isClosed = false; 
-  int? _selectedLogIndex; // If null, show list. If set, show detail view.
-
-  // Mock Data
-  final List<Map<String, String>> logs = [
-    {
-      "title": "Initial Dispute",
-      "date": "12 Jan 2015  12:56 PM",
-      "desc": "On August 2nd, 2025, the co-parent failed to return our daughter Emma from the scheduled weekend visit as agreed upon in our custody arrangement. The pickup was scheduled for 6:00 PM at the designated location on Maple Street. \n\nMultiple attempts to contact the co-parent via phone and text message between 6:15 PM and 8:30 PM went unanswered. This violation of the custody schedule caused significant distress..."
-    },
-    {
-      "title": "New evidence",
-      "date": "13 Jan 2015  10:00 AM",
-      "desc": "Video evidence submitted showing the arrival time was significantly delayed..."
-    },
-    {
-      "title": "Updated log",
-      "date": "14 Jan 2015  09:30 AM",
-      "desc": "Reply received from party stating traffic conditions caused the delay..."
-    },
-  ];
-
-  // --- Logic ---
-  
-  void _handleBack() {
-    if (_selectedLogIndex != null) {
-      setState(() => _selectedLogIndex = null); // Go back to list
-    } else {
-      Navigator.pop(context); // Exit screen
-    }
-  }
-
-  void _nextLog() {
-    if (_selectedLogIndex != null && _selectedLogIndex! < logs.length - 1) {
-      setState(() => _selectedLogIndex = _selectedLogIndex! + 1);
-    }
-  }
-
-  void _prevLog() {
-    if (_selectedLogIndex != null && _selectedLogIndex! > 0) {
-      setState(() => _selectedLogIndex = _selectedLogIndex! - 1);
-    }
-  }
-
+  int? _selectedLogIndex;
+  late Map<String, dynamic> disputeData;
+  bool _isInit = true;
+  bool _isLoading = false;
+  late   String party;
   @override
-  Widget build(BuildContext context) {
-    // Handle Android Hardware Back Button
-    return PopScope(
-      canPop: _selectedLogIndex == null,
-      onPopInvoked: (didPop) {
-        if (didPop) return;
-        _handleBack();
-      },
-      child: Scaffold(
-        backgroundColor: const Color(0xFFF5F5F5),
-        appBar: AppBar(
-          title: const Text("Dispute Details", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.black),
-            onPressed: _handleBack,
-          ),
-        ),
-        body: Column(
-          children: [
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  children: [
-                    // Header (Always Visible)
-                    _buildHeader(),
-                    const SizedBox(height: 20),
+  void didChangeDependencies() {
+    if (_isInit) {
+      disputeData = ModalRoute.of(context)!.settings.arguments as Map<String, dynamic>;
+      _isInit = false;
+    }
+    party = disputeData['party'];
 
-                    // Toggle Content: List vs Detail
-                    if (_selectedLogIndex == null) 
-                      _buildListView() 
-                    else 
-                      _buildDetailView(),
-                  ],
-                ),
-              ),
-            ),
+    super.didChangeDependencies();
+  }
 
-            // Bottom Action Bar
-            Container(
-              padding: const EdgeInsets.all(20),
-              color: const Color(0xFFF5F5F5),
-              child: _selectedLogIndex == null 
-                  ? (isClosed ? _buildReopenButton() : _buildListActionButtons()) 
-                  : _buildDetailNavButtons(),
-            )
-          ],
-        ),
-      ),
+  void _showStatus(String msg, {bool isError = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg)),
     );
   }
 
-  // --- Views ---
 
-  Widget _buildHeader() {
+  @override
+  Widget build(BuildContext context) {
+    final prov = Provider.of<DisputeInsightsProvider>(context);
+    final String cId = disputeData['caseId'];
+    final String dId = disputeData['id'];
+
+    return Stack(
+      children: [
+        PopScope(
+          canPop: _selectedLogIndex == null,
+          onPopInvoked: (didPop) => didPop ? null : setState(() => _selectedLogIndex = null),
+          child: Scaffold(
+            backgroundColor: const Color(0xFFF5F5F5),
+            appBar: AppBar(
+              title: const Text("Dispute Details", style: TextStyle(fontWeight: FontWeight.bold)),
+              leading: IconButton(
+                icon: const Icon(Icons.arrow_back),
+                onPressed: () => _selectedLogIndex != null ? setState(() => _selectedLogIndex = null) : Navigator.pop(context),
+              ),
+            ),
+            body: StreamBuilder<DocumentSnapshot>(
+              stream: prov.getDisputeStream(cId, dId),
+              builder: (context, parentSnap) {
+                if (!parentSnap.hasData) return const Center(child: CircularProgressIndicator());
+                final currentDispute = parentSnap.data!.data() as Map<String, dynamic>;
+                final bool isClosed = currentDispute['disputeStatus'] == "Resolved";
+
+                return StreamBuilder<List<Map<String, dynamic>>>(
+                  stream: prov.getDisputeLogs(cId, dId),
+                  builder: (context, logSnap) {
+                    // FIX: Removed Expanded. We use a SizedBox.expand or just Center
+                    // because StreamBuilder is the direct child of the Scaffold body.
+                    if (logSnap.connectionState == ConnectionState.waiting && !logSnap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (logSnap.hasError) {
+                      return const Center(child: Text("Error loading logs"));
+                    }
+
+                    final logs = logSnap.data ?? [];
+
+                    return Column(
+                      children: [
+                        Expanded( // This Expanded is OK because it is inside a Column
+                          child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(20),
+                            child: Column(
+                              children: [
+                                _buildHeader(currentDispute, isClosed),
+                                const SizedBox(height: 20),
+                                _selectedLogIndex == null
+                                    ? _buildListView(logs, isClosed, cId, dId)
+                                    : _buildDetailView(logs[_selectedLogIndex!], isClosed),
+                              ],
+                            ),
+                          ),
+                        ),
+                        _buildBottomActionArea(isClosed, prov, cId, dId, logs),
+                      ],
+                    );
+                  },
+                );              },
+            ),
+          ),
+        ),
+        if (_isLoading) Container(color: Colors.black26, child: const Center(child: CircularProgressIndicator())),
+      ],
+    );
+  }
+
+  // --- UI COMPONENTS ---
+
+  Widget _buildHeader(Map<String, dynamic> data, bool isClosed) {
+    final DateTime date = (data['date'] as Timestamp).toDate();
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: const [
-            Text("Dec 25", style: TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
-            SizedBox(height: 4),
-            Text("Communication", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          ],
-        ),
+        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(DateFormat('MMM dd').format(date), style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(data['category'] ?? "Dispute", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ]),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: isClosed ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20)
-          ),
-          child: Text(
-            isClosed ? "Closed" : "In Progress",
-            style: TextStyle(color: isClosed ? Colors.green : Colors.orange, fontWeight: FontWeight.bold, fontSize: 12),
-          ),
+          decoration: BoxDecoration(color: isClosed ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
+          child: Text(isClosed ? "Resolved" : "Open", style: TextStyle(color: isClosed ? Colors.green : Colors.red, fontWeight: FontWeight.bold, fontSize: 12)),
         )
       ],
     );
   }
 
-  Widget _buildListView() {
+  Widget _buildListView(List<Map<String, dynamic>> logs, bool isClosed, String cId, String dId) {
+    if (logs.isEmpty) return const Center(child: Padding(padding: EdgeInsets.only(top: 40), child: Text("No logs added yet.")));
     return Column(
       children: logs.asMap().entries.map((entry) {
-        int idx = entry.key;
-        Map<String, String> log = entry.value;
-        return GestureDetector(
-          onTap: () => setState(() => _selectedLogIndex = idx),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        final log = entry.value;
+        return Card(
+          color: Colors.white,
+          elevation: 0, margin: const EdgeInsets.only(bottom: 12),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: ListTile(
+            onTap: () => setState(() => _selectedLogIndex = entry.key),
+            title: Text(log['title'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(log['createdAt'] != null ? DateFormat('dd MMM yyyy').format((log['createdAt'] as Timestamp).toDate()) : ""),
+            trailing: isClosed ? null : Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(log['title']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                    const SizedBox(height: 4),
-                    Text(log['date']!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                  ],
-                ),
-                if (!isClosed)
-                  Row(
-                    children: [
-                      const Icon(Icons.edit, size: 20),
-                      const SizedBox(width: 15),
-                      GestureDetector(
-                        onTap: () => _showDeleteDialog(idx),
-                        child: const Icon(Icons.delete, color: Colors.red, size: 20),
-                      ),
-                    ],
-                  )
+                IconButton(icon: const Icon(Icons.edit, color: Colors.black, size: 20), onPressed: () => _showLogDialog(cId, dId, existingLog: log)),
+                IconButton(icon: const Icon(Icons.delete, color: Colors.red, size: 20), onPressed: () => _confirmDelete(cId, dId, log)),
               ],
             ),
           ),
@@ -180,197 +157,372 @@ class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
     );
   }
 
-  Widget _buildDetailView() {
-    final log = logs[_selectedLogIndex!];
+  Widget _buildDetailView(Map<String, dynamic> log, bool isClosed) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
+      width: double.infinity, padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(log['title']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              if (!isClosed)
-                Row(children: [
-                  const Icon(Icons.edit, size: 20), 
-                  const SizedBox(width: 15), 
-                  GestureDetector(
-                    onTap: () {
-                      _showDeleteDialog(_selectedLogIndex!);
-                      setState(() => _selectedLogIndex = null); // Go back to list after delete prompt
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(log['title'] ?? "", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 5),
+        Text(log['createdAt'] != null ? DateFormat('dd MMM yyyy hh:mm a').format((log['createdAt'] as Timestamp).toDate()) : "", style: const TextStyle(color: Colors.black, fontSize: 14)),
+        const SizedBox(height: 20),
+        Row(
+          children: [Text("Related Party",
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+            Spacer(), Text(party, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14))],),
+        const SizedBox(height: 20),
+        Text(log['description'] ?? "", style: const TextStyle(fontSize: 16)),
+
+      ]),
+    );
+  }
+
+  Widget _buildBottomActionArea(bool isClosed, DisputeInsightsProvider prov, String cId, String dId, List logs) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      child: _selectedLogIndex != null
+          ? _buildDetailNavButtons(logs.length)
+          : Column(children: [
+        if (!isClosed) ...[
+          _btn("Add New Log", const Color(0xFF4A148C), () => _showLogDialog(cId, dId)),
+          const SizedBox(height: 20),
+          _btn("Close Dispute", Colors.redAccent, () => _confirmClose(cId, dId, prov)),
+        ] else
+          _btn("Reopen Dispute", Colors.green, () async {
+            setState(() => _isLoading = true);
+            await prov.updateDisputeStatus(cId, dId, "Open");
+            setState(() => _isLoading = false);
+            _showStatus("Dispute Reopened");
+          }),
+      ]),
+    );
+  }
+
+  void _confirmClose(String cId, String dId, DisputeInsightsProvider prov) {
+    showDialog(
+      context: context,
+      builder: (ctx) =>
+          AlertDialog(
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28)),
+            title: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Close Dispute", style: TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 22)),
+                GestureDetector(
+                  onTap: () => Navigator.pop(ctx),
+                  child: const Icon(Icons.close, size: 20),
+                ),
+              ],
+            ),
+            content: const Text(
+              "Are you sure you want to Close this dispute?",
+              style: TextStyle(fontSize: 15, color: Colors.black87),
+            ),
+            actionsPadding: const EdgeInsets.only(right: 20, bottom: 20),
+            actions: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // --- Cancel Button ---
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF7B2CBF),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text("Cancel", style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
+                  ),
+                  const SizedBox(width: 10),
+                  // --- Close Button ---
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFE55353),
+                      // Matching your red theme
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30)),
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () async {
+                      Navigator.pop(ctx);
+                      setState(() => _isLoading = true);
+                      try {
+                        await prov.updateDisputeStatus(cId, dId, "Resolved");
+                        _showStatus("Dispute marked as Resolved");
+                      } catch (e) {
+                        _showStatus("Error closing dispute", isError: true);
+                      }
+                      setState(() => _isLoading = false);
                     },
-                    child: const Icon(Icons.delete, color: Colors.red, size: 20)
-                  )
-                ]),
+                    child: const Text("Close", style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14)),
+                  ),
+                ],
+              ),
             ],
           ),
-          const SizedBox(height: 5),
-          Text(log['date']!, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-          const SizedBox(height: 15),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text("Related Party", style: TextStyle(fontWeight: FontWeight.w600)),
-              Text("Father", style: TextStyle(fontWeight: FontWeight.w600)),
-            ],
-          ),
-          const SizedBox(height: 15),
-          Text(
-            log['desc']!,
-            style: const TextStyle(color: Colors.black87, height: 1.5, fontSize: 13),
-          ),
-        ],
+    );
+  }
+
+  void _showLogDialog(String cId, String dId, {Map<String, dynamic>? existingLog}) {
+    final titleC = TextEditingController(text: existingLog?['title']);
+    final descC = TextEditingController(text: existingLog?['description']);
+
+    // Local state for the dialog
+    List<File> newFiles = [];
+    List<String> currentUrls = existingLog != null
+        ? List<String>.from(existingLog['attachments'] ?? [])
+        : [];
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder( // <--- Allows local UI updates in dialog
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Colors.white,
+              title: Text(existingLog == null ? "New Log" : "Edit Log",
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    CustomTextField(labelText: "Log Title", controller: titleC, node: FocusNode()),
+                    const SizedBox(height: 10),
+                    CustomTextField(labelText: "Description", maxLines: 3, controller: descC, node: FocusNode()),
+                    const SizedBox(height: 15),
+                    const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),
+                    // 1. Show existing attachments (with Delete option)
+                    if (currentUrls.isNotEmpty)
+                      const SizedBox(height: 5),
+                    Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: currentUrls.map((url) => _buildExistingFilePreview(url, () {
+                          setDialogState(() => currentUrls.remove(url));
+                        })).toList(),
+                      ),
+                    const SizedBox(height: 5),
+                    // 2. Picker for new files
+                    AttachmentPickerWidget(onFilesChanged: (f) {
+                      setDialogState(() => newFiles = f);
+                    }),
+                  ],
+                ),
+              ),
+              actions: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center, // Aligns buttons to the right
+                  children: [
+                    // --- Cancel Button ---
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7B2CBF),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10), // Controls button size
+                        minimumSize: Size.zero, // Allows button to shrink to text size
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text(
+                        "Cancel",
+                        style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                    const SizedBox(width: 8), // Gap between buttons
+                    // --- Add/Update Button ---
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF7B2CBF),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        setState(() => _isLoading = true);
+                        try {
+                          await Provider.of<DisputeInsightsProvider>(context, listen: false).saveLog(
+                            caseId: cId,
+                            disputeId: dId,
+                            logId: existingLog?['id'],
+                            title: titleC.text,
+                            desc: descC.text,
+                            files: newFiles,
+                            remainingUrls: currentUrls,
+                          );
+                          _showStatus(existingLog == null ? "Log added" : "Log updated");
+                        } catch (e) {
+                          _showStatus("Error saving log", isError: true);
+                        }
+                        setState(() => _isLoading = false);
+                      },
+                      child: Text(
+                        existingLog == null ? "Add log" : "Update log",
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }
       ),
     );
   }
 
-  // --- Buttons ---
+  Widget _buildExistingFilePreview(String url, VoidCallback onDelete) {
+    final bool isPdf = url.toLowerCase().contains('.pdf');
 
-  Widget _buildListActionButtons() {
-    return Column(
+    return Stack(
+      alignment: Alignment.topRight, // This replaces Positioned
       children: [
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-            onPressed: _showNewLogDialog,
-            child: const Text("Add New Log", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+        // 1. The Thumbnail with padding to make room for the floating icon
+        Padding(
+          padding: const EdgeInsets.only(top: 8, right: 8),
+          child: Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: isPdf
+                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30)
+                : ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (ctx, err, stack) =>
+                const Icon(Icons.picture_as_pdf, color: Colors.red),
+              ),
+            ),
           ),
         ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF5350), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-            onPressed: _showCloseDisputeDialog,
-            child: const Text("Close Dispute", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+
+        // 2. The Delete Icon aligned to the top right of the Stack
+        GestureDetector(
+          onTap: onDelete,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.red,
+              border: Border.all(color: Colors.white, width: 2), // Ring for visibility
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(3),
+              child: Icon(Icons.close, size: 12, color: Colors.white),
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildReopenButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF00C853), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-        onPressed: () => setState(() => isClosed = false),
-        child: const Text("Reopen Dispute", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-      ),
-    );
-  }
+  void _confirmDelete(String cId, String dId, Map<String, dynamic> log) {
+    final String title = log['title'] ?? "Untitled Log";
+    final DateTime date = (log['createdAt'] as Timestamp).toDate();
+    final String formattedDate = DateFormat('EEEE, MMMM dd, yyyy').format(date);
 
-  Widget _buildDetailNavButtons() {
-    return Row(
-      children: [
-        Expanded(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _selectedLogIndex! > 0 ? const Color(0xFF8E24AA) : Colors.grey,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))
-            ),
-            onPressed: _prevLog,
-            child: const Text("Previous", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ),
-        const SizedBox(width: 20),
-        Expanded(
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _selectedLogIndex! < logs.length - 1 ? const Color(0xFF4A148C) : Colors.grey,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))
-            ),
-            onPressed: _nextLog,
-            child: const Text("Next", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  // --- Dialogs ---
-
-  void _showNewLogDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [const Text("New log", style: TextStyle(fontWeight: FontWeight.bold)), IconButton(icon: const Icon(Icons.close, size: 20), onPressed: ()=>Navigator.pop(ctx))]),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            CustomTextField(labelText: "Log Title", hintText: "Enter Log Title", controller: TextEditingController(), node: FocusNode()),
-            const SizedBox(height: 10),
-            CustomTextField(labelText: "Description", hintText: "Describe the Dispute.", maxLines: 3, controller: TextEditingController(), node: FocusNode()),
-            const SizedBox(height: 15),
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(border: Border.all(color: Colors.purple.withOpacity(0.3)), borderRadius: BorderRadius.circular(8), color: Colors.purple.withOpacity(0.05)),
-              child: Column(children: const [Icon(Icons.upload_file, color: Colors.purple), SizedBox(height: 5), Text("Upload Images or docs", style: TextStyle(fontSize: 12, color: Colors.purple))]),
-            )
+            const Text("Delete log", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 22)),
+            GestureDetector(
+              onTap: () => Navigator.pop(ctx),
+              child: const Icon(Icons.close, size: 20),
+            ),
           ],
         ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text("Are you sure you want to delete this entry?", style: TextStyle(fontSize: 15, color: Colors.black87)),
+            const SizedBox(height: 8),
+            Text("$title, $formattedDate", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.black87)),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.only(right: 20, bottom: 20),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
-            onPressed: () {
-              // Add mock log
-              setState(() => logs.add({"title": "New Log Entry", "date": "Just Now", "desc": "User added description..."}));
-              Navigator.pop(ctx);
-            },
-            child: const Text("Add log", style: TextStyle(color: Colors.white)),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // --- Cancel Button ---
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF7B2CBF),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text("Cancel", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+              const SizedBox(width: 10),
+              // --- Delete Button ---
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFE55353), // Specific Red from image
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  setState(() => _isLoading = true);
+                  await Provider.of<DisputeInsightsProvider>(context, listen: false).deleteLogWithStorage(cId, dId, log);
+                  setState(() { _isLoading = false; _selectedLogIndex = null; });
+                  _showStatus("Log deleted successfully");
+                },
+                child: const Text("Delete", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
 
-  void _showCloseDisputeDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Close Dispute", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: const Text("Are you sure you want to Close this dispute?"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF5350)),
-            onPressed: () {
-              setState(() => isClosed = true);
-              Navigator.pop(ctx);
-            },
-            child: const Text("Close", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _btn(String t, Color c, VoidCallback? tap) => SizedBox(width: double.infinity, height: 50, child: ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: c, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))), onPressed: tap, child: Text(t, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold))));
 
-  void _showDeleteDialog(int index) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Delete log", style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Text("Are you sure you want to delete this entry?\n${logs[index]['title']}"),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel", style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF5350)),
-            onPressed: () {
-              setState(() => logs.removeAt(index));
-              Navigator.pop(ctx);
-            },
-            child: const Text("Delete", style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+  Widget _buildDetailNavButtons(int total) {
+    if (total <= 1) return const SizedBox.shrink();
+    return Row(children: [
+      Expanded(child: _btn("Previous", const Color(0xFF4A148C), _selectedLogIndex! > 0 ? () => setState(() => _selectedLogIndex = _selectedLogIndex! - 1) : null)),
+      const SizedBox(width: 20),
+      Expanded(child: _btn("Next", const Color(0xFF4A148C), _selectedLogIndex! < total - 1 ? () => setState(() => _selectedLogIndex = _selectedLogIndex! + 1) : null)),
+    ]);
   }
 }

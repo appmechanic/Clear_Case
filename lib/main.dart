@@ -3,6 +3,7 @@ import 'package:clearcase/provider/breach_provider.dart';
 import 'package:clearcase/provider/breach_provider_insight.dart';
 import 'package:clearcase/provider/calender_provider.dart';
 import 'package:clearcase/provider/case_setup_provider.dart';
+import 'package:clearcase/provider/dispute_insight_provider.dart';
 import 'package:clearcase/provider/dispute_provider.dart';
 import 'package:clearcase/provider/insight_provider.dart';
 import 'package:clearcase/provider/main_provider.dart';
@@ -52,6 +53,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => InsightProvider()),
         ChangeNotifierProvider(create: (_) => PaymentProvider()),
         ChangeNotifierProvider(create: (_) => BreachProviderInsight()),
+        ChangeNotifierProvider(create: (_) => DisputeInsightsProvider()),
       ],
       child: MaterialApp(
       title: 'ClearCase',

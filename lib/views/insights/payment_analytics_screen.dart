@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../models/case_model.dart';
+import '../../models/filter_model.dart';
 import '../../provider/insight_provider.dart';
-import '../../provider/payment_analysis.dart';
+import '../../provider/payment_provider_insight.dart';
 import '../widgets/custom_search_box.dart';
+import '../widgets/filter_ui.dart';
 import '../widgets/payment_overview_card.dart';
 
 
@@ -22,6 +24,35 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isInit = true;
 
+  // --- NEW: Filter State ---
+
+  // In your Screen State
+  FilterOptions _currentFilters = FilterOptions(
+    selectedTimePeriod: "All Time",
+    selectedCategory: "All Payments(Combined)",
+    selectedChildIds: [], // Empty means "Select All" in your logic
+  );
+
+  void _openFilterSheet(dynamic selectedCase) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CommonFilterSheet(
+        type: FilterType.payment,
+        children: selectedCase?.children ?? [],
+        initialOptions: _currentFilters, // Pass the current state
+        onApply: (newFilters) {
+          // 1. Update local UI state
+          setState(() => _currentFilters = newFilters);
+
+          // 2. Update Provider logic
+          Provider.of<PaymentProvider>(context, listen: false)
+              .applyAdvancedFilters(newFilters);
+        },
+      ),
+    );
+  }
   @override
   void didChangeDependencies() {
     if (_isInit) {
@@ -71,10 +102,35 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // --- NEW DROPDOWN SECTION (Same as Insights Screen) ---
-                  _buildDropdownSection(insightProv, paymentProv),
+                  // --- UPDATED: Row with Dropdown and Filter Icon ---
+                  Row(
+                    children: [
+                      // 1. Case Dropdown (Takes remaining space)
+                      Expanded(
+                        child: _buildDropdownSection(insightProv, paymentProv),
+                      ),
+                      const SizedBox(width: 12),
+                      // 2. Filter Icon Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.filter_list_rounded, color: Color(0xFF7B2CBF)),
+                          onPressed: () => _openFilterSheet(insightProv.selectedCase),
+                        ),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 20),
-
                   // Show loader only when fetching new records for a case
                   if (paymentProv.isLoading)
                     const Center(child: Padding(
@@ -87,8 +143,8 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
                     CustomSearchBar(
                       controller: _searchController,
                       hintText: "Search by amount, type or method...",
-                      onChanged: (value) => paymentProv.filterPayments(value),
-                      onClear: () => paymentProv.clearSearch(),
+                      onChanged: (value) => paymentProv.filterBySearch(value),
+                      onClear: () => paymentProv.clearAll(),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -144,7 +200,7 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
                                   title: record.paymentType ?? "General Payment",
                                   status: statusText,
                                   statusColor: statusColor,
-                                  amount: "\$${record.amount?.toInt() ?? 0}",
+                                  amount: "\$${record.amount?.toStringAsFixed(0) ?? 0}",
                                   type: record.paymentCategory ?? "Additional",
                                   color: categoryColor,
                                   childName: paymentProv.getChildNamesFromIds(record.childIds, insightProv.selectedCase),

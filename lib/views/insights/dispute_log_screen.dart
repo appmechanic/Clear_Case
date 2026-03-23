@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
  import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
+import '../../models/filter_model.dart';
 import '../../provider/dispute_insight_provider.dart';
 import '../../provider/insight_provider.dart';
  import '../../models/case_model.dart';
 import '../widgets/custom_search_box.dart';
+import '../widgets/filter_ui.dart';
 import 'dispute_log_details_screen.dart';
 
 class DisputesLogScreen extends StatefulWidget {
@@ -21,6 +23,33 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isInit = true;
 
+  // Change your local state to this:
+  FilterOptions _currentFilters = FilterOptions(
+    selectedTimePeriod: "All Time",
+    selectedCategory: "All",
+    selectedChildIds: [], // Empty means "Select All" in your logic
+  );
+
+  void _openFilterSheet(dynamic selectedCase) {
+    // Get the LATEST filters from the provider before opening
+    final provider = Provider.of<DisputeInsightsProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CommonFilterSheet(
+        type: FilterType.dispute,
+        children: selectedCase?.children ?? [],
+        // Use the Provider's current state as the starting point
+        initialOptions: _currentFilters,
+        onApply: (newFilters) {
+          setState(() => _currentFilters = newFilters);
+          provider.applyAdvancedFilters(newFilters);
+        },
+      ),
+    );
+  }
   @override
   void didChangeDependencies() {
     if (_isInit) {
@@ -55,7 +84,35 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               child: Column(
                 children: [
-                  _buildDropdownSection(insightProv, disputeProv),
+
+                  Row(
+                    children: [
+                      // 1. Case Dropdown (Takes remaining space)
+                      Expanded(
+                        child:  _buildDropdownSection(insightProv, disputeProv),
+                      ),
+                      const SizedBox(width: 12),
+                      // 2. Filter Icon Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.filter_list_rounded, color: Color(0xFF7B2CBF)),
+                          onPressed: () => _openFilterSheet(insightProv.selectedCase),
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 20),
 
                   if (disputeProv.isLoading)
@@ -66,8 +123,8 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
                     CustomSearchBar(
                       controller: _searchController,
                       hintText: "Search by status, category, name",
-                      onChanged: (val) => disputeProv.filterDisputes(val),
-                      onClear: () => disputeProv.filterDisputes(""),
+                      onChanged: (val) => disputeProv.filterBySearch(val),
+                      onClear: () => disputeProv.clearAll(),
                     ),
                     const SizedBox(height: 20),
                     Row(

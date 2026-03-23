@@ -5,9 +5,13 @@ import 'package:provider/provider.dart';
 
 import '../../models/breach_model.dart';
 import '../../models/case_model.dart';
+import '../../models/filter_model.dart';
 import '../../provider/insight_provider.dart';
 import '../widgets/custom_search_box.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
+
+import '../widgets/filter_ui.dart';
+import 'bench_detail_screen.dart';
 
 class BreachHistoryScreen extends StatefulWidget {
   static const routeName = '/breach-history';
@@ -20,6 +24,34 @@ class BreachHistoryScreen extends StatefulWidget {
 class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isInit = true;
+
+  // In your Screen State
+  FilterOptions _currentFilters = FilterOptions(
+    selectedTimePeriod: "All Time",
+    selectedCategory: "All",
+    selectedChildIds: [],
+  );
+
+  void _openFilterSheet(dynamic selectedCase) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => CommonFilterSheet(
+        type: FilterType.nonCompliance,
+        children: selectedCase?.children ?? [],
+        initialOptions: _currentFilters, // Pass the current state
+        onApply: (newFilters) {
+          // 1. Update local UI state
+          setState(() => _currentFilters = newFilters);
+
+          // 2. Update Provider logic
+          Provider.of<BreachProviderInsight>(context, listen: false)
+              .applyAdvancedFilters(newFilters);
+        },
+      ),
+    );
+  }
 
   @override
   void didChangeDependencies() {
@@ -71,7 +103,34 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
               child: Column(
                 children: [
                   // --- CASE DROPDOWN ---
-                  _buildDropdownSection(insightProv, breachProv),
+                  Row(
+                    children: [
+                      // 1. Case Dropdown (Takes remaining space)
+                      Expanded(
+                        child:  _buildDropdownSection(insightProv, breachProv),
+                      ),
+                      const SizedBox(width: 12),
+                      // 2. Filter Icon Button
+                      Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 2),
+                            )
+                          ],
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.filter_list_rounded, color: Color(0xFF7B2CBF)),
+                          onPressed: () => _openFilterSheet(insightProv.selectedCase),
+                        ),
+                      ),
+                    ],
+                  ),
+
                   const SizedBox(height: 20),
 
                   // Show loader only for the records section
@@ -86,8 +145,8 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                     CustomSearchBar(
                       hintText: "Search by name, severity, type, party",
                       controller: _searchController,
-                      onChanged: (val) => breachProv.filterBreaches(val),
-                      onClear: () => breachProv.filterBreaches(""),
+                      onChanged: (val) => breachProv.filterBySearch(val),
+                      onClear: () => breachProv.clearAll(),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -132,7 +191,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                                 onTap: () {
                                   Navigator.pushNamed(
                                     context,
-                                    '/breach-details',
+                                    BreachDetailsScreen.routeName,
                                     arguments: record,
                                   );
                                 },

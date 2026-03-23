@@ -8,7 +8,7 @@ import 'package:clearcase/provider/dispute_provider.dart';
 import 'package:clearcase/provider/insight_provider.dart';
 import 'package:clearcase/provider/main_provider.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
-import 'package:clearcase/provider/payment_analysis.dart';
+import 'package:clearcase/provider/payment_provider_insight.dart';
 import 'package:clearcase/provider/remainder_provider.dart';
 import 'package:clearcase/provider/rule_configuration_provider.dart';
 import 'package:clearcase/provider/scheduled_dates_provider.dart';

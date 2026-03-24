@@ -1,4 +1,4 @@
-enum FilterType { payment, dispute, nonCompliance }
+enum FilterType { payment, dispute, nonCompliance, custody}
 
 class FilterOptions {
   List<String> selectedChildIds = [];

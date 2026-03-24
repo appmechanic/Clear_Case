@@ -9,6 +9,7 @@ import '../widgets/flagged_events_overview.dart';
 import '../widgets/non_complicance_overview.dart';
 import '../widgets/payment_overview_card.dart';
 import 'breach_history_screen.dart';
+import 'custody_compliance_screen.dart';
 import 'dispute_log_screen.dart';
 
 class InsightsScreen extends StatelessWidget {
@@ -61,13 +62,21 @@ class InsightsScreen extends StatelessWidget {
                     icon: Icons.person,
                     iconColor: Colors.purple,
                     onTap: () {
-                      // Navigate to your Custody/Calendar screen or detailed view
+                      // Check if a case is selected before navigating
+                      if (insightProvider.selectedCase != null) {
+                        Navigator.pushNamed(
+                          context,
+                          CustodyComplianceScreen.routeName,
+                          arguments: insightProvider.selectedCase,
+                        );
+                      }
                     },
                     child: Column(
                       children: [
                         const SizedBox(height: 15),
                         Row(
                           children: [
+                            // Use dynamic data from your provider here once connected
                             _buildStatItem("0", "Custody Days\n(fulfilled)"),
                             _buildStatItem("0", "With\nJustification"),
                             _buildStatItem("0", "Missed Days\n(No Just.)"),
@@ -86,7 +95,6 @@ class InsightsScreen extends StatelessWidget {
                       ],
                     ),
                   ),
-
                   PaymentOverview(
                     provider: insightProvider,
                     subtitle: "Case Overview",

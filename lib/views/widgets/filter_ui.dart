@@ -22,6 +22,7 @@ class CommonFilterSheet extends StatefulWidget {
 
 class _CommonFilterSheetState extends State<CommonFilterSheet> {
   late FilterOptions _tempOptions;
+
 // Inside _CommonFilterSheetState
   @override
   void initState() {
@@ -50,17 +51,26 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
           const SizedBox(height: 20),
 
           // 1. Children Section
-          const Text("Children", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+          const Text("Children", style: TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.black54)),
           const SizedBox(height: 10),
           _buildChildSelector(),
 
           const SizedBox(height: 20),
 
           // 2. Time Period Section
-          const Text("Time Period", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+          const Text("Time Period", style: TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.black54)),
           const SizedBox(height: 10),
           _buildChipGroup(
-            ["Last month", "Quarter", "Bi-annual", "Yearly", "Current Financial year", "All Time"],
+            [
+              "Last month",
+              "Quarter",
+              "Bi-annual",
+              "Yearly",
+              "Current Financial year",
+              "All Time"
+            ],
             _tempOptions.selectedTimePeriod,
                 (val) => setState(() => _tempOptions.selectedTimePeriod = val),
           ),
@@ -68,7 +78,8 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
           const SizedBox(height: 20),
 
           // 3. Dynamic Category Section (Payment Type / Status / Severity)
-          Text(_getCategoryLabel(), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black54)),
+          Text(_getCategoryLabel(), style: const TextStyle(
+              fontWeight: FontWeight.bold, color: Colors.black54)),
           const SizedBox(height: 10),
           _buildChipGroup(
             _getCategoryOptions(),
@@ -85,13 +96,15 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF7B2CBF),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(30)),
               ),
               onPressed: () {
                 widget.onApply(_tempOptions);
                 Navigator.pop(context);
               },
-              child: const Text("Apply Filters", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              child: const Text("Apply Filters", style: TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
@@ -103,8 +116,10 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text("Filters", style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-        IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+        const Text("Filters",
+            style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+        IconButton(onPressed: () => Navigator.pop(context),
+            icon: const Icon(Icons.close)),
       ],
     );
   }
@@ -130,7 +145,8 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
             if (isSelected) {
               _tempOptions.selectedChildIds.clear();
             } else {
-              _tempOptions.selectedChildIds = widget.children.map((e) => e.id as String).toList();
+              _tempOptions.selectedChildIds =
+                  widget.children.map((e) => e.id as String).toList();
             }
           } else {
             if (isSelected) {
@@ -146,7 +162,9 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: isSelected ? const Color(0xFF7B2CBF) : Colors.grey.shade200),
+          border: Border.all(
+              color: isSelected ? const Color(0xFF7B2CBF) : Colors.grey
+                  .shade200),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -162,7 +180,8 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
     );
   }
 
-  Widget _buildChipGroup(List<String> options, String? selected, Function(String) onSelect) {
+  Widget _buildChipGroup(List<String> options, String? selected,
+      Function(String) onSelect) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -180,7 +199,9 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
           ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
-            side: BorderSide(color: isSelected ? const Color(0xFF6200EE) : Colors.grey.shade300),
+            side: BorderSide(
+                color: isSelected ? const Color(0xFF6200EE) : Colors.grey
+                    .shade300),
           ),
         );
       }).toList(),
@@ -189,17 +210,27 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
 
   String _getCategoryLabel() {
     switch (widget.type) {
-      case FilterType.payment: return "Payment Type";
-      case FilterType.dispute: return "Status";
-      case FilterType.nonCompliance: return "Severity";
+      case FilterType.payment:
+        return "Payment Type";
+      case FilterType.dispute:
+        return "Status";
+      case FilterType.nonCompliance:
+        return "Severity";
+      case FilterType.custody:
+        return "Custody Type";
     }
   }
 
   List<String> _getCategoryOptions() {
     switch (widget.type) {
-      case FilterType.payment: return ["Payment Received", "Payment Paid", "All Payments(Combined)"];
-      case FilterType.dispute: return ["Open", "Resolved", "All"];
-      case FilterType.nonCompliance: return ["Serious", "Moderate", "Minor", "All"];
+      case FilterType.payment:
+        return ["Payment Received", "Payment Paid", "All Payments(Combined)"];
+      case FilterType.dispute:
+        return ["Open", "Resolved", "All"];
+      case FilterType.nonCompliance:
+        return ["Serious", "Moderate", "Minor", "All"];
+       case FilterType.custody:
+        return ["Scheduled", "Non-Scheduled", "All Records"];
     }
   }
 }

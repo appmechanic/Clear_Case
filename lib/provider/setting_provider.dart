@@ -5,6 +5,7 @@ import 'package:clearcase/views/auth/login_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 class SettingsProvider extends ChangeNotifier {
@@ -36,6 +37,15 @@ class SettingsProvider extends ChangeNotifier {
   void init() {
     _fetchUserData();
     _fetchUserCases();
+  }
+
+
+  Future<void> refreshData() async {
+      await Future.wait([
+      _fetchUserData(),
+      _fetchUserCases(),
+    ]);
+    notifyListeners();
   }
 
   // 1. Fetch User Profile & Settings
@@ -127,37 +137,162 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   // Delete Case
+
   Future<void> deleteCase(BuildContext context, String caseId) async {
     final user = _auth.currentUser;
-    if (user != null) {
-      try {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('cases')
-            .doc(caseId)
-            .delete();
-        
-        // Remove locally to update UI instantly
-        _cases.removeWhere((c) => c.id == caseId);
-        notifyListeners();
-        
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Case deleted successfully")));
-        }
-      } catch (e) {
-        if (context.mounted) {
-           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+    if (user == null) return;
+
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      // 1. DELETE ALL FILES IN STORAGE FOR THIS CASE
+      // Path: /users/{uid}/cases/{caseId}/
+      final storageRef = FirebaseStorage.instance
+          .ref()
+          .child('users')
+          .child(user.uid)
+          .child('cases')
+          .child(caseId);
+
+      await _deleteStorageFolder(storageRef);
+
+      // 2. DELETE ALL FIRESTORE DATA (Records & Sub-collections)
+      final WriteBatch batch = _firestore.batch();
+      final DocumentReference caseRef = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('cases')
+          .doc(caseId);
+
+      List<String> subCollections = [
+        'custodyRecords', 'paymentRecords', 'breachRecords',
+        'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
+      ];
+
+      for (String subName in subCollections) {
+        final querySnapshot = await caseRef.collection(subName).get();
+        for (var doc in querySnapshot.docs) {
+          batch.delete(doc.reference);
         }
       }
+
+      // Delete the main case document
+      batch.delete(caseRef);
+
+      // Commit all Firestore deletions at once
+      await batch.commit();
+
+      // 3. UPDATE LOCAL UI
+      _cases.removeWhere((c) => c.id == caseId);
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Case, all records, and storage files deleted."))
+        );
+      }
+    } catch (e) {
+      debugPrint("Full Delete Error: $e");
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 
-  // Logout
+  /// Recursive helper to delete all files and sub-folders in a Storage path
+  Future<void> _deleteStorageFolder(Reference ref) async {
+    try {
+      final listResult = await ref.listAll();
+
+      // Delete all files in the current directory
+      for (var item in listResult.items) {
+        await item.delete();
+      }
+
+      // Recursively delete sub-folders (like /payment_attachments/)
+      for (var prefix in listResult.prefixes) {
+        await _deleteStorageFolder(prefix);
+      }
+    } catch (e) {
+      debugPrint("Storage folder cleanup error: $e");
+    }
+  }
+
+   // Logout
   Future<void> logout(BuildContext context) async {
     await _auth.signOut();
     if (context.mounted) {
       Navigator.pushNamedAndRemoveUntil(context, LoginScreen.routeName, (route) => false);
+    }
+  }
+
+  Future<void> deleteUserAccount(BuildContext context) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      _isLoading = true;
+      notifyListeners();
+
+      // 1. Storage Cleanup: Delete the entire /users/{uid} folder
+      final storageUserRef = FirebaseStorage.instance.ref().child('users').child(user.uid);
+      await _deleteStorageFolder(storageUserRef);
+
+      // 2. Firestore Cleanup: Loop through all cases
+      final casesSnapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('cases')
+          .get();
+
+      for (var caseDoc in casesSnapshot.docs) {
+         final caseRef = caseDoc.reference;
+
+        // Clean up sub-collections for each case
+        List<String> subCollections = [
+          'custodyRecords', 'paymentRecords', 'breachRecords',
+          'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
+        ];
+
+        for (String subName in subCollections) {
+          final subSnapshot = await caseRef.collection(subName).get();
+          final subBatch = _firestore.batch();
+          for (var doc in subSnapshot.docs) {
+            subBatch.delete(doc.reference);
+          }
+          await subBatch.commit(); // Batch per sub-collection to avoid limits
+        }
+
+        // Delete the case document itself
+        await caseRef.delete();
+      }
+
+      // 3. Delete the main User document
+      await _firestore.collection('users').doc(user.uid).delete();
+
+      // 4. Delete Firebase Auth User
+      // Note: If user hasn't logged in recently, this might throw a 'requires-recent-login' error
+      await user.delete();
+
+      if (context.mounted) {
+        Navigator.pushNamedAndRemoveUntil(context, LoginScreen.routeName, (route) => false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Account and all data deleted successfully."))
+        );
+      }
+    } catch (e) {
+      debugPrint("Account Deletion Error: $e");
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text("Deletion failed. You may need to re-login to perform this action."))
+        );
+      }
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 }

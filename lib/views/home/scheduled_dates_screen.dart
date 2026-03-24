@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../models/case_model.dart';
 import '../../provider/scheduled_dates_provider.dart';
 import '../widgets/loader.dart';
 import 'rule_configuration_screen.dart';
@@ -12,9 +13,11 @@ class ScheduledDatesScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dynamic args = ModalRoute.of(context)!.settings.arguments;
+    final String? initialCaseId = args is CaseModel ? args.id : (args is String ? args : null);
     return ChangeNotifierProvider(
-      create: (_) => ScheduledDatesProvider(),
-      child: Scaffold(
+      create: (_) => ScheduledDatesProvider()..init(initialCaseId: initialCaseId),
+            child: Scaffold(
         backgroundColor: const Color(0xFFF5F5F5),
         appBar: AppBar(
           title: const Text(
@@ -192,7 +195,6 @@ class ScheduledDatesScreen extends StatelessWidget {
                           RuleConfigurationScreen.routeName,
                           arguments: {
                             'caseId': provider.selectedCase?.id,
-
                             'category': category, // <--- ADD THIS LINEad
                             'availableChildren': provider.selectedCase?.children ?? [], // Pass the children!
                           },

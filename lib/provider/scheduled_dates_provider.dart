@@ -34,18 +34,62 @@ class ScheduledDatesProvider extends ChangeNotifier {
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
 
-  ScheduledDatesProvider() {
-    init();
-  }
 
-  Future<void> init() async {
+
+  Future<void> init({String? initialCaseId}) async {
     isLoading = true;
     notifyListeners();
-    await fetchUserCases();
+
+    // 1. Fetch all cases first
+    await fetchUserCases(shouldCheckSub: false); // Modified to not run sub-check yet
+
+    // 2. Decide which case to select
+    if (initialCaseId != null && _allCases.isNotEmpty) {
+      // Look for the case passed from Settings
+      final foundCase = _allCases.firstWhere(
+            (c) => c.id == initialCaseId,
+        orElse: () => _allCases.first,
+      );
+      _selectedCase = foundCase;
+    } else if (_allCases.isNotEmpty) {
+      // Default to first case if no ID provided
+      _selectedCase = _allCases.first;
+    }
+
+    // 3. Now check the rules for the selected case
+    if (_selectedCase != null) {
+      await checkSubCollections();
+    }
+
     isLoading = false;
     notifyListeners();
   }
 
+  // Modified fetchUserCases to be more flexible
+  Future<void> fetchUserCases({bool shouldCheckSub = true}) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    try {
+      final snapshot = await _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('cases')
+          .get();
+
+      _allCases = snapshot.docs.map((doc) {
+        var model = CaseModel.fromMap(doc.data());
+        model.id = doc.id;
+        return model;
+      }).toList();
+
+      if (shouldCheckSub && _allCases.isNotEmpty && _selectedCase == null) {
+        _selectedCase = _allCases.first;
+        await checkSubCollections();
+      }
+    } catch (e) {
+      debugPrint("Error fetching cases: $e");
+    }
+  }
   void setSelectedCase(dynamic caseModel) async {
     // 1. Set to loading state
     isLoading = true;
@@ -88,25 +132,6 @@ class ScheduledDatesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Your existing fetchUserCases and getCaseDisplayName remain exactly the same...
-  Future<void> fetchUserCases() async {
-    final user = _auth.currentUser;
-    if (user == null) return;
-    try {
-      final snapshot = await _firestore.collection('users').doc(user.uid).collection('cases').get();
-      _allCases = snapshot.docs.map((doc) {
-        var model = CaseModel.fromMap(doc.data());
-        model.id = doc.id;
-        return model;
-      }).toList();
-      if (_allCases.isNotEmpty && _selectedCase == null) {
-        _selectedCase = _allCases.first;
-        await checkSubCollections();
-      }
-    } catch (e) {
-      debugPrint("Error fetching cases: $e");
-    }
-  }
 
   String getCaseDisplayName(dynamic caseItem) {
     if (caseItem is! CaseModel) return "Select Case";

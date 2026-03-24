@@ -8,7 +8,6 @@ import 'package:clearcase/views/widgets/custom_text_field.dart';
 import '../../provider/rule_configuration_provider.dart';
 import '../main_screen.dart';
 import '../widgets/custom_dropdown.dart';
-import 'calender_screen.dart';
 
 
 class RuleConfigurationScreen extends StatefulWidget {

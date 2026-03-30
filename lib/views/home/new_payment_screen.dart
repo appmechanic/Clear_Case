@@ -212,6 +212,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       builder: (context, calProvider, entryProvider, child) {
         final selectedCase = calProvider.selectedCase;
         return Scaffold(
+          backgroundColor: Colors.white,
           appBar: _buildAppBar(calProvider),
           body: (entryProvider.isLoading || _isFetching)
               ? const Center(child: CircularProgressIndicator())

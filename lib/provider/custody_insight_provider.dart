@@ -73,13 +73,14 @@ class CustodyInsightProvider with ChangeNotifier {
   void _runCombinedFilters() {
     List<Map<String, dynamic>> results = List.from(_allRecords);
 
+    // 1. Apply Sidebar/Advanced Filters First
     results = results.where((record) {
-      // 1. Child Filter
+      // Child Filter
       final List<dynamic> childIds = record['childIds'] ?? [];
       bool matchesChild = _currentFilters.selectedChildIds.isEmpty ||
           childIds.any((id) => _currentFilters.selectedChildIds.contains(id.toString()));
 
-      // 2. Custody Type Filter (Scheduled, Non-Scheduled, All)
+      // Advanced Category Filter (Scheduled/Non-Scheduled)
       bool matchesType = true;
       final bool isScheduled = record['isScheduled'] ?? false;
       if (_currentFilters.selectedCategory == "Scheduled") {
@@ -88,17 +89,32 @@ class CustodyInsightProvider with ChangeNotifier {
         matchesType = isScheduled == false;
       }
 
-      // 3. Time Filter
+      // Time Filter
       final DateTime? date = (record['startDate'] as Timestamp?)?.toDate();
       bool matchesTime = _checkTimePeriod(date, _currentFilters.selectedTimePeriod);
 
       return matchesChild && matchesType && matchesTime;
     }).toList();
 
-    // 4. Search Query (Search notes only - removed location)
+    // 2. Smart Search Query (Notes + Status Keywords)
     if (_currentSearchQuery.isNotEmpty) {
-      final q = _currentSearchQuery.toLowerCase();
-      results = results.where((r) => (r['notes'] ?? "").toString().toLowerCase().contains(q)).toList();
+      final q = _currentSearchQuery.toLowerCase().trim();
+
+      results = results.where((r) {
+        final String notes = (r['notes'] ?? "").toString().toLowerCase();
+        final bool isFulfilled = r['isFulfilled'] ?? false;
+
+        // Check if user is searching for status keywords
+        bool matchesStatusKeyword = false;
+        if (q == "fulfilled") {
+          matchesStatusKeyword = isFulfilled == true;
+        } else if (q == "unfulfilled" || q == "missed") {
+          matchesStatusKeyword = isFulfilled == false;
+        }
+
+        // Return true if it matches the status keyword OR the notes text
+        return matchesStatusKeyword || notes.contains(q);
+      }).toList();
     }
 
     _filteredRecords = results;

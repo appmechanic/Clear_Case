@@ -28,7 +28,9 @@ class RuleConfigurationScreen extends StatefulWidget {
 }
 
 
-class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
+class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
+  List<int> selectedDays = [];
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +51,8 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     if (provider.isLoading) {
       return const Scaffold(body: Center(child: AppLoader()));
     }
+
+
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
@@ -77,11 +81,38 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
 
             // 3. Conditional UI logic
             if (provider.isRepeat) ...[
-              // Toggle is ON: Show Frequency Options
-              _buildFrequencySelector(provider),
-            ] else ...[
-              // Toggle is OFF: Show End Date and End Time
-              _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
+              const Text("Select Days", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 10),
+              _buildDaySelector(provider),
+              const SizedBox(height: 20),
+
+               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: const [
+                      Text("Add End Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      SizedBox(height: 2),
+                      Text("Set a specific end date for this rule", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                    ],
+                  ),
+                  Switch(
+                    value: provider.hasEndDate,
+                    activeTrackColor: const Color(0xFF4A148C),
+                    onChanged: (v) => provider.toggleHasEndDate(v),
+                  ),
+                ],
+              ),
+
+               if (provider.hasEndDate) ...[
+                const SizedBox(height: 15),
+                _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
+                const SizedBox(height: 15),
+                _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
+              ],
+              ] else ...[
+               _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
               const SizedBox(height: 15),
               _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
             ],
@@ -148,6 +179,47 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
           ],
         ),
       ),
+    );
+  }
+
+
+  Widget _buildDaySelector(RuleConfigurationProvider provider) {
+    final List<Map<String, dynamic>> weekDays = [
+      {"name": "Mon", "value": DateTime.monday},
+      {"name": "Tue", "value": DateTime.tuesday},
+      {"name": "Wed", "value": DateTime.wednesday},
+      {"name": "Thu", "value": DateTime.thursday},
+      {"name": "Fri", "value": DateTime.friday},
+      {"name": "Sat", "value": DateTime.saturday},
+      {"name": "Sun", "value": DateTime.sunday},
+    ];
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: weekDays.map((day) {
+        bool isSelected = provider.selectedDays.contains(day['value']);
+        return GestureDetector(
+          onTap: () => provider.toggleDay(day['value']),
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isSelected ? const Color(0xFF4A148C) : Colors.grey[200],
+              shape: BoxShape.circle,
+              border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              day['name'],
+              style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold
+              ),
+            ),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -292,29 +364,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
     );
   }
 
-  Widget _buildFrequencySelector(RuleConfigurationProvider provider) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(
-        children: ["Indefinitely", "Fortnightly", "Monthly","Weekly"].map((freq) => Expanded(
-          child: GestureDetector(
-            onTap: () => provider.setFrequency(freq),
-            child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 4),
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(
-                color: provider.repeatFrequency == freq ? const Color(0xFFEDE7F6) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: provider.repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.grey.shade300),
-              ),
-              alignment: Alignment.center,
-              child: Text(freq, style: TextStyle(color: provider.repeatFrequency == freq ? const Color(0xFF4A148C) : Colors.black, fontSize: 12)),
-            ),
-          ),
-        )).toList(),
-      ),
-    );
-  }
 
   Widget _buildEnableToggle(RuleConfigurationProvider provider) {
     return Row(
@@ -341,6 +390,30 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen> {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child.")));
             return;
           }
+          // 2. Start Date & Time Validation
+          if (provider.startDate == null || provider.startTime == null) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select Start Date and Time.")));
+            return;
+          }
+
+           if (!provider.isRepeat) {
+             if (provider.endDate == null || provider.endTime == null) {
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("End Date and Time are required for non-recurring rules.")));
+              return;
+            }
+          } else if (provider.hasEndDate && provider.endDate == null) {
+             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select an end date or turn off the toggle.")));
+            return;
+          }
+
+          if (provider.isRepeat && provider.selectedDays.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Please select at least one day for the schedule"))
+            );
+            return;
+          }
+
+
           // 3. Execution
           bool success = await provider.updateRuleInFirestore(caseId: widget.caseId, category: widget.category);
 

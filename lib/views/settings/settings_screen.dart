@@ -153,53 +153,100 @@ class SettingsScreen extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Enable push notifications", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-              Switch(
-                value: provider.pushNotificationsEnabled,
-                activeThumbColor: const Color(0xFF4A148C),
-                onChanged: provider.toggleNotifications,
-              )
-            ],
-          ),
-          const SizedBox(height: 5),
-          const Text("Set the time for daily custody notifications", style: TextStyle(color: Colors.grey, fontSize: 12)),
+          const Text("Notifications",style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 15),
-          const Text("Daily notification time", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-          const SizedBox(height: 8),
-          
-          InkWell(
-            onTap: () async {
-              final TimeOfDay? picked = await showTimePicker(
-                context: context,
-                initialTime: provider.notificationTime,
-              );
-              if (picked != null) {
-                provider.updateNotificationTime(picked);
-              }
-            },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-              decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    "${provider.notificationTime.hour.toString().padLeft(2, '0')} : ${provider.notificationTime.minute.toString().padLeft(2, '0')}",
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  const Icon(Icons.access_time, size: 18, color: Color(0xFF4A148C)),
-                ],
+
+          // 1. Scheduled Dates Toggle
+          _buildToggleItem(
+            title: "Scheduled Dates",
+            subtitle: "Get alerts for your custody schedule",
+            value: provider.isScheduledDatesEnabled,
+            onChanged: provider.toggleScheduledDates,
+          ),
+          const Divider(height: 30),
+
+          // 2. Reminders Toggle
+          _buildToggleItem(
+            title: "Reminders",
+            subtitle: "General app reminders and updates",
+            value: provider.isRemindersEnabled,
+            onChanged: provider.toggleReminders,
+          ),
+          const Divider(height: 30),
+
+          // 3. Daily Reminder Toggle
+          _buildToggleItem(
+            title: "Daily Reminder",
+            subtitle: "Daily prompt to log your activities",
+            value: provider.isDailyReminderEnabled,
+            onChanged: provider.toggleDailyReminder,
+          ),
+
+          // RESTORED: Daily Time Picker Logic
+          if (provider.isDailyReminderEnabled) ...[
+            const SizedBox(height: 20),
+            const Text("Daily notification time", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: () async {
+                final TimeOfDay? picked = await showTimePicker(
+                  context: context,
+                  initialTime: provider.notificationTime,
+                );
+                if (picked != null) {
+                  provider.updateNotificationTime(picked);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      provider.notificationTime.format(context), // Shows "09:00 AM" or "21:00" based on phone settings
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                    const Icon(Icons.access_time, size: 18, color: Color(0xFF4A148C)),
+                  ],
+                ),
               ),
             ),
-          )
+          ],
         ],
       ),
     );
   }
 
+  // Helper widget for clean toggle rows
+  Widget _buildToggleItem({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required Function(bool) onChanged,
+  }) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              const SizedBox(height: 2),
+              Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+            ],
+          ),
+        ),
+        Switch(
+          value: value,
+          activeTrackColor: const Color(0xFF4A148C),
+          activeColor: Colors.white,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
   Widget _buildCaseItem(BuildContext context, SettingsProvider provider, CaseModel caseItem) {
     // Generate names string (e.g., "Alex, Sam") from children list
     String childrenNames = caseItem.children.map((e) => e.name).join(", ");

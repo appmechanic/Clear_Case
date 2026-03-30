@@ -18,8 +18,9 @@ class RuleConfigurationProvider extends ChangeNotifier {
   TimeOfDay? endTime;
   String notificationPref = "On the Scheduled day";
   bool isRepeat = true;
-  String repeatFrequency = "Indefinitely";
   bool isEnabled = true;
+  List<int> selectedDays = [];
+  bool hasEndDate = false;
 
   final TextEditingController notesController = TextEditingController();
   final FocusNode notesNode = FocusNode();
@@ -38,6 +39,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     if (caseId != null) {
       fetchExistingData(caseId, category);
     } else {
+      selectedDays = [DateTime.monday];
       _appliedChildrenList = available.map((child) => child.toMap()).toList();
       selectedChildIds = available.map((child) => child.id).toSet();
     }
@@ -66,10 +68,15 @@ class RuleConfigurationProvider extends ChangeNotifier {
         if (data['endTime'] != null) endTime = _parseTime(data['endTime']);
 
         isRepeat = data['isRepeat'] ?? true;
-        repeatFrequency = data['frequency'] ?? "Indefinitely";
+        if (data['repeatDays'] != null) {
+          selectedDays = List<int>.from(data['repeatDays']);
+        } else {
+          selectedDays = [DateTime.monday];
+        }
         notificationPref = data['notificationPref'] ?? "On the Scheduled day";
         notesController.text = data['notes'] ?? "";
         isEnabled = data['isEnabled'] ?? true;
+        hasEndDate = data['endDate'] != null;
 
         // --- CRITICAL: Sync Children Data ---
         final List<dynamic> applied = data['appliedChildren'] ?? [];
@@ -93,6 +100,16 @@ class RuleConfigurationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  void toggleHasEndDate(bool val) {
+    hasEndDate = val;
+    if (!val) {
+      endDate = null;
+      endTime = null;
+    }
+    notifyListeners();
+  }
+
   // --- NEW: Radio/Toggle Selection Logic ---
 
   void toggleChildSelection(String childId) {
@@ -100,6 +117,15 @@ class RuleConfigurationProvider extends ChangeNotifier {
       selectedChildIds.remove(childId);
     } else {
       selectedChildIds.add(childId);
+    }
+    notifyListeners();
+  }
+
+  void toggleDay(int dayValue) {
+    if (selectedDays.contains(dayValue)) {
+      selectedDays.remove(dayValue);
+    } else {
+      selectedDays.add(dayValue);
     }
     notifyListeners();
   }
@@ -177,8 +203,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     }
     notifyListeners();
   }
-  void setFrequency(String freq) { repeatFrequency = freq; notifyListeners(); }
-  void setNotification(String val) { notificationPref = val; notifyListeners(); }
+   void setNotification(String val) { notificationPref = val; notifyListeners(); }
   void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
 
 
@@ -219,9 +244,11 @@ class RuleConfigurationProvider extends ChangeNotifier {
         "startDate": startDate?.toIso8601String(),
         "startTime": startTime != null ? "${startTime!.hour}:${startTime!.minute}" : null,
         "isRepeat": isRepeat,
-        "frequency": isRepeat ? repeatFrequency : "One-time",
-        "endDate": endDate?.toIso8601String(),
-        "endTime": endTime != null ? "${endTime!.hour}:${endTime!.minute}" : null,
+        "repeatDays": isRepeat ? selectedDays : [],
+        "endDate": (!isRepeat || (isRepeat && hasEndDate)) ? endDate?.toIso8601String() : null,
+        "endTime": (!isRepeat || (isRepeat && hasEndDate)) && endTime != null
+            ? "${endTime!.hour}:${endTime!.minute}" : null,
+        "hasEndDate": hasEndDate,
         "notificationPref": notificationPref,
         "notes": notesController.text.trim(),
         "isEnabled": isEnabled,
@@ -264,13 +291,15 @@ class RuleConfigurationProvider extends ChangeNotifier {
     endTime = null;
     notificationPref = "On the Scheduled day";
     isRepeat = true;
-    repeatFrequency = "Indefinitely";
     isEnabled = true;
+    hasEndDate = false;
     notesController.clear();
 
+    selectedDays = [DateTime.monday];
+
     _appliedChildrenList = [];
-    _addedChildrenOnly = []; // ADD THIS: Clear the temporary cache
-    _masterAvailableChildren = []; // ADD THIS: Clear the original reference
+    _addedChildrenOnly = [];
+    _masterAvailableChildren = [];
     selectedChildIds = {};
     _isLoading = false;
   }

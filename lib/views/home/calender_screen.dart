@@ -346,86 +346,66 @@ class _CalenderScreenState extends State<CalenderScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.6, // Increased slightly for better initial view
-        minChildSize: 0.4,
-        maxChildSize: 0.95,
-        builder: (_, controller) => Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.only(
-                topLeft: Radius.circular(30), topRight: Radius.circular(30)),
-          ),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
-          child: Column( // Main container remains a column
-            children: [
-              // Handle bar
-              Center(
-                  child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 20),
+      builder: (ctx) => Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(30), topRight: Radius.circular(30)),
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // Hugs the buttons tightly
+          children: [
+            // Handle bar
+            Center(
+                child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.grey[300],
+                        borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
 
-              Text(
-                DateFormat('EEEE, MMMM d, y').format(date),
-                style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
-              ),
-              const SizedBox(height: 15),
+            Text(
+              DateFormat('EEEE, MMMM d, y').format(date),
+              style: const TextStyle(
+                  fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+            ),
+            const SizedBox(height: 25),
 
-              // Use Expanded to let the scrollable area take up remaining space
-              Expanded(
-                child: ListView(
-                  controller: controller, // Attach the sheet's controller here
-                  physics: const BouncingScrollPhysics(),
-                  children: [
-                    // 1. Show Events List first
-                    if (events.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 30),
-                        child: Center(
-                            child: Text("No events scheduled.",
-                                style: TextStyle(color: Colors.grey))),
-                      )
-                    else
-                      ...events.map((event) => _buildEventCard(event)).toList(),
+            // 1. Add Entry (Primary Action)
+            _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C),
+                Colors.white, true, () {
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, NewEntryScreen.routeName,
+                      arguments: date);
+                }),
 
-                    const SizedBox(height: 20),
+            const SizedBox(height: 12),
 
-                    // 2. Action Buttons are now INSIDE the scrollview
-                    _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C),
-                        Colors.white, true, () {
-                          Navigator.pop(context);
-                          Navigator.pushNamed(context, NewEntryScreen.routeName,
-                              arguments: date);
-                        }),
-                    const SizedBox(height: 12),
-                    _buildActionButton("Add Reminder", Icons.access_time,
-                        const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                          Navigator.pop(context);
-                          Navigator.pushNamed(context, NewReminderScreen.routeName,
-                              arguments: date);
-                        }),
-                    const SizedBox(height: 12),
-                    _buildActionButton("View Events", Icons.calendar_today,
-                        const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                          Navigator.pop(context);
-                          _showEventsPopup(context, date, events);
-                        }),
-                    const SizedBox(height: 30), // Padding at the bottom
-                  ],
-                ),
-              ),
-            ],
-          ),
+            // 2. Add Reminder
+            _buildActionButton("Add Reminder", Icons.access_time,
+                const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, NewReminderScreen.routeName,
+                      arguments: date);
+                }),
+
+            const SizedBox(height: 12),
+
+            // 3. View Events (Opens the popup with Edit/Delete functionality)
+            _buildActionButton("View Events", Icons.calendar_today,
+                const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
+                  Navigator.pop(context);
+                  _showEventsPopup(context, date, events);
+                }),
+
+            const SizedBox(height: 35), // Bottom padding
+          ],
         ),
       ),
     );
   }
-
   void _showLegendsPopup(BuildContext context) {
     TopPopupDialog.show(
       context: context,

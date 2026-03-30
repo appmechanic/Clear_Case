@@ -62,7 +62,11 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           return RefreshIndicator(
             onRefresh: () async {
               if (insightProv.selectedCase != null) {
-                await custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id);
+                // Refresh the compliance numbers and the record list together
+                await Future.wait([
+                  insightProv.refreshAllData(),
+                  custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id),
+                ]);
               }
             },
             child: SingleChildScrollView(
@@ -81,11 +85,11 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
                     ],
                   ),
                   const SizedBox(height: 20),
-                  _buildHeaderCard(custodyProv), // Static UI as requested
+                  _buildHeaderCard(insightProv), // Static UI as requested
                   const SizedBox(height: 20),
                   CustomSearchBar(
                     controller: _searchController,
-                    hintText: "Search by notes...",
+                    hintText: "Search notes, 'fulfilled' or 'missed'...",
                     onChanged: (val) => custodyProv.filterBySearch(val),
                   ),
 
@@ -229,28 +233,48 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
       ),
     );
   }
-  Widget _buildHeaderCard(CustodyInsightProvider custodyProv) {
+
+  Widget _buildHeaderCard(InsightProvider insightProv) {
+    // Get current month and year for the subtitle
+    final String currentPeriod = DateFormat('MMMM yyyy').format(DateTime.now());
+
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: const [
-              Text("Custody Compliance", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+              Text("Custody Compliance",
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
               Icon(Icons.person, color: Colors.purple),
             ],
           ),
-          const Text("December 2025", style: TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(currentPeriod, style: const TextStyle(color: Colors.grey, fontSize: 12)),
           const SizedBox(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStat("16", "Custody Days\n(fulfilled)"),
-              _buildStat("2", "With\nJustification"),
-              _buildStat("16", "Missed Days\n(No Justification)"),
+              _buildStat("${insightProv.fulfilledDays}", "Custody Days\n(fulfilled)"),
+              _buildStat("${insightProv.justifiedDays}", "With\nJustification"),
+              // Highlight missed days in red if they exist
+              _buildStat(
+                  "${insightProv.missedDays}",
+                  "Missed Days\n(No Just.)",
+                  color: insightProv.missedDays > 0 ? Colors.red : Colors.black
+              ),
             ],
           ),
           const SizedBox(height: 15),
@@ -258,9 +282,16 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           const SizedBox(height: 10),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: const [
-              Text("Overall Compliance", style: TextStyle(color: Colors.black54)),
-              Text("96%", style: TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 20)),
+            children: [
+              const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
+              Text(
+                  "${insightProv.complianceRate.toStringAsFixed(1)}%",
+                  style: const TextStyle(
+                      color: Color(0xFF00C853),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20
+                  )
+              ),
             ],
           )
         ],
@@ -268,6 +299,21 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
+// Updated _buildStat to support dynamic colors and better alignment
+  Widget _buildStat(String val, String label, {Color color = Colors.black}) {
+    return Expanded( // Added Expanded to ensure equal spacing like the main Insights screen
+      child: Column(
+        children: [
+          Text(val,
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 4),
+          Text(label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 10, color: Colors.grey, height: 1.2))
+        ],
+      ),
+    );
+  }
 
   PreferredSizeWidget _buildAppBar(String title) {
     return AppBar(
@@ -281,11 +327,6 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
-
-
-  Widget _buildStat(String val, String label) {
-    return Column(children: [Text(val, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)), const SizedBox(height: 4), Text(label, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: Colors.grey))]);
-  }
 
   Widget _buildDropdownSection(InsightProvider insightProv, CustodyInsightProvider custodyProv) {
     return DropdownButtonHideUnderline(

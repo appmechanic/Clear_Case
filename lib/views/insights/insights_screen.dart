@@ -55,32 +55,41 @@ class InsightsScreen extends StatelessWidget {
                   _buildDropdownSection(insightProvider),
                   const SizedBox(height: 25),
 
-                  // 1. Custody Card
-                  _buildCard(
-                    title: "Custody Compliance",
-                    subtitle: "Current Period",
-                    icon: Icons.person,
-                    iconColor: Colors.purple,
-                    onTap: () {
-                      // Check if a case is selected before navigating
-                      if (insightProvider.selectedCase != null) {
-                        Navigator.pushNamed(
-                          context,
-                          CustodyComplianceScreen.routeName,
-                          arguments: insightProvider.selectedCase,
-                        );
-                      }
-                    },
-                    child: Column(
-                      children: [
-                        const SizedBox(height: 15),
-                        Row(
-                          children: [
-                            // Use dynamic data from your provider here once connected
-                            _buildStatItem("0", "Custody Days\n(fulfilled)"),
-                            _buildStatItem("0", "With\nJustification"),
-                            _buildStatItem("0", "Missed Days\n(No Just.)"),
-                          ],
+
+                         _buildCard(
+                          title: "Custody Compliance",
+                          subtitle: "Current Period",
+                          icon: Icons.person,
+                          iconColor: Colors.purple,
+                          onTap: () {
+                            Navigator.pushNamed(
+                            context,
+                            CustodyComplianceScreen.routeName,
+                            arguments: insightProvider.selectedCase,
+                          ); },
+                          child: Column(
+                            children: [
+                              const SizedBox(height: 15),
+                              Row(
+                                children: [
+                                   _buildStatItem("${insightProvider.fulfilledDays}", "Custody Days\n(fulfilled)"),
+                                  _buildStatItem("${insightProvider.justifiedDays}", "With\nJustification"),
+                                  _buildStatItem("${insightProvider.missedDays}", "Missed Days\n(No Just.)", color: Colors.red),
+                                ],
+                              ),
+                              const SizedBox(height: 15),
+                              const Divider(),
+                              const SizedBox(height: 10),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
+                                  Text("${insightProvider.complianceRate.toStringAsFixed(1)}%",
+                                      style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
+                                ],
+                              )
+                            ],
+                          ),
                         ),
                         const SizedBox(height: 15),
                         const Divider(),
@@ -91,11 +100,8 @@ class InsightsScreen extends StatelessWidget {
                             Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
                             Text("0%", style: TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
                           ],
-                        )
-                      ],
-                    ),
-                  ),
-                  PaymentOverview(
+                        ),
+                     PaymentOverview(
                     provider: insightProvider,
                     subtitle: "Case Overview",
                     onTap: () {

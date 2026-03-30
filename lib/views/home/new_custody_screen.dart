@@ -204,6 +204,7 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
         final selectedCase = calProvider.selectedCase;
 
         return Scaffold(
+          backgroundColor: Colors.white,
           appBar: _buildAppBar(calProvider),
           body: showLoader
               ? const Center(child: CircularProgressIndicator())

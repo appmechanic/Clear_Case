@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/case_model.dart';
 
 
@@ -13,6 +14,12 @@ class InsightProvider with ChangeNotifier {
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
   bool _isLoading = false;
+
+
+  int fulfilledDays = 0;
+  int justifiedDays = 0;
+  int missedDays = 0;
+  double complianceRate = 0.0;
 
   // Payment Variables
   double totalPaid = 0.0;
@@ -93,6 +100,7 @@ class InsightProvider with ChangeNotifier {
 
     // Then, refresh the specific insights for the current case
     await Future.wait([
+      calculateCustodyCompliance(),
       calculatePaymentInsights(),
       calculateBreachInsights(),
       calculateDisputeInsights(),
@@ -110,6 +118,7 @@ class InsightProvider with ChangeNotifier {
     if (_selectedCase != null) {
       // Logic for calculating insights based on the new selection
       Future.wait([
+        calculateCustodyCompliance(),
         calculatePaymentInsights(),
         calculateBreachInsights(),
         calculateDisputeInsights(),
@@ -125,6 +134,105 @@ class InsightProvider with ChangeNotifier {
     if (caseItem.children.isEmpty) return caseNum;
     final names = caseItem.children.map((child) => child.name.trim()).join(' & ');
     return "$caseNum ($names)";
+  }
+
+
+  Future<void> calculateCustodyCompliance() async {
+    if (_selectedCase == null) return;
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+    final DateTime today = DateTime.now();
+
+    try {
+      // Step A: Fetch Scheduled Rule
+      final rulesSnapshot = await _firestore
+          .collection('users').doc(userId)
+          .collection('cases').doc(caseId)
+          .collection('scheduledRules').get();
+
+      if (rulesSnapshot.docs.isEmpty) return;
+
+      int totalScheduledUntilToday = 0;
+      Set<String> scheduledDates = {}; // "yyyy-MM-dd" Format
+
+      for (var doc in rulesSnapshot.docs) {
+        final data = doc.data();
+        DateTime startDate = DateTime.parse(data['startDate']);
+        DateTime? endDate = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
+        List<int> repeatDays = List<int>.from(data['repeatDays'] ?? []);
+        bool isRepeat = data['isRepeat'] ?? true;
+
+        //not exceed current date today
+        DateTime calculationEnd = today;
+        if (endDate != null && endDate.isBefore(today)) {
+          calculationEnd = endDate;
+        }
+
+        // calcuate start date to end date/today
+        for (DateTime date = startDate;
+        date.isBefore(calculationEnd.add(const Duration(days: 1)));
+        date = date.add(const Duration(days: 1))) {
+
+           if (date.isAfter(today)) continue;
+
+          if (isRepeat) {
+            if (repeatDays.contains(date.weekday)) {
+              scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
+            }
+          } else {
+             scheduledDates.add(DateFormat('yyyy-MM-dd').format(startDate));
+          }
+        }
+      }
+      totalScheduledUntilToday = scheduledDates.length;
+
+      // Step B: Fetch Actual Custody Records
+      final recordsSnapshot = await _firestore
+          .collection('users').doc(userId)
+          .collection('cases').doc(caseId)
+          .collection('custodyRecords').get();
+
+      int tempFulfilled = 0;
+      int tempJustified = 0;
+      Set<String> completedDates = {};
+
+      for (var doc in recordsSnapshot.docs) {
+        final data = doc.data();
+        bool isFulfilled = data['isFulfilled'] ?? false;
+        DateTime recordDate = (data['startDate'] as Timestamp).toDate();
+        String dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
+
+
+        if (scheduledDates.contains(dateKey)) {
+          completedDates.add(dateKey);
+          if (isFulfilled) {
+            tempFulfilled++;
+          } else {
+             tempJustified++;
+          }
+        }
+      }
+
+      // Step C: Calculate Missed Days
+      // (Scheduled - (Fulfilled + Justified))
+      fulfilledDays = tempFulfilled;
+      justifiedDays = tempJustified;
+      missedDays = totalScheduledUntilToday - (tempFulfilled + tempJustified);
+      if (missedDays < 0) missedDays = 0;
+
+      // Step D: Formula - (Actual / Scheduled) * 100
+      // Actual Days = Fulfilled + Justified
+      int actualDays = fulfilledDays + justifiedDays;
+      if (totalScheduledUntilToday > 0) {
+        complianceRate = (actualDays / totalScheduledUntilToday) * 100;
+      } else {
+        complianceRate = 0.0;
+      }
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Custody Insight Error: $e");
+    }
   }
 
   /// 3. Payment Specific Logic

@@ -27,9 +27,15 @@ class SettingsProvider extends ChangeNotifier {
   List<CaseModel> get cases => _cases;
 
   // Notification Settings
-  bool _pushNotificationsEnabled = true;
-  bool get pushNotificationsEnabled => _pushNotificationsEnabled;
-  
+
+  bool _isScheduledDatesEnabled = true;
+  bool _isRemindersEnabled = true;
+  bool _isDailyReminderEnabled = false;
+
+  bool get isScheduledDatesEnabled => _isScheduledDatesEnabled;
+  bool get isRemindersEnabled => _isRemindersEnabled;
+  bool get isDailyReminderEnabled => _isDailyReminderEnabled;
+
   TimeOfDay _notificationTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay get notificationTime => _notificationTime;
 
@@ -60,10 +66,11 @@ class SettingsProvider extends ChangeNotifier {
           // Parse Profile
           _userProfile = UserModel.fromMap(data);
 
-          // Parse Settings (stored in user doc)
-          if (data.containsKey('pushNotificationsEnabled')) {
-            _pushNotificationsEnabled = data['pushNotificationsEnabled'];
-          }
+          // Parse the 3 new toggles
+          _isScheduledDatesEnabled = data['isScheduledDatesEnabled'] ?? true;
+          _isRemindersEnabled = data['isRemindersEnabled'] ?? true;
+          _isDailyReminderEnabled = data['isDailyReminderEnabled'] ?? false;
+
           if (data.containsKey('notificationTime')) {
             // Stored as "HH:mm" string
             final timeParts = (data['notificationTime'] as String).split(':');
@@ -78,6 +85,25 @@ class SettingsProvider extends ChangeNotifier {
       }
     }
     notifyListeners();
+  }
+
+
+  void toggleScheduledDates(bool val) {
+    _isScheduledDatesEnabled = val;
+    notifyListeners();
+    _saveSettingsToFirebase();
+  }
+
+  void toggleReminders(bool val) {
+    _isRemindersEnabled = val;
+    notifyListeners();
+    _saveSettingsToFirebase();
+  }
+
+  void toggleDailyReminder(bool val) {
+    _isDailyReminderEnabled = val;
+    notifyListeners();
+    _saveSettingsToFirebase();
   }
 
   // 2. Fetch Cases List
@@ -112,7 +138,6 @@ class SettingsProvider extends ChangeNotifier {
 
   // Update Push Notification Toggle
   Future<void> toggleNotifications(bool value) async {
-    _pushNotificationsEnabled = value;
     notifyListeners();
     _saveSettingsToFirebase();
   }
@@ -128,9 +153,14 @@ class SettingsProvider extends ChangeNotifier {
   Future<void> _saveSettingsToFirebase() async {
     final user = _auth.currentUser;
     if (user != null) {
-      final timeString = "${_notificationTime.hour}:${_notificationTime.minute}";
+      final String hour = _notificationTime.hour.toString().padLeft(2, '0');
+      final String minute = _notificationTime.minute.toString().padLeft(2, '0');
+      final timeString = "$hour:$minute";
+
       await _firestore.collection('users').doc(user.uid).update({
-        'pushNotificationsEnabled': _pushNotificationsEnabled,
+        'isScheduledDatesEnabled': _isScheduledDatesEnabled,
+        'isRemindersEnabled': _isRemindersEnabled,
+        'isDailyReminderEnabled': _isDailyReminderEnabled,
         'notificationTime': timeString,
       });
     }

@@ -11,12 +11,14 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // Kotlin DSL requires '=' and isProperty syntax
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = "17"
     }
 
     defaultConfig {
@@ -25,15 +27,24 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Kotlin DSL needs '='
+        multiDexEnabled = true
     }
 
     buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+        getByName("release") {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+}
+
+dependencies {
+    // Kotlin DSL uses parentheses () for dependencies
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+
+    // Note: If $kotlin_version isn't defined, you can use a hardcoded version or the standard library
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
 }
 
 flutter {

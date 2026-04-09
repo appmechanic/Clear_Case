@@ -53,5 +53,11 @@
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
     <string>ClearCase needs location access to pre-populate custody and dispute records.</string>
+    <key>UIBackgroundModes</key>
+    <array>
+        <string>remote-notification</string>
+    </array>
+    <key>NSUserNotificationUsageDescription</key>
+    <string>We need to send you custody reminders and schedule updates.</string>
 </dict>
 </plist>

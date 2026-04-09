@@ -496,37 +496,45 @@ class _CalenderScreenState extends State<CalenderScreen> {
               const SizedBox(width: 5),
               Row(
                 children: [
-                  GestureDetector(
-                    onTap: () async {
-                      // Navigate first
-                      if (event.type == EventType.custody) {
-                        await Navigator.pushNamed(context, NewCustodyScreen.routeName, arguments: event.id);
-                      } else if (event.type == EventType.payment) {
-                        await Navigator.pushNamed(context, NewPaymentScreen.routeName, arguments: event.id);
-                      } else if (event.type == EventType.reminder) {
-                        await Navigator.pushNamed(context, NewReminderScreen.routeName, arguments: event.id);
-                      }else if (event.type == EventType.dispute) {
-                        await Navigator.pushNamed(context, NewDisputeScreen.routeName, arguments: event.id);
-                      }else if (event.type == EventType.breach) {
-                        await Navigator.pushNamed(context, NewBreachScreen.routeName, arguments: event.id);
+                  // EDIT BUTTON
+                  IconButton(
+                    icon: const Icon(Icons.edit, size: 20),
+                    constraints: const BoxConstraints(), // Removes default padding to keep it tight
+                    padding: const EdgeInsets.all(8),    // Adds specific "hit area" padding
+                    onPressed: () async {
+                      // 1. Identify the route
+                      String? routeName;
+                      switch (event.type) {
+                        case EventType.custody: routeName = NewCustodyScreen.routeName; break;
+                        case EventType.payment: routeName = NewPaymentScreen.routeName; break;
+                        case EventType.reminder: routeName = NewReminderScreen.routeName; break;
+                        case EventType.dispute: routeName = NewDisputeScreen.routeName; break;
+                        case EventType.breach: routeName = NewBreachScreen.routeName; break;
                       }
 
-                      // Now pop the bottom sheet safely
-                      if (context.mounted) Navigator.pop(context);
+                      if (routeName != null) {
+                        // 2. Close the bottom sheet FIRST to avoid UI ghosting
+                        Navigator.pop(context);
+
+                        // 3. Navigate
+                        await Navigator.pushNamed(context, routeName, arguments: event.id);
+                      }
                     },
-                    child: const Icon(Icons.edit, size: 20),
                   ),
-                  const SizedBox(width: 15),
-                  GestureDetector(
-                    onTap: () {
+                  const SizedBox(width: 8), // Adjusted spacing
+
+                  // DELETE BUTTON
+                  IconButton(
+                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                    constraints: const BoxConstraints(),
+                    padding: const EdgeInsets.all(8),
+                    onPressed: () {
                       final calProvider = Provider.of<CalendarProvider>(context, listen: false);
 
                       DeleteEntriesConfirmation.show(context, () async {
-                        // 1. Close the Bottom Sheet immediately (if one is open)
-                        // This ensures the Snackbar has a clean Scaffold to display on
+                        // Close the confirmation dialog/bottom sheet
                         Navigator.pop(context);
 
-                        // 2. Trigger the delete
                         await calProvider.deleteRecord(
                           context: context,
                           recordId: event.id,
@@ -535,10 +543,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
                         );
                       });
                     },
-                    child: const Icon(Icons.delete, color: Colors.red, size: 20),
                   ),
-                  
-                 ],
+                ],
               )
             ],
           ),

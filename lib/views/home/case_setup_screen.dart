@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/case_setup_provider.dart';
 import '../widgets/custom_text_field.dart';
+
 class CaseSetupScreen extends StatefulWidget {
   static const routeName = '/case-setup';
   const CaseSetupScreen({super.key});
@@ -361,7 +362,6 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
   }
 
   void _onSaveRule() async {
-    // 1. Basic Null Checks (Always required)
     if (startDate == null || startTime == null) {
       showSnackBar(context, "Start Date and Time required");
       return;
@@ -369,23 +369,22 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
     // 2. Conditional Validation
     if (!isRepeat) {
-      // If NOT repeating, End Date and End Time are now mandatory
+      // ONE-TIME RULE: End Date/Time are MANDATORY
       if (endDate == null || endTime == null) {
         showSnackBar(context, "End Date and Time are required for non-recurring rules");
         return;
       }
-     }
+    } else {
+      // RECURRING RULE: Check Days and Toggle
+      if (selectedDays.isEmpty) {
+        showSnackBar(context, "Please select at least one day for the schedule");
+        return;
+      }
 
-    if (isRepeat && selectedDays.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Please select at least one day for the schedule"))
-      );
-      return;
-    }
-
-    if (isRepeat && hasEndDate && endDate == null) {
-      showSnackBar(context, "Please select an end date or turn off the toggle");
-      return;
+      if (hasEndDate && (endDate == null || endTime == null)) {
+        showSnackBar(context, "Please select an end date and time or turn off the toggle");
+        return;
+      }
     }
 
     // 3. Child Selection Check
@@ -402,16 +401,22 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
     Map<String, dynamic> ruleData = {
       "startDate": startDate!.toIso8601String(),
-      "startTime": "${startTime!.hour}:${startTime!.minute}",
-      "endDate": (!isRepeat || (isRepeat && hasEndDate)) ? endDate?.toIso8601String() : null,
-      "endTime": !isRepeat && endTime != null ? "${endTime!.hour}:${endTime!.minute}" : null,
+      "startTime": "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}",
+
+      // Logic: Only send end date if it's non-repeat OR (repeat is ON and toggle is ON)
+      "endDate": (!isRepeat || hasEndDate) ? endDate?.toIso8601String() : null,
+
+      // Logic: If repeat is off, we need end time. If repeat is on and hasEndDate is on, we usually use the startTime as the "event end time" for daily logic, but sending endTime here if you have it.
+      "endTime": (!isRepeat || hasEndDate) && endTime != null
+          ? "${endTime!.hour.toString().padLeft(2, '0')}:${endTime!.minute.toString().padLeft(2, '0')}"
+          : null,
+
       "notificationPref": notificationPref,
       "isRepeat": isRepeat,
       "repeatDays": isRepeat ? selectedDays : [],
       "notes": _notesController.text,
       "appliedChildren": childrenData,
     };
-
     // 5. Submit
     widget.provider.setRuleConfiguration(ruleData);
     widget.provider.submitCase(context);
@@ -531,53 +536,45 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         if (isRepeat) ...[
           const Text("Select Days", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
           const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            spacing: 8.0,
+            runSpacing: 10.0,
             children: weekDays.map((day) {
               bool isSelected = selectedDays.contains(day['value']);
               return GestureDetector(
                 onTap: () {
                   setState(() {
-                    if (isSelected) {
-                      selectedDays.remove(day['value']);
-                    } else {
-                      selectedDays.add(day['value']);
-                    }
+                    isSelected ? selectedDays.remove(day['value']) : selectedDays.add(day['value']);
                   });
                 },
                 child: Container(
-                  width: 42,
-                  height: 42,
+                  width: 42, height: 42,
                   decoration: BoxDecoration(
                     color: isSelected ? const Color(0xFF4A148C) : Colors.grey[200],
                     shape: BoxShape.circle,
                     border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
                   ),
                   alignment: Alignment.center,
-                  child: Text(
-                    day['name'],
-                    style: TextStyle(
-                        color: isSelected ? Colors.white : Colors.black,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold
-                    ),
-                  ),
+                  child: Text(day['name'], style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
                 ),
               );
             }).toList(),
           ),
           const SizedBox(height: 20),
 
-           Row(
+          // NEW: Add End Date Toggle (Only shows if isRepeat is TRUE)
+          Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: const [
-                  Text("Add End Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  SizedBox(height: 2),
-                  Text("Set a specific end date for this rule", style: TextStyle(color: Colors.grey, fontSize: 11)),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text("Add End Date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    SizedBox(height: 2),
+                    Text("Set a specific end date for this recurring rule", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                  ],
+                ),
               ),
               Switch(
                 value: hasEndDate,
@@ -587,7 +584,8 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
             ],
           ),
 
-           if (hasEndDate) ...[
+          // Conditional End Date/Time for Recurring Rule
+          if (hasEndDate) ...[
             const SizedBox(height: 15),
             _buildFieldLabel("Rule End Date"),
             _buildInputContainer(
@@ -595,18 +593,23 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
                 icon: Icons.calendar_today_outlined,
                 onTap: () => _pickDate(false)
             ),
+            const SizedBox(height: 15),
+            _buildFieldLabel("End Time"),
+            _buildInputContainer(
+                text: endTime == null ? "00 : 00" : endTime!.format(context),
+                icon: Icons.access_time,
+                onTap: () => _pickTime(false)
+            ),
           ],
-         ] else ...[
-          // Show End Date and End Time when Toggle is OFF
+        ] else ...[
+          // If NOT repeating, End Date and Time are ALWAYS shown and REQUIRED
           _buildFieldLabel("Rule End Date"),
           _buildInputContainer(
               text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
               icon: Icons.calendar_today_outlined,
               onTap: () => _pickDate(false)
           ),
-
           const SizedBox(height: 15),
-
           _buildFieldLabel("End Time"),
           _buildInputContainer(
               text: endTime == null ? "00 : 00" : endTime!.format(context),

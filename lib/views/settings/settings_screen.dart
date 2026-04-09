@@ -159,7 +159,7 @@ class SettingsScreen extends StatelessWidget {
           // 1. Scheduled Dates Toggle
           _buildToggleItem(
             title: "Scheduled Dates",
-            subtitle: "Get alerts for your custody schedule",
+            subtitle: "Get alerts for your custody/payments schedule",
             value: provider.isScheduledDatesEnabled,
             onChanged: provider.toggleScheduledDates,
           ),
@@ -168,7 +168,7 @@ class SettingsScreen extends StatelessWidget {
           // 2. Reminders Toggle
           _buildToggleItem(
             title: "Reminders",
-            subtitle: "General app reminders and updates",
+            subtitle: "Get alerts for your important date",
             value: provider.isRemindersEnabled,
             onChanged: provider.toggleReminders,
           ),
@@ -177,7 +177,7 @@ class SettingsScreen extends StatelessWidget {
           // 3. Daily Reminder Toggle
           _buildToggleItem(
             title: "Daily Reminder",
-            subtitle: "Daily prompt to log your activities",
+            subtitle: "Get alerts daily for important date",
             value: provider.isDailyReminderEnabled,
             onChanged: provider.toggleDailyReminder,
           ),

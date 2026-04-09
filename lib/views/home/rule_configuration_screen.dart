@@ -194,8 +194,13 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
       {"name": "Sun", "value": DateTime.sunday},
     ];
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Wrap(
+      // Spacing between the circles
+      spacing: 8.0,
+      // Spacing between rows if it wraps to a second line
+      runSpacing: 10.0,
+      // This centers the circles if they wrap
+      alignment: WrapAlignment.center,
       children: weekDays.map((day) {
         bool isSelected = provider.selectedDays.contains(day['value']);
         return GestureDetector(
@@ -222,7 +227,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
       }).toList(),
     );
   }
-
   Widget _buildComplianceNote() {
     return Container(
       width: double.infinity,

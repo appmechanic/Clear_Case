@@ -8,6 +8,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../core/utils/helping_functions.dart';
+import '../services/notification_service.dart';
+
 class SettingsProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   // Use your named database instance
@@ -251,11 +254,30 @@ class SettingsProvider extends ChangeNotifier {
     }
   }
 
-   // Logout
   Future<void> logout(BuildContext context) async {
-    await _auth.signOut();
-    if (context.mounted) {
-      Navigator.pushNamedAndRemoveUntil(context, LoginScreen.routeName, (route) => false);
+    _isLoading = true;
+    notifyListeners();
+    try {
+      // FIRST: Cleanup notification tokens while user is still authenticated
+      await PushNotificationService.deleteTokenOnLogout();
+
+      // SECOND: Sign out from Firebase Auth
+      await _auth.signOut();
+
+      if (context.mounted) {
+        Navigator.pushNamedAndRemoveUntil(
+            context,
+            LoginScreen.routeName,
+                (route) => false
+        );
+      }
+    } catch (e) {
+      // Fallback sign out if something fails
+      await _auth.signOut();
+      if (context.mounted) showSnackBar(context, "Logged out with errors");
+    } finally {
+      _isLoading = true;
+      notifyListeners();
     }
   }
 
@@ -267,11 +289,28 @@ class SettingsProvider extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // 1. Storage Cleanup: Delete the entire /users/{uid} folder
+      // --- STEP 1: PRE-EMPTIVE AUTH CHECK ---
+      // We attempt a "dry run" or check if deletion is possible.
+      // If the session is old, this throws 'requires-recent-login' immediately,
+      // before any Firestore or Storage data is deleted.
+      // We can use reauthenticate or simply attempt a tiny operation,
+      // but the most reliable way is to try the delete early or check the time.
+
+      // Check: Has the user logged in within the last 5 minutes?
+      final lastSignIn = user.metadata.lastSignInTime;
+      final now = DateTime.now();
+      if (lastSignIn != null && now.difference(lastSignIn).inMinutes > 5) {
+        throw FirebaseAuthException(code: 'requires-recent-login');
+      }
+
+      // --- STEP 2: NOTIFICATION CLEANUP ---
+      await PushNotificationService.deleteTokenOnLogout();
+
+      // --- STEP 3: STORAGE CLEANUP ---
       final storageUserRef = FirebaseStorage.instance.ref().child('users').child(user.uid);
       await _deleteStorageFolder(storageUserRef);
 
-      // 2. Firestore Cleanup: Loop through all cases
+      // --- STEP 4: FIRESTORE CLEANUP ---
       final casesSnapshot = await _firestore
           .collection('users')
           .doc(user.uid)
@@ -279,9 +318,7 @@ class SettingsProvider extends ChangeNotifier {
           .get();
 
       for (var caseDoc in casesSnapshot.docs) {
-         final caseRef = caseDoc.reference;
-
-        // Clean up sub-collections for each case
+        final caseRef = caseDoc.reference;
         List<String> subCollections = [
           'custodyRecords', 'paymentRecords', 'breachRecords',
           'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
@@ -293,18 +330,13 @@ class SettingsProvider extends ChangeNotifier {
           for (var doc in subSnapshot.docs) {
             subBatch.delete(doc.reference);
           }
-          await subBatch.commit(); // Batch per sub-collection to avoid limits
+          await subBatch.commit();
         }
-
-        // Delete the case document itself
         await caseRef.delete();
       }
 
-      // 3. Delete the main User document
+      // --- STEP 5: DOCUMENT & ACCOUNT DELETION ---
       await _firestore.collection('users').doc(user.uid).delete();
-
-      // 4. Delete Firebase Auth User
-      // Note: If user hasn't logged in recently, this might throw a 'requires-recent-login' error
       await user.delete();
 
       if (context.mounted) {
@@ -313,11 +345,20 @@ class SettingsProvider extends ChangeNotifier {
             const SnackBar(content: Text("Account and all data deleted successfully."))
         );
       }
+    } on FirebaseAuthException catch (e) {
+      debugPrint("Firebase Auth Deletion Error: ${e.code}");
+      if (context.mounted) {
+        String message = "Deletion failed.";
+        if (e.code == 'requires-recent-login') {
+          message = "For security, please log out and back in, then try deleting your account again.";
+        }
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+      }
     } catch (e) {
-      debugPrint("Account Deletion Error: $e");
+      debugPrint("General Deletion Error: $e");
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text("Deletion failed. You may need to re-login to perform this action."))
+            const SnackBar(content: Text("An error occurred. Please try again."))
         );
       }
     } finally {

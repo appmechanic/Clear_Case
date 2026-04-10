@@ -90,12 +90,14 @@ class CaseSetupProvider extends ChangeNotifier {
   }
 
   // --- SUBMIT (Updated Storage Paths) ---
+  bool _isSubmitting = false;
+  bool get isSubmitting => _isSubmitting;
 
   Future<void> submitCase(BuildContext context) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    _isLoading = true;
+    _isSubmitting = true;
     notifyListeners();
 
     try {
@@ -147,14 +149,14 @@ class CaseSetupProvider extends ChangeNotifier {
 
       await batch.commit();
 
-      _isLoading = false;
+      _isSubmitting = false;
       notifyListeners();
 
       if (context.mounted) {
         Navigator.pushNamedAndRemoveUntil(context, '/main', (route) => false, arguments: 0);
       }
     } catch (e) {
-      _isLoading = false;
+      _isSubmitting = false;
       notifyListeners();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Error: $e")));

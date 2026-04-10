@@ -153,8 +153,13 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
     }
   }
 
+
   Widget _buildBottomBar(BuildContext context, CaseSetupProvider provider) {
     bool isStep2 = provider.currentStep == 2;
+
+    // We disable interactions if either a general load OR a submission is happening
+    bool isBusy = provider.isLoading || provider.isSubmitting;
+
     return Container(
       padding: const EdgeInsets.all(20),
       color: Colors.white,
@@ -169,7 +174,8 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
                 backgroundColor: const Color(0xFF7B1FA2),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
               ),
-              onPressed: provider.isLoading ? null : () {
+              // Disable button if busy, but ONLY show loader if isLoading is true
+              onPressed: isBusy ? null : () {
                 if (provider.currentStep == 1) {
                   if (provider.caseData.caseNumber.isEmpty || provider.caseData.legalRep.isEmpty) {
                     showSnackBar(context, "All fields are required");
@@ -180,24 +186,41 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
                     return;
                   }
                   provider.nextStep();
-                  _scrollToTop(); // <--- Add this
+                  _scrollToTop();
                 } else if (provider.currentStep == 2) {
-                   if (provider.selectedRuleType == null) {
-                      showSnackBar(context, "Please select a rule type");
-                      return;
-                   }
-                   provider.nextStep();
-                   _scrollToTop(); // <--- Add this
+                  if (provider.selectedRuleType == null) {
+                    showSnackBar(context, "Please select a rule type");
+                    return;
+                  }
+                  provider.nextStep();
+                  _scrollToTop();
                 }
               },
-              child: provider.isLoading 
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text("Continue", style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+              child: provider.isLoading
+                  ? const SizedBox(
+                  height: 20,
+                  width: 20,
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+              )
+                  : const Text("Continue",
+                  style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
             ),
           ),
           if (isStep2) ...[
             const SizedBox(height: 12),
-            CustomSecondaryButton(text: "Skip Rules For Now", onPressed: () => provider.submitCase(context)),
+            // If submitting (skipping), show a small loader here instead of on the main button
+            provider.isSubmitting
+                ? const Center(
+                child: SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF7B1FA2))
+                )
+            )
+                : CustomSecondaryButton(
+              text: "Skip Rules For Now",
+              onPressed: () => provider.submitCase(context),
+            ),
           ]
         ],
       ),

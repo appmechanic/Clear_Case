@@ -183,7 +183,7 @@ class SettingsScreen extends StatelessWidget {
           ),
 
           // RESTORED: Daily Time Picker Logic
-          if (provider.isDailyReminderEnabled) ...[
+          // if (provider.isDailyReminderEnabled) ...[
             const SizedBox(height: 20),
             const Text("Daily notification time", style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
             const SizedBox(height: 8),
@@ -212,8 +212,7 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
             ),
-          ],
-        ],
+         ],
       ),
     );
   }

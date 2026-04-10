@@ -142,4 +142,27 @@ class PushNotificationService {
     } catch (e) {
       print("❌ Error saving token: $e");
     }
-  }}
+  }
+
+  static Future<void> deleteTokenOnLogout() async {
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        // 1. Remove the token from the 'clearcase' database
+        await FirebaseFirestore.instanceFor(databaseId: 'clearcase', app: Firebase.app())
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'fcmToken': FieldValue.delete(),
+          'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        });
+       }
+
+      // 2. Tell Firebase to invalidate the token on this device
+      await _fcm.deleteToken();
+
+    } catch (e) {
+      print("❌ Error during token deletion: $e");
+    }
+  }
+}

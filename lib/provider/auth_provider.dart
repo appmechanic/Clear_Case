@@ -1,10 +1,13 @@
 import 'package:clearcase/core/utils/helping_functions.dart';
+import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
 import 'package:clearcase/views/main_screen.dart'; 
 import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../views/auth/email_verification_screen.dart';
 
@@ -24,7 +27,7 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signUpFunction({
+  Future<void>  signUpFunction({
     required BuildContext context,
     required String email,
     required String password,
@@ -43,8 +46,12 @@ class AuthProvider extends ChangeNotifier {
           'firstName': firstName,
           'lastName': lastName,
           'createdAt': FieldValue.serverTimestamp(),
-          'children': [], 
-        });
+          'children': [],
+          'isDailyReminderEnabled': false,
+          'isRemindersEnabled': true,
+          'isScheduledDatesEnabled': true,
+          'notificationTime': "09:00",
+          });
       await _authService.sendVerificationEmail();
         
       setLoading(false);
@@ -70,12 +77,23 @@ class AuthProvider extends ChangeNotifier {
       await _authService.login(email: email, password: password);
       User? user = _authService.currentUser;
 
-      if (user != null) {
+      if (user != null && context.mounted) {        // --- START TOKEN LOGIC ---
+        // 1. Get the current token
+        String? token = await FirebaseMessaging.instance.getToken();
+        Provider.of<SettingsProvider>(context, listen: false).init();
+        // 2. Save it to your specific 'clearcase' database
+        if (token != null) {
+          await _firestore.collection('users').doc(user.uid).set({
+            'fcmToken': token,
+            'tokenUpdatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)); // Use merge: true so you don't overwrite name/email
+        }
+
         QuerySnapshot caseSnapshot = await _firestore
             .collection('users')
             .doc(user.uid)
             .collection('cases')
-            .limit(1) 
+            .limit(1)
             .get();
 
         setLoading(false);
@@ -88,7 +106,7 @@ class AuthProvider extends ChangeNotifier {
               context,
               MainScreen.routeName,
               arguments: 0,
-              (route) => false,
+                  (route) => false,
             );
           }
         }

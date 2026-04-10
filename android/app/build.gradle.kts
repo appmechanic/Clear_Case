@@ -7,8 +7,8 @@ plugins {
 
 android {
     namespace = "com.clearcase.clearcase"
-    compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    compileSdk = 36
+    ndkVersion = "29.0.13846066"
 
     compileOptions {
         // Kotlin DSL requires '=' and isProperty syntax
@@ -24,7 +24,7 @@ android {
     defaultConfig {
         applicationId = "com.clearcase.clearcase"
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 

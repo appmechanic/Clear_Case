@@ -1,4 +1,4 @@
-package com.clearcase.clearcase
+package  com.clearcase.clearcase
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -141,50 +141,46 @@ class InsightProvider with ChangeNotifier {
     if (_selectedCase == null) return;
     final userId = _auth.currentUser!.uid;
     final caseId = _selectedCase!.id;
-    final DateTime today = DateTime.now();
+
+    // Normalize "today" to midnight to ensure inclusive date comparisons
+    final now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
 
     try {
-      // Step A: Fetch Scheduled Rule
+      // Step A: Fetch Scheduled Rules to define the "Expected" dates
       final rulesSnapshot = await _firestore
           .collection('users').doc(userId)
           .collection('cases').doc(caseId)
           .collection('scheduledRules').get();
 
-      if (rulesSnapshot.docs.isEmpty) return;
+      if (rulesSnapshot.docs.isEmpty) {
+        _resetCustodyStats();
+        return;
+      }
 
-      int totalScheduledUntilToday = 0;
-      Set<String> scheduledDates = {}; // "yyyy-MM-dd" Format
+      Set<String> scheduledDates = {};
 
       for (var doc in rulesSnapshot.docs) {
         final data = doc.data();
         DateTime startDate = DateTime.parse(data['startDate']);
-        DateTime? endDate = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
-        List<int> repeatDays = List<int>.from(data['repeatDays'] ?? []);
-        bool isRepeat = data['isRepeat'] ?? true;
+        startDate = DateTime(startDate.year, startDate.month, startDate.day);
 
-        //not exceed current date today
+        DateTime? endDate = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
+
         DateTime calculationEnd = today;
         if (endDate != null && endDate.isBefore(today)) {
-          calculationEnd = endDate;
+          calculationEnd = DateTime(endDate.year, endDate.month, endDate.day);
         }
 
-        // calcuate start date to end date/today
+        // Every single day from start to end/today is an expected custody day
         for (DateTime date = startDate;
-        date.isBefore(calculationEnd.add(const Duration(days: 1)));
+        !date.isAfter(calculationEnd);
         date = date.add(const Duration(days: 1))) {
-
-           if (date.isAfter(today)) continue;
-
-          if (isRepeat) {
-            if (repeatDays.contains(date.weekday)) {
-              scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
-            }
-          } else {
-             scheduledDates.add(DateFormat('yyyy-MM-dd').format(startDate));
-          }
+          scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
         }
       }
-      totalScheduledUntilToday = scheduledDates.length;
+
+      int totalScheduledUntilToday = scheduledDates.length;
 
       // Step B: Fetch Actual Custody Records
       final recordsSnapshot = await _firestore
@@ -194,34 +190,38 @@ class InsightProvider with ChangeNotifier {
 
       int tempFulfilled = 0;
       int tempJustified = 0;
-      Set<String> completedDates = {};
 
       for (var doc in recordsSnapshot.docs) {
         final data = doc.data();
+
+        // NEW: Ignore entries where isScheduled is false
+        final bool isScheduledEntry = data['isScheduled'] ?? false;
+        if (!isScheduledEntry) continue;
+
         bool isFulfilled = data['isFulfilled'] ?? false;
         DateTime recordDate = (data['startDate'] as Timestamp).toDate();
         String dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
 
-
+        // Only count if this record falls on one of our scheduled dates
         if (scheduledDates.contains(dateKey)) {
-          completedDates.add(dateKey);
           if (isFulfilled) {
             tempFulfilled++;
           } else {
-             tempJustified++;
+            // It was scheduled, entry exists, but not fulfilled = Justified
+            tempJustified++;
           }
         }
       }
 
-      // Step C: Calculate Missed Days
-      // (Scheduled - (Fulfilled + Justified))
+      // Step C: Update State
       fulfilledDays = tempFulfilled;
       justifiedDays = tempJustified;
+
+      // Missed = Scheduled dates that have NO entry at all in the DB
       missedDays = totalScheduledUntilToday - (tempFulfilled + tempJustified);
       if (missedDays < 0) missedDays = 0;
 
-      // Step D: Formula - (Actual / Scheduled) * 100
-      // Actual Days = Fulfilled + Justified
+      // Step D: Formula - (Fulfilled + Justified) / Total Scheduled
       int actualDays = fulfilledDays + justifiedDays;
       if (totalScheduledUntilToday > 0) {
         complianceRate = (actualDays / totalScheduledUntilToday) * 100;
@@ -234,6 +234,16 @@ class InsightProvider with ChangeNotifier {
       debugPrint("Custody Insight Error: $e");
     }
   }
+
+// Helper to clear stats if no rules exist
+  void _resetCustodyStats() {
+    fulfilledDays = 0;
+    justifiedDays = 0;
+    missedDays = 0;
+    complianceRate = 0.0;
+    notifyListeners();
+  }
+
 
   /// 3. Payment Specific Logic
   Future<void> calculatePaymentInsights() async {

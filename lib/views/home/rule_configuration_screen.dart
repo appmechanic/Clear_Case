@@ -81,10 +81,10 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
 
             // 3. Conditional UI logic
             if (provider.isRepeat) ...[
-              const Text("Select Days", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-              const SizedBox(height: 10),
-              _buildDaySelector(provider),
-              const SizedBox(height: 20),
+              const Text("Repeat Frequency", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+              const SizedBox(height: 12),
+              _buildFrequencySelector(provider), // New Method
+               const SizedBox(height: 20),
 
                Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -171,8 +171,8 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
 
             const SizedBox(height: 15),
             _buildAddNewChildButton(context, provider),
-            const SizedBox(height: 20),
-            _buildEnableToggle(provider),
+            // const SizedBox(height: 20),
+            // _buildEnableToggle(provider),
             const SizedBox(height: 30),
             _buildSaveButton(context, provider),
             const SizedBox(height: 30),
@@ -183,50 +183,48 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
   }
 
 
-  Widget _buildDaySelector(RuleConfigurationProvider provider) {
-    final List<Map<String, dynamic>> weekDays = [
-      {"name": "Mon", "value": DateTime.monday},
-      {"name": "Tue", "value": DateTime.tuesday},
-      {"name": "Wed", "value": DateTime.wednesday},
-      {"name": "Thu", "value": DateTime.thursday},
-      {"name": "Fri", "value": DateTime.friday},
-      {"name": "Sat", "value": DateTime.saturday},
-      {"name": "Sun", "value": DateTime.sunday},
-    ];
+  Widget _buildFrequencySelector(RuleConfigurationProvider provider) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 2.8, // Adjust for button height
+      ),
+      itemCount: provider.frequencyOptions.length,
+      itemBuilder: (context, index) {
+        final option = provider.frequencyOptions[index];
+        bool isSelected = provider.selectedFrequency == option;
 
-    return Wrap(
-      // Spacing between the circles
-      spacing: 8.0,
-      // Spacing between rows if it wraps to a second line
-      runSpacing: 10.0,
-      // This centers the circles if they wrap
-      alignment: WrapAlignment.center,
-      children: weekDays.map((day) {
-        bool isSelected = provider.selectedDays.contains(day['value']);
         return GestureDetector(
-          onTap: () => provider.toggleDay(day['value']),
+          onTap: () => provider.setFrequency(option),
           child: Container(
-            width: 40,
-            height: 40,
             decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF4A148C) : Colors.grey[200],
-              shape: BoxShape.circle,
-              border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
+              // Blue background for selected
+              color: isSelected ? const Color(0xFFE1F5FE) : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: isSelected ? Colors.transparent : const Color(0xFF4A148C),
+                width: 1,
+              ),
             ),
             alignment: Alignment.center,
             child: Text(
-              day['name'],
+              option,
               style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black,
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold
+                color: const Color(0xFF4A148C),
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 14,
               ),
             ),
           ),
         );
-      }).toList(),
+      },
     );
   }
+
   Widget _buildComplianceNote() {
     return Container(
       width: double.infinity,
@@ -369,15 +367,15 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
   }
 
 
-  Widget _buildEnableToggle(RuleConfigurationProvider provider) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        const Text("Enable Rule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        Switch(value: provider.isEnabled, activeThumbColor: const Color(0xFF4A148C), onChanged: (v) => provider.toggleEnabled(v)),
-      ],
-    );
-  }
+  // Widget _buildEnableToggle(RuleConfigurationProvider provider) {
+  //   return Row(
+  //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  //     children: [
+  //       const Text("Enable Rule", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+  //       Switch(value: provider.isEnabled, activeThumbColor: const Color(0xFF4A148C), onChanged: (v) => provider.toggleEnabled(v)),
+  //     ],
+  //   );
+  // }
 
   Widget _buildSaveButton(BuildContext context, RuleConfigurationProvider provider) {
     return SizedBox(
@@ -409,14 +407,6 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select an end date or turn off the toggle.")));
             return;
           }
-
-          if (provider.isRepeat && provider.selectedDays.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Please select at least one day for the schedule"))
-            );
-            return;
-          }
-
 
           // 3. Execution
           bool success = await provider.updateRuleInFirestore(caseId: widget.caseId, category: widget.category);

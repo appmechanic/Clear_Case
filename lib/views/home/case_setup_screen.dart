@@ -365,23 +365,16 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
   final List<String> notifOptions = ["On the Scheduled day", "1 Day Before", "7 Days Before", "Turn Off Notifications"];
 
 
-  List<int> selectedDays = [];
 
-  final List<Map<String, dynamic>> weekDays = [
-    {"name": "Mon", "value": DateTime.monday},
-    {"name": "Tue", "value": DateTime.tuesday},
-    {"name": "Wed", "value": DateTime.wednesday},
-    {"name": "Thu", "value": DateTime.thursday},
-    {"name": "Fri", "value": DateTime.friday},
-    {"name": "Sat", "value": DateTime.saturday},
-    {"name": "Sun", "value": DateTime.sunday},
-  ];
 
+   String selectedFrequency = "Weekly";
+
+  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly"];
   @override
   void initState() {
     super.initState();
     selectedChildIds = widget.provider.caseData.children.map((e) => e.id).toSet();
-    selectedDays = [DateTime.monday];
+
   }
 
   void _onSaveRule() async {
@@ -399,10 +392,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       }
     } else {
       // RECURRING RULE: Check Days and Toggle
-      if (selectedDays.isEmpty) {
-        showSnackBar(context, "Please select at least one day for the schedule");
-        return;
-      }
+
 
       if (hasEndDate && (endDate == null || endTime == null)) {
         showSnackBar(context, "Please select an end date and time or turn off the toggle");
@@ -435,8 +425,8 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
           : null,
 
       "notificationPref": notificationPref,
-      "isRepeat": isRepeat,
-      "repeatDays": isRepeat ? selectedDays : [],
+      // "isRepeat": isRepeat,
+      "repeatFrequency": isRepeat ? selectedFrequency : null,
       "notes": _notesController.text,
       "appliedChildren": childrenData,
     };
@@ -495,7 +485,8 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       endDate = null;
       startTime = null;
       endTime = null;
-      selectedDays = [DateTime.monday];
+      selectedFrequency = "Weekly";
+      isRepeat = true;
       hasEndDate = false;
       selectedChildIds = widget.provider.caseData.children.map((e) => e.id).toSet();
     });
@@ -557,31 +548,48 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
         // 3. Conditional UI based on Toggle
         if (isRepeat) ...[
-          const Text("Select Days", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 8.0,
-            runSpacing: 10.0,
-            children: weekDays.map((day) {
-              bool isSelected = selectedDays.contains(day['value']);
+          const Text("Repeat Frequency", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+          const SizedBox(height: 12),
+
+          // Frequency Selection Grid
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 2.5,
+            ),
+            itemCount: frequencyOptions.length,
+            itemBuilder: (context, index) {
+              final option = frequencyOptions[index];
+              bool isSelected = selectedFrequency == option;
+
               return GestureDetector(
-                onTap: () {
-                  setState(() {
-                    isSelected ? selectedDays.remove(day['value']) : selectedDays.add(day['value']);
-                  });
-                },
+                onTap: () => setState(() => selectedFrequency = option),
                 child: Container(
-                  width: 42, height: 42,
                   decoration: BoxDecoration(
-                    color: isSelected ? const Color(0xFF4A148C) : Colors.grey[200],
-                    shape: BoxShape.circle,
-                    border: Border.all(color: isSelected ? Colors.purple : Colors.grey.shade300),
+                    // Blue-ish background for selected as per your image
+                    color: isSelected ? const Color(0xFFE1F5FE) : Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: isSelected ? Colors.transparent : const Color(0xFF7B1FA2),
+                      width: 1,
+                    ),
                   ),
                   alignment: Alignment.center,
-                  child: Text(day['name'], style: TextStyle(color: isSelected ? Colors.white : Colors.black, fontSize: 11, fontWeight: FontWeight.bold)),
+                  child: Text(
+                    option,
+                    style: TextStyle(
+                      color: const Color(0xFF4A148C),
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
               );
-            }).toList(),
+            },
           ),
           const SizedBox(height: 20),
 

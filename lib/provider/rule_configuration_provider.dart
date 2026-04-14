@@ -18,9 +18,8 @@ class RuleConfigurationProvider extends ChangeNotifier {
   TimeOfDay? endTime;
   String notificationPref = "On the Scheduled day";
   bool isRepeat = true;
-  bool isEnabled = true;
-  List<int> selectedDays = [];
-  bool hasEndDate = false;
+  // bool isEnabled = true;
+   bool hasEndDate = false;
 
   final TextEditingController notesController = TextEditingController();
   final FocusNode notesNode = FocusNode();
@@ -32,6 +31,9 @@ class RuleConfigurationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _appliedChildrenList = [];
   List<Map<String, dynamic>> get appliedChildrenList => _appliedChildrenList;
 
+  String selectedFrequency = "Weekly";
+  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly"];
+
   void init(String? caseId, String category, List<ChildModel> available) {
     reset();
     _masterAvailableChildren = available; // Store the original list
@@ -39,7 +41,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     if (caseId != null) {
       fetchExistingData(caseId, category);
     } else {
-      selectedDays = [DateTime.monday];
+
       _appliedChildrenList = available.map((child) => child.toMap()).toList();
       selectedChildIds = available.map((child) => child.id).toSet();
     }
@@ -67,15 +69,12 @@ class RuleConfigurationProvider extends ChangeNotifier {
         if (data['startTime'] != null) startTime = _parseTime(data['startTime']);
         if (data['endTime'] != null) endTime = _parseTime(data['endTime']);
 
-        isRepeat = data['isRepeat'] ?? true;
-        if (data['repeatDays'] != null) {
-          selectedDays = List<int>.from(data['repeatDays']);
-        } else {
-          selectedDays = [DateTime.monday];
-        }
+        // isRepeat = data['isRepeat'] ?? true;
+        selectedFrequency = data['repeatFrequency'] ?? "Weekly";
+
         notificationPref = data['notificationPref'] ?? "On the Scheduled day";
         notesController.text = data['notes'] ?? "";
-        isEnabled = data['isEnabled'] ?? true;
+        // isEnabled = data['isEnabled'] ?? true;
         hasEndDate = data['endDate'] != null;
 
         // --- CRITICAL: Sync Children Data ---
@@ -110,6 +109,12 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+
+  void setFrequency(String val) {
+    selectedFrequency = val;
+    notifyListeners();
+  }
+
   // --- NEW: Radio/Toggle Selection Logic ---
 
   void toggleChildSelection(String childId) {
@@ -121,14 +126,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleDay(int dayValue) {
-    if (selectedDays.contains(dayValue)) {
-      selectedDays.remove(dayValue);
-    } else {
-      selectedDays.add(dayValue);
-    }
-    notifyListeners();
-  }
+
 
   void selectAllChildren(List<ChildModel> allAvailable) {
     selectedChildIds = allAvailable.map((c) => c.id).toSet();
@@ -204,7 +202,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notifyListeners();
   }
    void setNotification(String val) { notificationPref = val; notifyListeners(); }
-  void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
+  // void toggleEnabled(bool val) { isEnabled = val; notifyListeners(); }
 
 
   // Add this getter
@@ -243,15 +241,15 @@ class RuleConfigurationProvider extends ChangeNotifier {
       final Map<String, dynamic> data = {
         "startDate": startDate?.toIso8601String(),
         "startTime": startTime != null ? "${startTime!.hour}:${startTime!.minute}" : null,
-        "isRepeat": isRepeat,
-        "repeatDays": isRepeat ? selectedDays : [],
+        // "isRepeat": isRepeat,
+        "repeatFrequency": isRepeat ? selectedFrequency : null,
         "endDate": (!isRepeat || (isRepeat && hasEndDate)) ? endDate?.toIso8601String() : null,
         "endTime": (!isRepeat || (isRepeat && hasEndDate)) && endTime != null
             ? "${endTime!.hour}:${endTime!.minute}" : null,
         "hasEndDate": hasEndDate,
         "notificationPref": notificationPref,
         "notes": notesController.text.trim(),
-        "isEnabled": isEnabled,
+        // "isEnabled": isEnabled,
         "appliedChildren": _appliedChildrenList, // Now contains selected children
         "updatedAt": FieldValue.serverTimestamp(),
       };
@@ -291,12 +289,11 @@ class RuleConfigurationProvider extends ChangeNotifier {
     endTime = null;
     notificationPref = "On the Scheduled day";
     isRepeat = true;
-    isEnabled = true;
+    // isEnabled = true;
     hasEndDate = false;
     notesController.clear();
 
-    selectedDays = [DateTime.monday];
-
+    selectedFrequency = "Weekly";
     _appliedChildrenList = [];
     _addedChildrenOnly = [];
     _masterAvailableChildren = [];

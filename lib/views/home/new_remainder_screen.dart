@@ -283,20 +283,20 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                 ),
                 const SizedBox(height: 15),
                 _buildRepeatToggle(),
-                if (isRepeat) ...[
-                  const SizedBox(height: 10),
-                  CustomTextField(
-                    labelText: "Days",
-                    hintText: "e.g. 10",
-                    isNum: true,
-                    icon: Icons.calendar_today,
-                    controller: _daysController,
-                    node: _daysNode,
-                    borderRadius: 8,
-                    backgroundColor: Colors.grey.shade200,
-                  ),
-
-                ],
+                // if (isRepeat) ...[
+                //   const SizedBox(height: 10),
+                //   CustomTextField(
+                //     labelText: "Days",
+                //     hintText: "e.g. 10",
+                //     isNum: true,
+                //     icon: Icons.calendar_today,
+                //     controller: _daysController,
+                //     node: _daysNode,
+                //     borderRadius: 8,
+                //     backgroundColor: Colors.grey.shade200,
+                //   ),
+                //
+                // ],
                 const SizedBox(height: 20),
                 _buildDropdown("Remind me", remindMeOption, remindMeOptions, (val) => setState(() => remindMeOption = val!)),
                  const SizedBox(height: 20),

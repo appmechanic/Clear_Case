@@ -175,12 +175,12 @@ class SettingsScreen extends StatelessWidget {
           const Divider(height: 30),
 
           // 3. Daily Reminder Toggle
-          _buildToggleItem(
-            title: "Daily Reminder",
-            subtitle: "Get alerts daily for important date",
-            value: provider.isDailyReminderEnabled,
-            onChanged: provider.toggleDailyReminder,
-          ),
+          // _buildToggleItem(
+          //   title: "Daily Reminder",
+          //   subtitle: "Get alerts daily for important date",
+          //   value: provider.isDailyReminderEnabled,
+          //   onChanged: provider.toggleDailyReminder,
+          // ),
 
           // RESTORED: Daily Time Picker Logic
           // if (provider.isDailyReminderEnabled) ...[

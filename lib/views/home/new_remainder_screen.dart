@@ -72,12 +72,11 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
           _descController.text = reminder.description;
           selectedDate = reminder.date;
           selectedType = reminder.type;
-          isRepeat = reminder.isRepeat;
-          _daysController.text = reminder.days ?? "";
-          ruleEndDate = reminder.ruleEndDate;
+           isRepeat = reminder.isRepeat;
+           _daysController.text = reminder.days ?? "";
+          // ruleEndDate = reminder.ruleEndDate;
           remindMeOption = reminder.remindMeOption;
-          enableNotifications = reminder.enableNotifications;
-        });
+         });
       }
     }
     if (mounted) setState(() => _isFetching = false);
@@ -129,8 +128,7 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
         days: isRepeat ? _daysController.text.trim() : null,
         description: _descController.text.trim(),
         remindMeOption: remindMeOption,
-        enableNotifications: enableNotifications,
-        createdAt: DateTime.now(),
+         createdAt: DateTime.now(),
       ));
 
       // Clear inputs for next one
@@ -151,10 +149,10 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
         type: selectedType,
         isRepeat: isRepeat,
         days: isRepeat ? _daysController.text.trim() : null,
-        ruleEndDate: ruleEndDate,
+        // ruleEndDate: ruleEndDate,
         description: _descController.text.trim(),
         remindMeOption: remindMeOption,
-        enableNotifications: enableNotifications,
+        // enableNotifications: enableNotifications,
       );
       provider.updateReminder(context, reminder);
       return;
@@ -309,24 +307,24 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                 // const SizedBox(height: 15),
 
 
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text("Enable Notifications", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                        SizedBox(height: 4),
-                        Text("Receive push notifications", style: TextStyle(color: Colors.grey, fontSize: 11)),
-                      ],
-                    ),
-                    Switch(
-                      value: enableNotifications,
-                      activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white,
-                      onChanged: (val) => setState(() => enableNotifications = val),
-                    ),
-                  ],
-                ),
+                // Row(
+                //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                //   children: [
+                //     const Column(
+                //       crossAxisAlignment: CrossAxisAlignment.start,
+                //       children: [
+                //         Text("Enable Notifications", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                //         SizedBox(height: 4),
+                //         Text("Receive push notifications", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                //       ],
+                //     ),
+                //     Switch(
+                //       value: enableNotifications,
+                //       activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white,
+                //       onChanged: (val) => setState(() => enableNotifications = val),
+                //     ),
+                //   ],
+                // ),
                 const SizedBox(height: 30),
                 // 3. Add Another Button (Only show if creating new)
                 if (_editingId == null) ...[

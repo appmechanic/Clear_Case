@@ -496,57 +496,59 @@ class _CalenderScreenState extends State<CalenderScreen> {
               const SizedBox(width: 5),
               Row(
                 children: [
-                  // EDIT BUTTON
-                  IconButton(
-                    icon: const Icon(Icons.edit, size: 20),
-                    constraints: const BoxConstraints(), // Removes default padding to keep it tight
-                    padding: const EdgeInsets.all(8),    // Adds specific "hit area" padding
-                    onPressed: () async {
-                      // 1. Identify the route
-                      String? routeName;
-                      switch (event.type) {
-                        case EventType.custody: routeName = NewCustodyScreen.routeName; break;
-                        case EventType.payment: routeName = NewPaymentScreen.routeName; break;
-                        case EventType.reminder: routeName = NewReminderScreen.routeName; break;
-                        case EventType.dispute: routeName = NewDisputeScreen.routeName; break;
-                        case EventType.breach: routeName = NewBreachScreen.routeName; break;
-                      }
+                  if (!event.id.startsWith("rule_")) ...[
+                    // EDIT BUTTON
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 20),
+                      constraints: const BoxConstraints(), // Removes default padding to keep it tight
+                      padding: const EdgeInsets.all(8),    // Adds specific "hit area" padding
+                      onPressed: () async {
+                        // 1. Identify the route
+                        String? routeName;
+                        switch (event.type) {
+                          case EventType.custody: routeName = NewCustodyScreen.routeName; break;
+                          case EventType.payment: routeName = NewPaymentScreen.routeName; break;
+                          case EventType.reminder: routeName = NewReminderScreen.routeName; break;
+                          case EventType.dispute: routeName = NewDisputeScreen.routeName; break;
+                          case EventType.breach: routeName = NewBreachScreen.routeName; break;
+                        }
 
-                      if (routeName != null) {
-                        // 2. Close the bottom sheet FIRST to avoid UI ghosting
-                        Navigator.pop(context);
+                        if (routeName != null) {
+                          // 2. Close the bottom sheet FIRST to avoid UI ghosting
+                          Navigator.pop(context);
 
-                        // 3. Navigate
-                        await Navigator.pushNamed(context, routeName, arguments: event.id);
-                      }
-                    },
-                  ),
-                  const SizedBox(width: 8), // Adjusted spacing
+                          // 3. Navigate
+                          await Navigator.pushNamed(context, routeName, arguments: event.id);
+                        }
+                      },
+                    ),
+                    const SizedBox(width: 8), // Adjusted spacing
 
-                  // DELETE BUTTON
-                  IconButton(
-                    icon: const Icon(Icons.delete, color: Colors.red, size: 20),
-                    constraints: const BoxConstraints(),
-                    padding: const EdgeInsets.all(8),
-                    onPressed: () {
-                      final calProvider = Provider.of<CalendarProvider>(context, listen: false);
+                    // DELETE BUTTON
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red, size: 20),
+                      constraints: const BoxConstraints(),
+                      padding: const EdgeInsets.all(8),
+                      onPressed: () {
+                        final calProvider = Provider.of<CalendarProvider>(context, listen: false);
 
-                      DeleteEntriesConfirmation.show(context, () async {
-                        // Close the confirmation dialog/bottom sheet
-                        Navigator.pop(context);
+                        DeleteEntriesConfirmation.show(context, () async {
+                          // Close the confirmation dialog/bottom sheet
+                          Navigator.pop(context);
 
-                        await calProvider.deleteRecord(
-                          context: context,
-                          recordId: event.id,
-                          type: event.type,
-                          attachmentUrls: event.attachmentUrls,
-                        );
-                      });
-                    },
-                  ),
+                          await calProvider.deleteRecord(
+                            context: context,
+                            recordId: event.id,
+                            type: event.type,
+                            attachmentUrls: event.attachmentUrls,
+                          );
+                        });
+                      },
+                    ),
+                  ],
                 ],
               )
-            ],
+             ],
           ),
           const SizedBox(height: 8),
           Row(
@@ -559,11 +561,15 @@ class _CalenderScreenState extends State<CalenderScreen> {
               const SizedBox(width: 5),
               Text(formattedDate, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
               const SizedBox(width: 10),
+              if (!event.id.startsWith("rule_"))
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(color: lightColor, borderRadius: BorderRadius.circular(8)),
-                child: Text(tagText, style: TextStyle(color: typeColor, fontSize: 11, fontWeight: FontWeight.bold)),
-              )
+                child: Text(
+                    tagText,
+                    style: TextStyle(color: typeColor, fontSize: 11, fontWeight: FontWeight.bold)
+                ),
+              ),
             ],
           ),
 

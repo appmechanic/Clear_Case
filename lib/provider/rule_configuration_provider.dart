@@ -38,6 +38,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
     reset();
     _masterAvailableChildren = available; // Store the original list
 
+
+    isRepeat = true;
+    hasEndDate = false;
+
     if (caseId != null) {
       fetchExistingData(caseId, category);
     } else {
@@ -63,33 +67,30 @@ class RuleConfigurationProvider extends ChangeNotifier {
       if (doc.exists) {
         final data = doc.data()!;
 
-        // Parse basic form data
         startDate = DateTime.tryParse(data['startDate'] ?? "");
+
+        // LOGIC: If repeatFrequency is null or empty, it's not a repeating rule
+        String? freq = data['repeatFrequency'];
+        isRepeat = (freq != null && freq.isNotEmpty && freq != "None");
+        selectedFrequency = freq ?? "Weekly";
+
+        // LOGIC: If there is an endDate in DB, hasEndDate should be TRUE
         endDate = DateTime.tryParse(data['endDate'] ?? "");
+        hasEndDate = (endDate != null);
+
         if (data['startTime'] != null) startTime = _parseTime(data['startTime']);
         if (data['endTime'] != null) endTime = _parseTime(data['endTime']);
 
-        // isRepeat = data['isRepeat'] ?? true;
-        selectedFrequency = data['repeatFrequency'] ?? "Weekly";
-
         notificationPref = data['notificationPref'] ?? "On the Scheduled day";
         notesController.text = data['notes'] ?? "";
-        // isEnabled = data['isEnabled'] ?? true;
-        hasEndDate = data['endDate'] != null;
 
-        // --- CRITICAL: Sync Children Data ---
+        // Sync Children
         final List<dynamic> applied = data['appliedChildren'] ?? [];
         _appliedChildrenList = List<Map<String, dynamic>>.from(applied);
-
-        // Identify which of the applied children are NOT in the master list
-        // This populates _addedChildrenOnly so the UI knows to render them
         final Set<String> originalIds = _masterAvailableChildren.map((c) => c.id).toSet();
-
         _addedChildrenOnly = _appliedChildrenList
             .where((child) => !originalIds.contains(child['id'].toString()))
             .toList();
-
-        // Update the selection set so existing selections show as checked
         selectedChildIds = _appliedChildrenList.map((c) => c['id'].toString()).toSet();
       }
     } catch (e) {
@@ -99,6 +100,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
 
   void toggleHasEndDate(bool val) {
     hasEndDate = val;
@@ -239,18 +241,17 @@ class RuleConfigurationProvider extends ChangeNotifier {
           .toList();
 
       final Map<String, dynamic> data = {
+        "category": category,
         "startDate": startDate?.toIso8601String(),
         "startTime": startTime != null ? "${startTime!.hour}:${startTime!.minute}" : null,
-        // "isRepeat": isRepeat,
-        "repeatFrequency": isRepeat ? selectedFrequency : null,
+         "repeatFrequency": isRepeat ? selectedFrequency : null,
         "endDate": (!isRepeat || (isRepeat && hasEndDate)) ? endDate?.toIso8601String() : null,
         "endTime": (!isRepeat || (isRepeat && hasEndDate)) && endTime != null
             ? "${endTime!.hour}:${endTime!.minute}" : null,
         "hasEndDate": hasEndDate,
         "notificationPref": notificationPref,
         "notes": notesController.text.trim(),
-        // "isEnabled": isEnabled,
-        "appliedChildren": _appliedChildrenList, // Now contains selected children
+         "appliedChildren": _appliedChildrenList, // Now contains selected children
         "updatedAt": FieldValue.serverTimestamp(),
       };
 

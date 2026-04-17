@@ -11,7 +11,6 @@ class ReminderModel {
   DateTime? ruleEndDate;
   String description;
   String remindMeOption;
-  bool enableNotifications;
   DateTime? createdAt;
 
   ReminderModel({
@@ -25,8 +24,7 @@ class ReminderModel {
     this.ruleEndDate,
     required this.description,
     required this.remindMeOption,
-    required this.enableNotifications,
-    this.createdAt,
+     this.createdAt,
   });
 
   ReminderModel copyWith({
@@ -54,8 +52,7 @@ class ReminderModel {
       ruleEndDate: ruleEndDate ?? this.ruleEndDate,
       description: description ?? this.description,
       remindMeOption: remindMeOption ?? this.remindMeOption,
-      enableNotifications: enableNotifications ?? this.enableNotifications,
-      createdAt: createdAt ?? this.createdAt,
+       createdAt: createdAt ?? this.createdAt,
     );
   }
   factory ReminderModel.fromMap(Map<String, dynamic> map, String docId) {
@@ -69,9 +66,8 @@ class ReminderModel {
       days: map['days'],
       ruleEndDate: (map['ruleEndDate'] as Timestamp?)?.toDate(),
       description: map['description'] ?? '',
-      remindMeOption: map['remindMeOption'] ?? '',
-      enableNotifications: map['enableNotifications'] ?? true,
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
+      remindMeOption: map['remindMeOption'] ?? '' ,
+       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -86,8 +82,7 @@ class ReminderModel {
       'ruleEndDate': ruleEndDate != null ? Timestamp.fromDate(ruleEndDate!) : null,
       'description': description,
       'remindMeOption': remindMeOption,
-      'enableNotifications': enableNotifications,
-    };
+     };
 
     // Only add createdAt if it's a new record
     if (createdAt != null) {

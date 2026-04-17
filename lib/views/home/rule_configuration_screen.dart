@@ -398,6 +398,24 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
             return;
           }
 
+          if (!provider.isRepeat) {
+            // CASE: Not repeating -> End Date is MANDATORY
+            if (provider.endDate == null || provider.endTime == null) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("End Date and Time are required when Repeat is Off."))
+              );
+              return;
+            }
+          } else {
+            // CASE: Repeating -> End Date is OPTIONAL (only mandatory if toggle is ON)
+            if (provider.hasEndDate && (provider.endDate == null || provider.endTime == null)) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Please select an end date/time or turn off the 'Add End Date' toggle."))
+              );
+              return;
+            }
+          }
+
            if (!provider.isRepeat) {
              if (provider.endDate == null || provider.endTime == null) {
               ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("End Date and Time are required for non-recurring rules.")));

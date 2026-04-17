@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import '../../provider/auth_provider.dart';
 import '../widgets/custom_secondary_button.dart';
+import 'login_screen.dart';
 
 class EmailVerificationScreen extends StatefulWidget {
   static const routeName = '/email-verification';
@@ -58,7 +59,7 @@ class _EmailVerificationScreenState extends State<EmailVerificationScreen> {
                         CustomSecondaryButton(
                           text: "Back to Login",
                           onPressed: () {
-                            Navigator.pop(context);
+                            Navigator.pushNamedAndRemoveUntil(context, LoginScreen.routeName, (route) => false);
                           },
                         ),
                       ],

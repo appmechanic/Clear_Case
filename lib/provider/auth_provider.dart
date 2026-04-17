@@ -1,21 +1,22 @@
 import 'package:clearcase/core/utils/helping_functions.dart';
 import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
-import 'package:clearcase/views/main_screen.dart'; 
-import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:clearcase/views/main_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../views/auth/email_verification_screen.dart';
 
 class AuthProvider extends ChangeNotifier {
   final AuthService _authService = AuthService();
-  
+
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
-    app: Firebase.app(), 
+    app: Firebase.app(),
     databaseId: 'clearcase'
   );
 
@@ -40,6 +41,16 @@ class AuthProvider extends ChangeNotifier {
       User? user = userCredential.user;
       await _authService.updateUserName("$firstName $lastName");
 
+      final dynamic tz = await FlutterTimezone.getLocalTimezone();
+
+       String rawTz = tz.toString();
+      String currentTimeZone = rawTz.contains('(')
+          ? rawTz.split('(')[1].split(',')[0]
+          : rawTz;
+
+      print("Clean Timezone: $currentTimeZone");
+      final offset = DateTime.now().timeZoneOffset;
+      final String offsetString = "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
         await _firestore.collection('users').doc(user?.uid).set({
           'uid': user?.uid,
           'email': email,
@@ -49,11 +60,12 @@ class AuthProvider extends ChangeNotifier {
           'children': [],
           'isDailyReminderEnabled': false,
           'isRemindersEnabled': true,
-          'isScheduledDatesEnabled': true,
           'notificationTime': "09:00",
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
           });
       await _authService.sendVerificationEmail();
-        
+
       setLoading(false);
 
       if (context.mounted) {
@@ -77,18 +89,31 @@ class AuthProvider extends ChangeNotifier {
       await _authService.login(email: email, password: password);
       User? user = _authService.currentUser;
 
-      if (user != null && context.mounted) {        // --- START TOKEN LOGIC ---
-        // 1. Get the current token
-        String? token = await FirebaseMessaging.instance.getToken();
+      if (user != null && context.mounted) {
+
+         String? token = await FirebaseMessaging.instance.getToken();
+
+         final dynamic tz = await FlutterTimezone.getLocalTimezone();
+        String rawTz = tz.toString();
+        String currentTimeZone = rawTz.contains('(')
+            ? rawTz.split('(')[1].split(',')[0]
+            : rawTz;
+
+        final offset = DateTime.now().timeZoneOffset;
+        final String offsetString = "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
+
         Provider.of<SettingsProvider>(context, listen: false).init();
-        // 2. Save it to your specific 'clearcase' database
-        if (token != null) {
+
+         if (token != null) {
           await _firestore.collection('users').doc(user.uid).set({
             'fcmToken': token,
             'tokenUpdatedAt': FieldValue.serverTimestamp(),
-          }, SetOptions(merge: true)); // Use merge: true so you don't overwrite name/email
+            'timezone': currentTimeZone,
+            'utcOffset': offsetString,
+          }, SetOptions(merge: true));
         }
 
+        // --- மற்ற நேவிகேஷன் லாஜிக் ---
         QuerySnapshot caseSnapshot = await _firestore
             .collection('users')
             .doc(user.uid)
@@ -120,7 +145,6 @@ class AuthProvider extends ChangeNotifier {
       }
     }
   }
-
   Future<void> forgetPasswordFunction({
     required BuildContext context,
     required String email,

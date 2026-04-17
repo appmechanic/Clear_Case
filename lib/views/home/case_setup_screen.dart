@@ -413,6 +413,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         .toList();
 
     Map<String, dynamic> ruleData = {
+
       "startDate": startDate!.toIso8601String(),
       "startTime": "${startTime!.hour.toString().padLeft(2, '0')}:${startTime!.minute.toString().padLeft(2, '0')}",
 
@@ -425,8 +426,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
           : null,
 
       "notificationPref": notificationPref,
-      // "isRepeat": isRepeat,
-      "repeatFrequency": isRepeat ? selectedFrequency : null,
+       "repeatFrequency": isRepeat ? selectedFrequency : null,
       "notes": _notesController.text,
       "appliedChildren": childrenData,
     };

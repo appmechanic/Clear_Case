@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_timezone/flutter_timezone.dart';
 
 import '../core/utils/helping_functions.dart';
 import '../services/notification_service.dart';
@@ -152,23 +153,49 @@ class SettingsProvider extends ChangeNotifier {
     _saveSettingsToFirebase();
   }
 
-  // Save to Firebase (Helper)
+
   Future<void> _saveSettingsToFirebase() async {
     final user = _auth.currentUser;
     if (user != null) {
-      final String hour = _notificationTime.hour.toString().padLeft(2, '0');
-      final String minute = _notificationTime.minute.toString().padLeft(2, '0');
-      final timeString = "$hour:$minute";
+      try {
+        // 1. டைம்ஜோன் பெயரைப் பெறுதல்
+        final dynamic tz = await FlutterTimezone.getLocalTimezone();
+        String rawTz = tz.toString();
 
-      await _firestore.collection('users').doc(user.uid).update({
-        'isScheduledDatesEnabled': _isScheduledDatesEnabled,
-        'isRemindersEnabled': _isRemindersEnabled,
-        'isDailyReminderEnabled': _isDailyReminderEnabled,
-        'notificationTime': timeString,
-      });
+        // அசிங்கமான வரியிலிருந்து "Asia/Kolkata" வை மட்டும் பிரித்தல்
+        String currentTimeZone = rawTz.contains('(')
+            ? rawTz.split('(')[1].split(',')[0]
+            : rawTz;
+
+        // 2. UTC Offset-ஐக் கணக்கிடுதல்
+        final offset = DateTime.now().timeZoneOffset;
+        final String offsetString = "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
+
+        // 3. நேரத்தை 24-மணிநேர பார்மட்டிற்கு மாற்றுதல்
+        final String hour = _notificationTime.hour.toString().padLeft(2, '0');
+        final String minute = _notificationTime.minute.toString().padLeft(2, '0');
+        final timeString = "$hour:$minute";
+
+        // 4. Firestore-இல் அப்டேட் செய்தல்
+        // இங்கே உங்கள் '_firestore' வேரியபிளைப் பயன்படுத்துகிறோம்
+        await _firestore
+            .collection('users')
+            .doc(user.uid)
+            .update({
+          'isScheduledDatesEnabled': _isScheduledDatesEnabled,
+          'isRemindersEnabled': _isRemindersEnabled,
+          'isDailyReminderEnabled': _isDailyReminderEnabled,
+          'notificationTime': timeString,
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
+        });
+
+        debugPrint("✅ Settings & Timezone updated successfully in 'clearcase' DB!");
+      } catch (e) {
+        debugPrint("❌ Error saving settings: $e");
+      }
     }
   }
-
   // Delete Case
 
   Future<void> deleteCase(BuildContext context, String caseId) async {

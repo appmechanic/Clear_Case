@@ -6,10 +6,14 @@ class UserModel {
   String firstName;
   String lastName;
   DateTime createdAt;
-  
-  // Notification Settings
-  bool pushNotificationsEnabled;
-  String notificationTime; // Stored as "HH:mm"
+
+  // Firestore-இல் உள்ள சரியான பெயர்கள்
+  bool isDailyReminderEnabled;
+  bool isRemindersEnabled;
+  bool isScheduledDatesEnabled;
+  String notificationTime;
+  String timezone;
+  String utcOffset;
 
   UserModel({
     required this.uid,
@@ -17,9 +21,33 @@ class UserModel {
     required this.firstName,
     required this.lastName,
     required this.createdAt,
-    this.pushNotificationsEnabled = true, // Default true
-    this.notificationTime = "09:00",      // Default 9 AM
+    this.isDailyReminderEnabled = false,
+    this.isRemindersEnabled = true,
+    this.isScheduledDatesEnabled = true,
+    this.notificationTime = "09:00",
+    this.timezone = "",
+    this.utcOffset = "",
   });
+
+  // --- FROM MAP ---
+  factory UserModel.fromMap(Map<String, dynamic> map) {
+    return UserModel(
+      uid: map['uid'] ?? '',
+      email: map['email'] ?? '',
+      firstName: map['firstName'] ?? '', // Firestore-இல் உள்ளபடியே 'firstName'
+      lastName: map['lastName'] ?? '',   // Firestore-இல் உள்ளபடியே 'lastName'
+
+      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+
+      // Firestore-இல் உள்ள பெயர்களுடன் மேட்ச் செய்கிறோம்
+      isDailyReminderEnabled: map['isDailyReminderEnabled'] ?? false,
+      isRemindersEnabled: map['isRemindersEnabled'] ?? true,
+      isScheduledDatesEnabled: map['isScheduledDatesEnabled'] ?? true,
+      notificationTime: map['notificationTime'] ?? "09:00",
+      timezone: map['timezone'] ?? "",
+      utcOffset: map['utcOffset'] ?? "",
+    );
+  }
 
   // --- TO MAP ---
   Map<String, dynamic> toMap() {
@@ -29,25 +57,12 @@ class UserModel {
       'firstName': firstName,
       'lastName': lastName,
       'createdAt': Timestamp.fromDate(createdAt),
-      'pushNotificationsEnabled': pushNotificationsEnabled,
+      'isDailyReminderEnabled': isDailyReminderEnabled,
+      'isRemindersEnabled': isRemindersEnabled,
+      'isScheduledDatesEnabled': isScheduledDatesEnabled,
       'notificationTime': notificationTime,
+      'timezone': timezone,
+      'utcOffset': utcOffset,
     };
-  }
-
-  // --- FROM MAP ---
-  factory UserModel.fromMap(Map<String, dynamic> map) {
-    return UserModel(
-      uid: map['uid'] ?? '',
-      email: map['email'] ?? '',
-      firstName: map['firstName'] ?? '',
-      lastName: map['lastName'] ?? '',
-      
-      // Safe Timestamp conversion
-      createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      
-      // Settings with fallbacks
-      pushNotificationsEnabled: map['pushNotificationsEnabled'] ?? true,
-      notificationTime: map['notificationTime'] ?? "09:00",
-    );
   }
 }

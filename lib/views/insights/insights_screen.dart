@@ -5,9 +5,12 @@ import '../../provider/insight_provider.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 
 import '../widgets/dispute_overview.dart';
+import '../widgets/export_button.dart';
+import '../widgets/export_filter.dart';
 import '../widgets/flagged_events_overview.dart';
 import '../widgets/non_complicance_overview.dart';
 import '../widgets/payment_overview_card.dart';
+import '../widgets/pdf_generator.dart';
 import 'breach_history_screen.dart';
 import 'custody_compliance_screen.dart';
 import 'dispute_log_screen.dart';
@@ -52,7 +55,46 @@ class InsightsScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildDropdownSection(insightProvider),
+                  Row(
+                    children: [
+                      // Wrap dropdown in Expanded so it takes remaining space
+                      Expanded(
+                        child: _buildDropdownSection(insightProvider),
+                      ),
+                      const SizedBox(width: 10),
+
+                      ExportButton(
+                          onTap: () async {
+                             await insightProvider.fetchAllEventsForReport();
+
+                             final childrenList = insightProvider.children;
+
+                            if (childrenList.isEmpty) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text("No children found for this case.")),
+                              );
+                              return;
+                            }
+
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) => ExportFilterSheet(
+                                   children: childrenList,
+                                  onApply: (options) {
+                                    PDFGenerator.generateReport(
+                                      caseName: insightProvider.selectedCase?.caseNumber ?? "Case Report",
+                                      options: options,
+                                      allEvents: insightProvider.allEvents,
+                                    );
+                                  }
+                              ),
+                            );
+                          }
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 25),
 
 

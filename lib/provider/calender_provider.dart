@@ -15,10 +15,10 @@ class CalendarProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-
+  List<ChildModel> get children => _selectedCase?.children ?? [];
   // Map to store events: Date -> List of Events
   final Map<DateTime, List<CalendarEvent>> _events = {};
-
+  List<CalendarEvent> get allEvents => _events.values.expand((element) => element).toList();
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
 
@@ -117,11 +117,12 @@ class CalendarProvider extends ChangeNotifier {
             type: category == 'custody'
                 ? EventType.custody
                 : (category == 'payment' ? EventType.payment : EventType.reminder),
-            description: data['notes'] ?? "Scheduled Rule",
+            description: data['notes'] ,
             childNames: _resolveChildNames(
               (data['appliedChildren'] as List? ?? [])
                   .map((c) => c['id'].toString())
                   .toList(),
+
             ),
           ));
         }
@@ -203,10 +204,11 @@ class CalendarProvider extends ChangeNotifier {
       await fetchRemindersForCase(caseId);
       await _fetchScheduledRulesForCase(caseId);
 
-      // Process Payments
+      // 1. Process Payments
       for (var doc in snapshots[0].docs) {
         final data = doc.data();
         final DateTime? recordDate = (data['date'] as Timestamp?)?.toDate();
+
         if (recordDate != null) {
           _addEventToMap(CalendarEvent(
             id: doc.id,
@@ -216,40 +218,46 @@ class CalendarProvider extends ChangeNotifier {
             description: data['notes'],
             amount: (data['amount'] as num?)?.toDouble(),
             childNames: _resolveChildNames(data['childIds'] ?? []),
-            isFlagged: data['flagEntry'] ?? false,
+            isFlagged: data['flagEntry'] == true,
+            location: data['location'],
+            isReceived: data['isReceived'] == true,
+            isFulfilled: data['isReceived'] == true, // PDF Logic
+            isScheduled: data['isScheduled'] == true,
+            paymentCategory: data['paymentCategory'],
+            paymentMethod: data['paymentMethod'],
+            transactionType: data['transactionType'],
+            status: data['transactionType'],
             attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
           ));
         }
       }
 
-      // Process Custody
+      // 2. Process Custody (FIXED HERE)
       for (var doc in snapshots[1].docs) {
         final data = doc.data();
         if (data.containsKey('frequency') || data.containsKey('notificationPref')) continue;
 
         final Timestamp? timestamp = data['startDate'] as Timestamp?;
         if (timestamp != null) {
-          List<String> childIds = List<String>.from(data['childIds'] ?? []);
-          List<String> names = childIds.map((id) {
-            return _selectedCase?.children
-                .firstWhere((c) => c.id == id, orElse: () => ChildModel(id: '', name: 'Unknown', dob: DateTime.now()))
-                .name ?? 'Unknown';
-          }).toList();
-
           _addEventToMap(CalendarEvent(
             id: doc.id,
             title: data['notes'] ?? 'Custody Record',
             date: timestamp.toDate(),
             type: EventType.custody,
             description: data['notes'],
-            childNames: names,
-            isFlagged: data['flagEntry'] ?? false,
+            childNames: _resolveChildNames(data['childIds'] ?? []),
+            isFlagged: data['flagEntry'] == true,
             attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
+
+            // இந்த வரிகள் மிக முக்கியம் - இவைதான் PDF-இல் 'Completed' என காட்டும்
+            isFulfilled: data['isFulfilled'] == true,
+            isScheduled: data['isScheduled'] == true,
+            location: data['location'],
           ));
         }
       }
 
-      // Process Disputes/Breaches (truncated for space, same as your existing logic)
+      // 3. Process Disputes
       for (var doc in snapshots[2].docs) {
         final data = doc.data();
         final DateTime? date = (data['date'] as Timestamp?)?.toDate();
@@ -260,12 +268,15 @@ class CalendarProvider extends ChangeNotifier {
             date: date,
             type: EventType.dispute,
             description: data['description'],
-            isFlagged: data['flagEntry'] ?? false,
+            category: data['category'],
+            party: data['party'],
+            isFlagged: data['flagEntry'] == true,
             attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
           ));
         }
       }
 
+      // 4. Process Breaches
       for (var doc in snapshots[3].docs) {
         final data = doc.data();
         final DateTime? date = (data['date'] as Timestamp?)?.toDate();
@@ -276,7 +287,10 @@ class CalendarProvider extends ChangeNotifier {
             date: date,
             type: EventType.breach,
             description: data['description'],
-            isFlagged: data['flagEntry'] ?? false,
+            isFlagged: data['flagEntry'] == true,
+            party: data['party'],
+            severity: data['severity'],
+            proof: data['proof'],
             attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
           ));
         }

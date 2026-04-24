@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../models/calender_event_model.dart';
 import '../models/case_model.dart';
 
 
@@ -433,6 +434,50 @@ class InsightProvider with ChangeNotifier {
     flaggedPaymentsCount = 0;
     flaggedDisputesCount = 0;
     flaggedBreachCount = 0;
+  }
+
+  // 1. Add these variables to InsightProvider
+  List<CalendarEvent> _allEvents = [];
+  List<CalendarEvent> get allEvents => _allEvents;
+
+// Helper to get child names easily for the Export Filter
+   List<ChildModel> get children => _selectedCase?.children ?? [];
+
+// 2. Add this method to fetch all raw data for the PDF
+  Future<void> fetchAllEventsForReport() async {
+    if (_selectedCase == null) return;
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+
+    try {
+      _isLoading = true;
+      _allEvents.clear();
+      notifyListeners();
+
+      List<CalendarEvent> tempEvents = [];
+
+      // Fetch all relevant collections in parallel
+      final snapshots = await Future.wait([
+        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('paymentRecords').get(),
+        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get(),
+        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('disputeRecords').get(),
+        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('breachRecords').get(),
+      ]);
+
+      // Map each snapshot to CalendarEvent objects
+      // Assuming CalendarEvent.fromMap exists as per your previous setup
+      for (var snap in snapshots) {
+        tempEvents.addAll(snap.docs.map((doc) => CalendarEvent.fromMap(doc.data(), docId: doc.id)));
+      }
+
+      _allEvents = tempEvents;
+      _allEvents.sort((a, b) => b.date.compareTo(a.date)); // Sort newest first
+    } catch (e) {
+      debugPrint("PDF Data Fetch Error: $e");
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
   }
 
 }

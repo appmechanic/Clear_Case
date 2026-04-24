@@ -14,7 +14,11 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/helping_functions.dart';
 import '../widgets/delete_entries_confirmation.dart';
+import '../widgets/export_button.dart';
+import '../widgets/export_filter.dart';
+import '../widgets/pdf_generator.dart';
 import 'case_setup_screen.dart';
 
 
@@ -183,7 +187,31 @@ class _CalenderScreenState extends State<CalenderScreen> {
                 ),
               ),
               const SizedBox(width: 10),
-              _buildExportButton(),
+              ExportButton(
+                  onTap: () {
+                     final childrenList = provider.children;
+
+                    if (childrenList.isEmpty) {
+                      showSnackBar(context, "No children found for this case.");
+                      return;
+                    }
+
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => ExportFilterSheet(
+                        children: childrenList,
+                         onApply: (options) {
+                           PDFGenerator.generateReport(
+                             caseName: provider.selectedCase?.caseNumber ?? "Case Report",
+                             options: options,
+                             allEvents: provider.allEvents,
+                           );
+                         }
+                    ));
+                  }
+              ),
             ],
           ),
         );
@@ -200,22 +228,6 @@ class _CalenderScreenState extends State<CalenderScreen> {
           height: 20,
           width: 20,
           child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.primary)
-      ),
-    );
-  }
-  Widget _buildExportButton() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: Colors.blue.shade50,
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: const Row(
-        children: [
-          Text("Export", style: TextStyle(color: Colors.blue, fontWeight: FontWeight.bold)),
-          SizedBox(width: 5),
-          Icon(Icons.upload, color: Colors.blue, size: 16),
-        ],
       ),
     );
   }

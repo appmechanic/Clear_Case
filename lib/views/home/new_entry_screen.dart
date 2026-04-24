@@ -20,7 +20,7 @@ class NewEntryScreen extends StatelessWidget {
         elevation: 0,
         leading: const BackButton(color: Colors.black),
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,

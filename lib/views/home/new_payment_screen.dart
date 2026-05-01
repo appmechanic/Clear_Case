@@ -397,28 +397,60 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
 
   AppBar _buildAppBar(CalendarProvider calProvider) {
-    return AppBar(
-      leading: IconButton(onPressed: (){
-        Navigator.pop(context);
-      }, icon: Icon(Icons.arrow_back, color: Colors.black)),
+    bool isEditMode = editRecordId != null;
 
-      title: Text(editRecordId == null ? "New Payment Record" : "Edit Payment Record",
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+    return AppBar(
+      leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: Colors.black)
+      ),
+      title: Text(
+          !isEditMode ? "New Payment Record" : "Edit Payment Record",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
+      ),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
+        // Increased height to 70 to handle potential wrapping without crowding
+        preferredSize: const Size.fromHeight(70),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: CustomDropDown<String>(
-            hint: "Select a Case",
-            value: calProvider.selectedCase?.id,
-            items: calProvider.allCases.map((c) => DropdownMenuItem(
-              value: c.id,
-              child: Text(c.caseNumber),
-            )).toList(),
-            onChanged: (id) => calProvider.setSelectedCase(calProvider.allCases.firstWhere((c) => c.id == id)),
+          child: IgnorePointer(
+            ignoring: isEditMode,
+            child: Opacity(
+              opacity: isEditMode ? 0.6 : 1.0,
+              child: CustomDropDown<String>(
+                hint: "Select a Case",
+                value: calProvider.selectedCase?.id,
+                items: calProvider.allCases.map((c) {
+                  return DropdownMenuItem<String>(
+                    value: c.id,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        calProvider.getCaseDisplayName(c), // Displays "Case # (Child Names)"
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.black,
+                          height: 1.3, // Adds spacing between wrapped lines
+                        ),
+                        softWrap: true,   // Enables wrapping for multiple children
+                        maxLines: null,   // Allows the item to expand vertically
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (id) {
+                  if (id != null) {
+                    final selected = calProvider.allCases.firstWhere((c) => c.id == id);
+                    calProvider.setSelectedCase(selected);
+                  }
+                },
+              ),
+            ),
           ),
         ),
       ),
@@ -451,23 +483,29 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
     );
   }
 
-  Widget _buildInteractiveDropdown(String label, String value, List<String> items, Function(String?) onChanged) {
+  Widget _buildInteractiveDropdown(
+      String label,
+      String? value,
+      List<String> items,
+      Function(String?) onChanged
+      ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)),
+        Text(
+            label,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)
+        ),
         const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(8)),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: value,
-              isExpanded: true,
-              items: items.map((String val) => DropdownMenuItem(value: val, child: Text(val))).toList(),
-              onChanged: onChanged,
-            ),
-          ),
+        // Now using your custom class
+        CustomDropDown<String>(
+          value: value,
+          hint: "Select $label",
+          items: items.map((String val) => DropdownMenuItem(
+              value: val,
+              child: Text(val)
+          )).toList(),
+          onChanged: onChanged,
         ),
       ],
     );

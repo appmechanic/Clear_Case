@@ -68,7 +68,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // 1. Start Date & Time (Always Visible)
-            _buildInteractiveField("Rule Start Date *", provider.startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.startDate!), Icons.calendar_today, () => _pickDate(context, true)),
+            _buildInteractiveField("Rule Start Date *", provider.startDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(provider.startDate!), Icons.calendar_today, () => _pickDate(context, true)),
             const SizedBox(height: 15),
             _buildInteractiveField("Start Time *", provider.startTime == null ? "--:--" : provider.startTime!.format(context), Icons.access_time, () => _pickTime(context, true)),
 
@@ -107,12 +107,12 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
 
                if (provider.hasEndDate) ...[
                 const SizedBox(height: 15),
-                _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
-                const SizedBox(height: 15),
+                 _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
+                 const SizedBox(height: 15),
                 _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
               ],
               ] else ...[
-               _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
+              _buildInteractiveField("Rule End Date", provider.endDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(provider.endDate!), Icons.calendar_today, () => _pickDate(context, false)),
               const SizedBox(height: 15),
               _buildInteractiveField("End Time", provider.endTime == null ? "--:--" : provider.endTime!.format(context), Icons.access_time, () => _pickTime(context, false)),
             ],
@@ -163,7 +163,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
 
               return _buildChildItem(
                 name,
-                DateFormat('dd MMM yyyy').format(dob),
+                DateFormat('d MMM yyyy').format(dob),
                 provider.selectedChildIds.contains(id),
                     () => provider.toggleChildSelection(id),
               );
@@ -296,7 +296,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(DateFormat('dd/MM/yyyy').format(tempDob)),
+                      Text(DateFormat('d MMM yyyy').format(tempDob)),
                       const Icon(Icons.calendar_today, size: 18),
                     ],
                   ),

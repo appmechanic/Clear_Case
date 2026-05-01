@@ -229,7 +229,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
           }
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
-        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12))),
+        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: Colors.white)),
       ),
     );
   }

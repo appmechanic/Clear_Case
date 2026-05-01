@@ -256,8 +256,8 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
               children: [
                 Text(
                     selectedDate != null
-                        ? DateFormat('dd-MM-yyyy').format(selectedDate)
-                        : "dd-mm-yyyy",
+                        ? DateFormat('d MMM yyyy').format(selectedDate)
+                        : "d MMM yyyy",
                     style: TextStyle(
                         color:
                         selectedDate != null ? Colors.black : Colors.grey)),

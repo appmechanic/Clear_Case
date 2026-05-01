@@ -4,11 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-
 import '../models/case_model.dart';
+import 'dart:async';
+
 
 class CalendarProvider extends ChangeNotifier {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
+  final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
+      app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   bool _isLoading = false;
@@ -16,11 +18,16 @@ class CalendarProvider extends ChangeNotifier {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   List<ChildModel> get children => _selectedCase?.children ?? [];
-  // Map to store events: Date -> List of Events
+
   final Map<DateTime, List<CalendarEvent>> _events = {};
-  List<CalendarEvent> get allEvents => _events.values.expand((element) => element).toList();
+  List<CalendarEvent> get allEvents =>
+      _events.values.expand((element) => element).toList();
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
+
+  // Stream Subscriptions for automatic updates
+  StreamSubscription? _casesSubscription;
+  final List<StreamSubscription> _eventSubscriptions = [];
 
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
@@ -29,156 +36,102 @@ class CalendarProvider extends ChangeNotifier {
 
   CalendarProvider() {
     _selectedDay = _focusedDay;
-    fetchUserCases();
+    listenToUserCases();
   }
 
-  // --- CASE FETCHING LOGIC ---
+  @override
+  void dispose() {
+    _casesSubscription?.cancel();
+    for (var sub in _eventSubscriptions) {
+      sub.cancel();
+    }
+    super.dispose();
+  }
 
-  Future<void> fetchUserCases() async {
+  // --- AUTOMATIC CASE UPDATES ---
+
+  void listenToUserCases() {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('cases')
-          .get();
-
+    _casesSubscription?.cancel();
+    _casesSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('cases')
+        .snapshots()
+        .listen((snapshot) {
       _allCases = snapshot.docs.map((doc) {
         var model = CaseModel.fromMap(doc.data());
         model.id = doc.id;
         return model;
       }).toList();
 
-      if (_allCases.isNotEmpty && _selectedCase == null) {
-        setSelectedCase(_allCases.first);
-      } else {
-        notifyListeners();
+      if (_allCases.isNotEmpty) {
+        if (_selectedCase == null) {
+          setSelectedCase(_allCases.first);
+        } else {
+          // Update the selected case object if metadata changed
+          final stillExists = _allCases.any((c) => c.id == _selectedCase!.id);
+          if (stillExists) {
+            _selectedCase = _allCases.firstWhere((c) => c.id == _selectedCase!.id);
+          } else {
+            setSelectedCase(_allCases.first);
+          }
+        }
       }
-    } catch (e) {
-      debugPrint("Error fetching cases: $e");
-    }
+      notifyListeners();
+    }, onError: (e) => debugPrint("Cases Stream Error: $e"));
   }
 
   void setSelectedCase(CaseModel? selected) {
-    if (_selectedCase?.id == selected?.id) return;
+    // If the same case is selected, do nothing
+    if (_selectedCase?.id == selected?.id && _events.isNotEmpty) return;
+
     _selectedCase = selected;
     _events.clear();
+
+     _focusedDay = DateTime.now();
+    _selectedDay = DateTime.now();
+    // -----------------------
+
     if (selected != null) {
-      fetchEventsForCase(selected.id);
+      listenToEventsForCase(selected.id);
     }
+
     notifyListeners();
   }
+  // --- AUTOMATIC EVENT UPDATES ---
 
-  // --- UPDATED RULE GENERATION LOGIC ---
-
-  Future<void> _fetchScheduledRulesForCase(String caseId) async {
+  void listenToEventsForCase(String caseId) {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    try {
-      final snapshot = await _firestore
-          .collection('users').doc(user.uid)
-          .collection('cases').doc(caseId)
-          .collection('scheduledRules')
-          .get();
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        String category = doc.id.toLowerCase();
-
-        DateTime? startDate = DateTime.tryParse(data['startDate'] ?? "");
-        DateTime? endDate = DateTime.tryParse(data['endDate'] ?? "");
-        // Check if frequency exists and isn't a string "null" or "None"
-        String? freq = data['repeatFrequency'];
-        bool hasValidFrequency = freq != null && freq != "None" && freq != "null";
-
-         bool shouldRepeat =  hasValidFrequency;
-
-         String frequency = hasValidFrequency ? freq : "None";
-
-        if (startDate == null) continue;
-
-        List<DateTime> instances = _generateRuleInstances(
-          startDate: startDate,
-          endDate: endDate,
-          isRepeat: shouldRepeat,
-          frequency: frequency,
-        );
-
-        for (DateTime instanceDate in instances) {
-          String dateKey = "${instanceDate.year}-${instanceDate.month}-${instanceDate.day}";
-
-          _addEventToMap(CalendarEvent(
-            id: "rule_${category}_${doc.id}_$dateKey",
-            title: "Scheduled ${category[0].toUpperCase()}${category.substring(1)}",
-            date: instanceDate,
-            type: category == 'custody'
-                ? EventType.custody
-                : (category == 'payment' ? EventType.payment : EventType.reminder),
-            description: data['notes'] ,
-            childNames: _resolveChildNames(
-              (data['appliedChildren'] as List? ?? [])
-                  .map((c) => c['id'].toString())
-                  .toList(),
-
-            ),
-          ));
-        }
-      }
-    } catch (e) {
-      debugPrint("Error fetching scheduled rules: $e");
+    // Clear old subscriptions
+    for (var sub in _eventSubscriptions) {
+      sub.cancel();
     }
-  }
+    _eventSubscriptions.clear();
 
-  List<DateTime> _generateRuleInstances({
-    required DateTime startDate,
-    DateTime? endDate,
-    required bool isRepeat,
-    required String frequency,
-  }) {
-    List<DateTime> instances = [];
-    // Normalize to midnight
-    DateTime currentStart = DateTime(startDate.year, startDate.month, startDate.day);
+    final caseDocRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId);
 
-    // Scenario 3: Non-Repeating Range (Case 2 in Table)
-    // If no frequency and an end date exists, fill every day in between
-    if (!isRepeat && endDate != null) {
-      DateTime rangeEnd = DateTime(endDate.year, endDate.month, endDate.day);
-      while (!currentStart.isAfter(rangeEnd)) {
-        instances.add(currentStart);
-        currentStart = currentStart.add(const Duration(days: 1));
-      }
-      return instances;
+    // List of collections to watch for changes
+    final collections = [
+      'paymentRecords',
+      'custodyRecords',
+      'disputeRecords',
+      'breachRecords',
+      'reminders',
+      'scheduledRules'
+    ];
+
+    for (var coll in collections) {
+      final sub = caseDocRef.collection(coll).snapshots().listen((_) {
+        // Trigger re-fetch whenever any sub-collection changes
+        fetchEventsForCase(caseId);
+      });
+      _eventSubscriptions.add(sub);
     }
-
-    // Scenario 1 & 2: Repeating events (Case 3, 4, 5 in Table)
-    // Set a rule limit (default 2 years if endDate is null)
-    DateTime ruleLimit = endDate != null
-        ? DateTime(endDate.year, endDate.month, endDate.day)
-        : currentStart.add(const Duration(days: 730));
-
-    while (!currentStart.isAfter(ruleLimit)) {
-      instances.add(currentStart);
-
-      if (isRepeat) {
-        if (frequency == "Weekly") {
-          currentStart = currentStart.add(const Duration(days: 7));
-        } else if (frequency == "Fortnightly") {
-          currentStart = currentStart.add(const Duration(days: 14));
-        } else if (frequency == "Monthly") {
-          currentStart = DateTime(currentStart.year, currentStart.month + 1, currentStart.day);
-        } else if (frequency == "Daily") {
-          currentStart = currentStart.add(const Duration(days: 1));
-        } else {
-          break;
-        }
-      } else {
-        break; // Scenario 1: One-time single event (Case 1 in Table)
-      }
-    }
-    return instances;
   }
 
   // --- CORE DATA PROCESSING ---
@@ -187,9 +140,8 @@ class CalendarProvider extends ChangeNotifier {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    _isLoading = true;
+    // Note: We don't set _isLoading = true here to allow smooth background updates
     _events.clear();
-    notifyListeners();
 
     try {
       final caseDocRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId);
@@ -221,7 +173,7 @@ class CalendarProvider extends ChangeNotifier {
             isFlagged: data['flagEntry'] == true,
             location: data['location'],
             isReceived: data['isReceived'] == true,
-            isFulfilled: data['isReceived'] == true, // PDF Logic
+            isFulfilled: data['isReceived'] == true,
             isScheduled: data['isScheduled'] == true,
             paymentCategory: data['paymentCategory'],
             paymentMethod: data['paymentMethod'],
@@ -232,7 +184,7 @@ class CalendarProvider extends ChangeNotifier {
         }
       }
 
-      // 2. Process Custody (FIXED HERE)
+      // 2. Process Custody
       for (var doc in snapshots[1].docs) {
         final data = doc.data();
         if (data.containsKey('frequency') || data.containsKey('notificationPref')) continue;
@@ -248,8 +200,6 @@ class CalendarProvider extends ChangeNotifier {
             childNames: _resolveChildNames(data['childIds'] ?? []),
             isFlagged: data['flagEntry'] == true,
             attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
-
-            // இந்த வரிகள் மிக முக்கியம் - இவைதான் PDF-இல் 'Completed' என காட்டும்
             isFulfilled: data['isFulfilled'] == true,
             isScheduled: data['isScheduled'] == true,
             location: data['location'],
@@ -298,9 +248,99 @@ class CalendarProvider extends ChangeNotifier {
     } catch (e) {
       debugPrint("Error loading events: $e");
     } finally {
-      _isLoading = false;
       notifyListeners();
     }
+  }
+
+  // --- RULE GENERATION ---
+
+  Future<void> _fetchScheduledRulesForCase(String caseId) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final snapshot = await _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection('scheduledRules')
+          .get();
+
+      for (var doc in snapshot.docs) {
+        final data = doc.data();
+        String category = doc.id.toLowerCase();
+        DateTime? startDate = DateTime.tryParse(data['startDate'] ?? "");
+        DateTime? endDate = DateTime.tryParse(data['endDate'] ?? "");
+        String? freq = data['repeatFrequency'];
+        bool hasValidFrequency = freq != null && freq != "None" && freq != "null";
+        String frequency = hasValidFrequency ? freq : "None";
+
+        if (startDate == null) continue;
+
+        List<DateTime> instances = _generateRuleInstances(
+          startDate: startDate,
+          endDate: endDate,
+          isRepeat: hasValidFrequency,
+          frequency: frequency,
+        );
+
+        for (DateTime instanceDate in instances) {
+          String dateKey = "${instanceDate.year}-${instanceDate.month}-${instanceDate.day}";
+          _addEventToMap(CalendarEvent(
+            id: "rule_${category}_${doc.id}_$dateKey",
+            title: "Scheduled ${category[0].toUpperCase()}${category.substring(1)}",
+            date: instanceDate,
+            type: category == 'custody'
+                ? EventType.custody
+                : (category == 'payment' ? EventType.payment : EventType.reminder),
+            description: data['notes'],
+            childNames: _resolveChildNames(
+              (data['appliedChildren'] as List? ?? [])
+                  .map((c) => c['id'].toString())
+                  .toList(),
+            ),
+          ));
+        }
+      }
+    } catch (e) {
+      debugPrint("Error fetching rules: $e");
+    }
+  }
+
+  List<DateTime> _generateRuleInstances({
+    required DateTime startDate,
+    DateTime? endDate,
+    required bool isRepeat,
+    required String frequency,
+  }) {
+    List<DateTime> instances = [];
+    DateTime currentStart = DateTime(startDate.year, startDate.month, startDate.day);
+
+    if (!isRepeat && endDate != null) {
+      DateTime rangeEnd = DateTime(endDate.year, endDate.month, endDate.day);
+      while (!currentStart.isAfter(rangeEnd)) {
+        instances.add(currentStart);
+        currentStart = currentStart.add(const Duration(days: 1));
+      }
+      return instances;
+    }
+
+    DateTime ruleLimit = endDate != null
+        ? DateTime(endDate.year, endDate.month, endDate.day)
+        : currentStart.add(const Duration(days: 730));
+
+    while (!currentStart.isAfter(ruleLimit)) {
+      instances.add(currentStart);
+      if (isRepeat) {
+        if (frequency == "Weekly") currentStart = currentStart.add(const Duration(days: 7));
+        else if (frequency == "Fortnightly") currentStart = currentStart.add(const Duration(days: 14));
+        else if (frequency == "Monthly") currentStart = DateTime(currentStart.year, currentStart.month + 1, currentStart.day);
+        else if (frequency == "Daily") currentStart = currentStart.add(const Duration(days: 1));
+        else break;
+      } else {
+        break;
+      }
+    }
+    return instances;
   }
 
   void _addEventToMap(CalendarEvent event) {
@@ -314,8 +354,6 @@ class CalendarProvider extends ChangeNotifier {
   List<CalendarEvent> getEventsForDay(DateTime day) {
     return _events[DateTime(day.year, day.month, day.day)] ?? [];
   }
-
-  // --- HELPERS ---
 
   void onDaySelected(DateTime selected, DateTime focused) {
     if (!isSameDay(_selectedDay, selected)) {
@@ -361,7 +399,7 @@ class CalendarProvider extends ChangeNotifier {
           ));
         }
       }
-    } catch (e) { debugPrint("Reminder fetch error: $e"); }
+    } catch (e) { debugPrint("Reminder error: $e"); }
   }
 
   List<DateTime> _generateRecurringDates(DateTime start, DateTime? end, String repeat) {
@@ -420,11 +458,9 @@ class CalendarProvider extends ChangeNotifier {
 
       batch.delete(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection(coll).doc(recordId));
       await batch.commit();
-      await fetchEventsForCase(caseId);
 
       if (context.mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record deleted successfully"), behavior: SnackBarBehavior.floating));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record deleted successfully")));
       }
     } catch (e) { debugPrint("Delete error: $e"); } finally { _isLoading = false; notifyListeners(); }
   }

@@ -191,7 +191,7 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
           if (value != null) disputeProv.fetchDisputes((value as CaseModel).id);
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
-        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12))),
+        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: Colors.white)),
       ),
     );
   }

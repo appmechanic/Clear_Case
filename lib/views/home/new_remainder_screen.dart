@@ -374,13 +374,17 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
   }
 
   AppBar _buildAppBar(CalendarProvider calProvider) {
-    return AppBar(
-      leading: IconButton(onPressed: (){
-        Navigator.pop(context);
-      }, icon: Icon(Icons.arrow_back, color: Colors.black)),
+    bool isEditMode = _editingId != null;
 
-      title: Text(_editingId == null ? "Add Reminder" : "Edit Reminder",
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+    return AppBar(
+      leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: Colors.black)
+      ),
+      title: Text(
+          !isEditMode ? "Add Reminder" : "Edit Reminder",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
+      ),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
@@ -388,19 +392,31 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
         preferredSize: const Size.fromHeight(60),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: CustomDropDown<String>(
-            hint: "Select a Case",
-            value: calProvider.selectedCase?.id,
-            items: calProvider.allCases.map((c) => DropdownMenuItem(
-              value: c.id,
-              child: Text(c.caseNumber),
-            )).toList(),
-            onChanged: (id) => calProvider.setSelectedCase(calProvider.allCases.firstWhere((c) => c.id == id)),
+          child: IgnorePointer(
+            // Prevents case switching while editing
+            ignoring: isEditMode,
+            child: Opacity(
+              // Greys out the dropdown for a "disabled" look
+              opacity: isEditMode ? 0.6 : 1.0,
+              child: CustomDropDown<String>(
+                hint: "Select a Case",
+                value: calProvider.selectedCase?.id,
+                items: calProvider.allCases.map((c) => DropdownMenuItem(
+                  value: c.id,
+                  child: Text(c.caseNumber),
+                )).toList(),
+                onChanged: (id) {
+                  final selected = calProvider.allCases.firstWhere((c) => c.id == id);
+                  calProvider.setSelectedCase(selected);
+                },
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+
 
   Widget _buildClickableField({required String label, required String value, required IconData icon, required VoidCallback onTap}) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(value, style: const TextStyle(fontSize: 14)), Icon(icon, size: 18, color: Colors.grey[700])])))]);

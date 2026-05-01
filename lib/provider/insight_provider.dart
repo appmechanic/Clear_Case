@@ -7,16 +7,32 @@ import '../models/calender_event_model.dart';
 import '../models/case_model.dart';
 
 
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:intl/intl.dart';
+
 class InsightProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
       app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
+  // Real-time Listeners
+  StreamSubscription? _casesSubscription;
+  final List<StreamSubscription> _caseDetailSubscriptions = [];
+
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
   bool _isLoading = false;
 
-
+  // Custody Variables
   int fulfilledDays = 0;
   int justifiedDays = 0;
   int missedDays = 0;
@@ -28,47 +44,58 @@ class InsightProvider with ChangeNotifier {
   double totalCompulsory = 0.0;
   double totalAdditional = 0.0;
 
-  // Placeholder Variables for future modules
-  int totalFlagged = 0;
-  double custodyCompliance = 0.0;
-
+  // Breach & Dispute Variables
+  int totalBreachCount = 0;
   int totalDisputes = 0;
   int communicationCount = 0;
   int transferIssuesCount = 0;
   int paymentDisputesCount = 0;
 
+  // Flagged Variables
+  int flaggedCustodyCount = 0;
+  int flaggedPaymentsCount = 0;
+  int flaggedDisputesCount = 0;
+  int flaggedBreachCount = 0;
+
+  // Report Variables
+  List<CalendarEvent> _allEvents = [];
+  List<CalendarEvent> get allEvents => _allEvents;
+
   bool get isLoading => _isLoading;
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
+  int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedBreachCount;
+  List<ChildModel> get children => _selectedCase?.children ?? [];
+
+  // FIX: Only sum Paid and Received to prevent double-counting sub-categories
+  double get totalPayments => totalPaid + totalReceived;
 
   InsightProvider() {
-    init();
+    listenToUserCases();
   }
 
-  Future<void> init() async {
-    await fetchUserCases();
-  }
-
-  /// 1. Fetch all cases (Updating names, numbers, and children)
-  Future<void> fetchUserCases({bool quietLoad = false}) async {
+  /// 1. REAL-TIME: Listen to the list of cases
+// Change from: void listenToUserCases()
+// To:
+  Future<void> listenToUserCases() async {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    if (!quietLoad) {
-      _isLoading = true;
-      notifyListeners();
-    }
+    _isLoading = true;
+    _casesSubscription?.cancel();
 
-    try {
-      final snapshot = await _firestore.collection('users').doc(user.uid).collection('cases').get();
-
+    _casesSubscription = _firestore
+        .collection('users')
+        .doc(user.uid)
+        .collection('cases')
+        .snapshots()
+        .listen((snapshot) {
       _allCases = snapshot.docs.map((doc) {
         var model = CaseModel.fromMap(doc.data());
         model.id = doc.id;
         return model;
       }).toList();
 
-      // If we already had a selected case, update its data from the fresh list
       if (_selectedCase != null) {
         _selectedCase = _allCases.firstWhere(
               (c) => c.id == _selectedCase!.id,
@@ -77,55 +104,176 @@ class InsightProvider with ChangeNotifier {
       } else if (_allCases.isNotEmpty) {
         setSelectedCase(_allCases.first);
       }
-    } catch (e) {
-      debugPrint("Fetch Cases Error: $e");
-    } finally {
-      if (!quietLoad) {
-        _isLoading = false;
-        notifyListeners();
-      }
-    }
-  }
 
-  /// 2. MAIN REFRESH METHOD
-  /// Called by the RefreshIndicator to update Case List AND Insights
-  Future<void> refreshAllData() async {
-    // First, refresh the cases (Case numbers, names, etc.)
-    // We use quietLoad: true to prevent a big loading spinner in the middle of a pull-to-refresh
-    await fetchUserCases(quietLoad: true);
-
-    if (_selectedCase == null) {
+      _isLoading = false;
       notifyListeners();
-      return;
-    }
+    }, onError: (e) => debugPrint("Cases Stream Error: $e"));
 
-    // Then, refresh the specific insights for the current case
-    await Future.wait([
-      calculateCustodyCompliance(),
-      calculatePaymentInsights(),
-      calculateBreachInsights(),
-      calculateDisputeInsights(),
-      calculateFlaggedInsights(),
-    ]);
-
-    notifyListeners();
+    // Return a completed future so the RefreshIndicator knows the "setup" is done
+    return;
   }
 
-  double get totalPayments => totalPaid + totalReceived + totalCompulsory + totalAdditional;
-
+  /// 2. SET CASE: Updates listeners for the specific case sub-collections
   void setSelectedCase(dynamic caseModel) {
     _selectedCase = caseModel as CaseModel?;
     _resetStats();
-    if (_selectedCase != null) {
-      // Logic for calculating insights based on the new selection
-      Future.wait([
-        calculateCustodyCompliance(),
-        calculatePaymentInsights(),
-        calculateBreachInsights(),
-        calculateDisputeInsights(),
-        calculateFlaggedInsights(),
-      ]).then((_) => notifyListeners());
+    _startListeningToCaseDetails();
+    notifyListeners();
+  }
+
+  /// 3. REAL-TIME: Detailed listeners for the selected case
+  void _startListeningToCaseDetails() {
+    for (var sub in _caseDetailSubscriptions) { sub.cancel(); }
+    _caseDetailSubscriptions.clear();
+
+    if (_selectedCase == null) return;
+
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+    final caseDoc = _firestore.collection('users').doc(userId).collection('cases').doc(caseId);
+
+    // Payments Listener
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('paymentRecords').snapshots().listen((snap) {
+          _calculatePaymentInsightsSync(snap.docs);
+        })
+    );
+
+    // Custody Listeners (Rules + Records)
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('scheduledRules').snapshots().listen((_) => calculateCustodyCompliance())
+    );
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('custodyRecords').snapshots().listen((_) => calculateCustodyCompliance())
+    );
+
+    // Breaches Listener
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('breachRecords').snapshots().listen((snap) {
+          totalBreachCount = snap.docs.length;
+          notifyListeners();
+        })
+    );
+
+    // Disputes Listener
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('disputeRecords').snapshots().listen((snap) {
+          _calculateDisputeInsightsSync(snap.docs);
+        })
+    );
+
+    // Flagged Listener
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('flaggedEvents').snapshots().listen((snap) {
+          _calculateFlaggedInsightsSync(snap.docs);
+        })
+    );
+  }
+
+  // --- SYNC CALCULATORS FOR STREAM DATA ---
+
+  void _calculatePaymentInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    double tempPaid = 0.0; double tempReceived = 0.0;
+    double tempCompulsory = 0.0; double tempAdditional = 0.0;
+
+    for (var doc in docs) {
+      final data = doc.data();
+      final double amount = (data['amount'] ?? 0).toDouble();
+      final bool isReceived = data['isReceived'] ?? false;
+      final String category = data['paymentCategory'] ?? "";
+
+      if (isReceived) tempReceived += amount;
+      else tempPaid += amount;
+
+      if (category == "Compulsory") tempCompulsory += amount;
+      else if (category == "Additional") tempAdditional += amount;
     }
+    totalPaid = tempPaid; totalReceived = tempReceived;
+    totalCompulsory = tempCompulsory; totalAdditional = tempAdditional;
+    notifyListeners();
+  }
+
+  void _calculateDisputeInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    int tempComm = 0; int tempTransfer = 0; int tempPayment = 0;
+    for (var doc in docs) {
+      final category = doc.data()['category'] ?? "";
+      if (category == "Communication") tempComm++;
+      else if (category == "Transfer Issues") tempTransfer++;
+      else if (category == "Payment Disputes") tempPayment++;
+    }
+    communicationCount = tempComm; transferIssuesCount = tempTransfer;
+    paymentDisputesCount = tempPayment; totalDisputes = docs.length;
+    notifyListeners();
+  }
+
+  void _calculateFlaggedInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    int tempC = 0; int tempP = 0; int tempD = 0; int tempB = 0;
+    for (var doc in docs) {
+      final String origin = doc.data()['originCollection'] ?? "";
+      if (origin == "paymentRecords") tempP++;
+      else if (origin == "disputeRecords") tempD++;
+      else if (origin == "breachRecords") tempB++;
+      else tempC++;
+    }
+    flaggedCustodyCount = tempC; flaggedPaymentsCount = tempP;
+    flaggedDisputesCount = tempD; flaggedBreachCount = tempB;
+    notifyListeners();
+  }
+
+  /// 4. CUSTODY LOGIC: Remains Future-based as it aggregates multiple steps
+  Future<void> calculateCustodyCompliance() async {
+    if (_selectedCase == null) return;
+    final userId = _auth.currentUser!.uid;
+    final caseId = _selectedCase!.id;
+    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+
+    try {
+      final rulesSnap = await _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('scheduledRules').get();
+      if (rulesSnap.docs.isEmpty) { _resetCustodyStats(); return; }
+
+      Set<String> scheduledDates = {};
+      for (var doc in rulesSnap.docs) {
+        final data = doc.data();
+        DateTime start = DateTime.parse(data['startDate']);
+        DateTime? end = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
+        DateTime calcEnd = (end != null && end.isBefore(today)) ? end : today;
+
+        for (DateTime date = DateTime(start.year, start.month, start.day); !date.isAfter(calcEnd); date = date.add(const Duration(days: 1))) {
+          scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
+        }
+      }
+
+      final recordsSnap = await _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get();
+      int tempF = 0; int tempJ = 0;
+
+      for (var doc in recordsSnap.docs) {
+        final data = doc.data();
+        if (!(data['isScheduled'] ?? false)) continue;
+        String dateKey = DateFormat('yyyy-MM-dd').format((data['startDate'] as Timestamp).toDate());
+        if (scheduledDates.contains(dateKey)) {
+          if (data['isFulfilled'] ?? false) tempF++; else tempJ++;
+        }
+      }
+
+      fulfilledDays = tempF; justifiedDays = tempJ;
+      missedDays = (scheduledDates.length - (tempF + tempJ)).clamp(0, 999999);
+      complianceRate = scheduledDates.isNotEmpty ? ((tempF + tempJ) / scheduledDates.length) * 100 : 0.0;
+      notifyListeners();
+    } catch (e) { debugPrint("Custody Insight Error: $e"); }
+  }
+
+  // --- UTILS & CLEANUP ---
+
+  void _resetStats() {
+    totalPaid = 0.0; totalReceived = 0.0; totalCompulsory = 0.0; totalAdditional = 0.0;
+    totalBreachCount = 0; totalDisputes = 0; communicationCount = 0;
+    transferIssuesCount = 0; paymentDisputesCount = 0;
+    flaggedCustodyCount = 0; flaggedPaymentsCount = 0; flaggedDisputesCount = 0; flaggedBreachCount = 0;
+    fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
+  }
+
+  void _resetCustodyStats() {
+    fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
     notifyListeners();
   }
 
@@ -137,347 +285,27 @@ class InsightProvider with ChangeNotifier {
     return "$caseNum ($names)";
   }
 
-
-  Future<void> calculateCustodyCompliance() async {
-    if (_selectedCase == null) return;
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
-    // Normalize "today" to midnight to ensure inclusive date comparisons
-    final now = DateTime.now();
-    final DateTime today = DateTime(now.year, now.month, now.day);
-
-    try {
-      // Step A: Fetch Scheduled Rules to define the "Expected" dates
-      final rulesSnapshot = await _firestore
-          .collection('users').doc(userId)
-          .collection('cases').doc(caseId)
-          .collection('scheduledRules').get();
-
-      if (rulesSnapshot.docs.isEmpty) {
-        _resetCustodyStats();
-        return;
-      }
-
-      Set<String> scheduledDates = {};
-
-      for (var doc in rulesSnapshot.docs) {
-        final data = doc.data();
-        DateTime startDate = DateTime.parse(data['startDate']);
-        startDate = DateTime(startDate.year, startDate.month, startDate.day);
-
-        DateTime? endDate = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
-
-        DateTime calculationEnd = today;
-        if (endDate != null && endDate.isBefore(today)) {
-          calculationEnd = DateTime(endDate.year, endDate.month, endDate.day);
-        }
-
-        // Every single day from start to end/today is an expected custody day
-        for (DateTime date = startDate;
-        !date.isAfter(calculationEnd);
-        date = date.add(const Duration(days: 1))) {
-          scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
-        }
-      }
-
-      int totalScheduledUntilToday = scheduledDates.length;
-
-      // Step B: Fetch Actual Custody Records
-      final recordsSnapshot = await _firestore
-          .collection('users').doc(userId)
-          .collection('cases').doc(caseId)
-          .collection('custodyRecords').get();
-
-      int tempFulfilled = 0;
-      int tempJustified = 0;
-
-      for (var doc in recordsSnapshot.docs) {
-        final data = doc.data();
-
-        // NEW: Ignore entries where isScheduled is false
-        final bool isScheduledEntry = data['isScheduled'] ?? false;
-        if (!isScheduledEntry) continue;
-
-        bool isFulfilled = data['isFulfilled'] ?? false;
-        DateTime recordDate = (data['startDate'] as Timestamp).toDate();
-        String dateKey = DateFormat('yyyy-MM-dd').format(recordDate);
-
-        // Only count if this record falls on one of our scheduled dates
-        if (scheduledDates.contains(dateKey)) {
-          if (isFulfilled) {
-            tempFulfilled++;
-          } else {
-            // It was scheduled, entry exists, but not fulfilled = Justified
-            tempJustified++;
-          }
-        }
-      }
-
-      // Step C: Update State
-      fulfilledDays = tempFulfilled;
-      justifiedDays = tempJustified;
-
-      // Missed = Scheduled dates that have NO entry at all in the DB
-      missedDays = totalScheduledUntilToday - (tempFulfilled + tempJustified);
-      if (missedDays < 0) missedDays = 0;
-
-      // Step D: Formula - (Fulfilled + Justified) / Total Scheduled
-      int actualDays = fulfilledDays + justifiedDays;
-      if (totalScheduledUntilToday > 0) {
-        complianceRate = (actualDays / totalScheduledUntilToday) * 100;
-      } else {
-        complianceRate = 0.0;
-      }
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Custody Insight Error: $e");
-    }
-  }
-
-// Helper to clear stats if no rules exist
-  void _resetCustodyStats() {
-    fulfilledDays = 0;
-    justifiedDays = 0;
-    missedDays = 0;
-    complianceRate = 0.0;
-    notifyListeners();
-  }
-
-
-  /// 3. Payment Specific Logic
-  Future<void> calculatePaymentInsights() async {
-    if (_selectedCase == null) return;
-
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('cases')
-          .doc(caseId)
-          .collection('paymentRecords')
-          .get();
-
-      double tempPaid = 0.0;
-      double tempReceived = 0.0;
-      double tempCompulsory = 0.0;
-      double tempAdditional = 0.0;
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final double amount = (data['amount'] ?? 0).toDouble();
-        final bool isReceived = data['isReceived'] ?? false;
-        final String category = data['paymentCategory'] ?? "";
-
-        if (isReceived) {
-          tempReceived += amount;
-        } else {
-          tempPaid += amount;
-        }
-
-        if (category == "Compulsory") {
-          tempCompulsory += amount;
-        } else if (category == "Additional") {
-          tempAdditional += amount;
-        }
-      }
-
-      totalPaid = tempPaid;
-      totalReceived = tempReceived;
-      totalCompulsory = tempCompulsory;
-      totalAdditional = tempAdditional;
-    } catch (e) {
-      debugPrint("Payment Error: $e");
-    }
-  }
-
-
-  int totalBreachCount = 0; // Renamed from monthlyBreachCount for clarity
-
-  Future<void> calculateBreachInsights() async {
-    if (_selectedCase == null) return;
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
-    try {
-      // Removed the 'where' date filter to get the absolute total
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('cases')
-          .doc(caseId)
-          .collection('breachRecords')
-          .get();
-
-      totalBreachCount = snapshot.docs.length;
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Breach Insight Error: $e");
-    }
-  }
-
-  /// 4. Dispute Specific Logic
-  Future<void> calculateDisputeInsights() async {
-    if (_selectedCase == null) return;
-
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('cases')
-          .doc(caseId)
-          .collection('disputeRecords')
-          .get();
-
-      int tempComm = 0;
-      int tempTransfer = 0;
-      int tempPayment = 0;
-
-      for (var doc in snapshot.docs) {
-        final category = doc.data()['category'] ?? "";
-
-        if (category == "Communication") {
-          tempComm++;
-        } else if (category == "Transfer Issues") {
-          tempTransfer++;
-        } else if (category == "Payment Disputes") {
-          tempPayment++;
-        }
-      }
-
-      communicationCount = tempComm;
-      transferIssuesCount = tempTransfer;
-      paymentDisputesCount = tempPayment;
-      totalDisputes = snapshot.docs.length;
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Dispute Insight Error: $e");
-    }
-  }
-
-  // Add these variables to your InsightProvider class
-  int flaggedCustodyCount = 0;
-  int flaggedPaymentsCount = 0;
-  int flaggedDisputesCount = 0;
-  int flaggedBreachCount = 0;
-
-// Update the total getter
-  int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedBreachCount;
-
-  Future<void> calculateFlaggedInsights() async {
-    if (_selectedCase == null) return;
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
-    try {
-      final snapshot = await _firestore
-          .collection('users')
-          .doc(userId)
-          .collection('cases')
-          .doc(caseId)
-          .collection('flaggedEvents')
-          .get();
-
-      int tempCustody = 0;
-      int tempPayments = 0;
-      int tempDisputes = 0;
-      int tempBreach = 0;
-
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        final String origin = data['originCollection'] ?? "";
-
-        // Logic to categorize based on originCollection
-        if (origin == "paymentRecords") {
-          tempPayments++;
-        } else if (origin == "disputeRecords") {
-          tempDisputes++;
-        } else if (origin == "breachRecords") {
-          tempBreach++;
-        } else if (origin == "custodyRecords" || origin == "eventRecords") {
-          tempCustody++;
-        }
-      }
-
-      flaggedCustodyCount = tempCustody;
-      flaggedPaymentsCount = tempPayments;
-      flaggedDisputesCount = tempDisputes;
-      flaggedBreachCount = tempBreach;
-
-      notifyListeners();
-    } catch (e) {
-      debugPrint("Flagged Insight Error: $e");
-    }
-  }
-
-  void _resetStats() {
-    totalPaid = 0.0;
-    totalReceived = 0.0;
-    totalCompulsory = 0.0;
-    totalAdditional = 0.0;
-    totalFlagged = 0;
-    custodyCompliance = 0.0;
-    totalBreachCount = 0;
-    totalDisputes = 0;
-    communicationCount = 0;
-    transferIssuesCount = 0;
-    paymentDisputesCount = 0;
-    flaggedCustodyCount = 0;
-    flaggedPaymentsCount = 0;
-    flaggedDisputesCount = 0;
-    flaggedBreachCount = 0;
-  }
-
-  // 1. Add these variables to InsightProvider
-  List<CalendarEvent> _allEvents = [];
-  List<CalendarEvent> get allEvents => _allEvents;
-
-// Helper to get child names easily for the Export Filter
-   List<ChildModel> get children => _selectedCase?.children ?? [];
-
-// 2. Add this method to fetch all raw data for the PDF
   Future<void> fetchAllEventsForReport() async {
     if (_selectedCase == null) return;
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-
     try {
-      _isLoading = true;
-      _allEvents.clear();
-      notifyListeners();
-
-      List<CalendarEvent> tempEvents = [];
-
-      // Fetch all relevant collections in parallel
-      final snapshots = await Future.wait([
+      _isLoading = true; notifyListeners();
+      final userId = _auth.currentUser!.uid;
+      final caseId = _selectedCase!.id;
+      final snaps = await Future.wait([
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('paymentRecords').get(),
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get(),
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('disputeRecords').get(),
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('breachRecords').get(),
       ]);
-
-      // Map each snapshot to CalendarEvent objects
-      // Assuming CalendarEvent.fromMap exists as per your previous setup
-      for (var snap in snapshots) {
-        tempEvents.addAll(snap.docs.map((doc) => CalendarEvent.fromMap(doc.data(), docId: doc.id)));
-      }
-
-      _allEvents = tempEvents;
-      _allEvents.sort((a, b) => b.date.compareTo(a.date)); // Sort newest first
-    } catch (e) {
-      debugPrint("PDF Data Fetch Error: $e");
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
+      _allEvents = snaps.expand((s) => s.docs.map((d) => CalendarEvent.fromMap(d.data(), docId: d.id))).toList();
+      _allEvents.sort((a, b) => b.date.compareTo(a.date));
+    } finally { _isLoading = false; notifyListeners(); }
   }
 
+  @override
+  void dispose() {
+    _casesSubscription?.cancel();
+    for (var sub in _caseDetailSubscriptions) { sub.cancel(); }
+    super.dispose();
+  }
 }

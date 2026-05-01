@@ -47,7 +47,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
             return RefreshIndicator(
               onRefresh: () async {
                 // 1. Refresh the list of cases first
-                await provider.fetchUserCases();
+                provider.listenToUserCases();
 
                 // 2. Then refresh events for the currently selected case
                 if (provider.selectedCase != null) {
@@ -237,7 +237,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
     // in the same space the calendar occupies.
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      height: 400, // Matches your existing calendar height
+      height: 420, // Matches your existing calendar height
       child: provider.isLoading
           ? const Center(
         child: CircularProgressIndicator(
@@ -245,6 +245,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
         ),
       )
           : TableCalendar<CalendarEvent>(
+        daysOfWeekHeight: 40,
+        sixWeekMonthsEnforced: true,
         firstDay: DateTime.utc(2020, 10, 16),
         lastDay: DateTime.utc(2030, 3, 14),
         focusedDay: provider.focusedDay,
@@ -255,6 +257,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
           _showDayDetailsSheet(context, provider, selectedDay);
         },
         onPageChanged: provider.onPageChanged,
+        daysOfWeekStyle: const DaysOfWeekStyle(
+          weekdayStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+          weekendStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+        ),
         calendarStyle: CalendarStyle(
           outsideDaysVisible: false,
           weekendTextStyle: const TextStyle(color: Colors.black),

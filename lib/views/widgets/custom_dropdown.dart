@@ -30,11 +30,15 @@ class CustomDropDown<T> extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.grey.shade300),
+            // Updated border logic here
+            border: Border.all(
+              color: Colors.grey.shade400, // Darker grey
+              width: 1.5,                 // Slightly thicker line
+            ),
           ),
         ),
         dropdownStyleData: DropdownStyleData(
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(8), color: Colors.white),
         ),
       ),
     );

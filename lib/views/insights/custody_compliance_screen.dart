@@ -62,11 +62,9 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           return RefreshIndicator(
             onRefresh: () async {
               if (insightProv.selectedCase != null) {
-                // Refresh the compliance numbers and the record list together
-                await Future.wait([
-                  insightProv.refreshAllData(),
-                  custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id),
-                ]);
+                // Execute them sequentially
+                await insightProv.listenToUserCases();
+                await custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id);
               }
             },
             child: SingleChildScrollView(
@@ -105,7 +103,14 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
 
 
                   if (custodyProv.isLoading)
-                    const Center(child: CircularProgressIndicator())
+                    const Center(child: CircularProgressIndicator()),
+                  if (custodyProv.records.isEmpty)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Text("No Custody found for this case.", style: TextStyle(color: Colors.grey)),
+                      ),
+                    )
                   else
                     ListView.builder(
                       shrinkWrap: true,
@@ -342,7 +347,7 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           if (value != null) custodyProv.fetchCustodyRecords((value as CaseModel).id);
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
-        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12))),
+        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),color: Colors.white)),
       ),
     );
   }

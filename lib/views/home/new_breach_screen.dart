@@ -216,28 +216,56 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
 
 
   AppBar _buildAppBar(CalendarProvider calProvider) {
+    bool isEditMode = _editingBreachId != null;
+
     return AppBar(
-      title: Text(_editingBreachId == null ?
-      "New Non Compliance" : "Edit Non Compliance", style: const TextStyle(color: Colors.black,fontWeight: FontWeight.bold)),
+      title: Text(
+          !isEditMode ? "New Non Compliance" : "Edit Non Compliance",
+          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
+      ),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
+        // Height set to 70 to provide room for wrapped child names
+        preferredSize: const Size.fromHeight(70),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: CustomDropDown<String>(
-            hint: "Select a Case",
-            value: calProvider.selectedCase?.id,
-            // Ensure your calProvider.allCases has data
-            items: calProvider.allCases.map((c) => DropdownMenuItem(
-                value: c.id,
-                child: Text(c.caseNumber)
-            )).toList(),
-            onChanged: (id) {
-              final selected = calProvider.allCases.firstWhere((c) => c.id == id);
-              calProvider.setSelectedCase(selected);
-            },
+          child: IgnorePointer(
+            ignoring: isEditMode,
+            child: Opacity(
+              opacity: isEditMode ? 0.6 : 1.0,
+              child: CustomDropDown<String>(
+                hint: "Select a Case",
+                value: calProvider.selectedCase?.id,
+                items: calProvider.allCases.map((c) {
+                  return DropdownMenuItem<String>(
+                    value: c.id,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        calProvider.getCaseDisplayName(c), // Displays "Case Number (Child Names)"
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.black,
+                          height: 1.3, // Improves readability when text wraps
+                        ),
+                        softWrap: true,   // Allows text to wrap to the next line
+                        maxLines: null,   // Allows expansion for many children
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (id) {
+                  if (id != null) {
+                    final selected = calProvider.allCases.firstWhere((c) => c.id == id);
+                    calProvider.setSelectedCase(selected);
+                  }
+                },
+              ),
+            ),
           ),
         ),
       ),

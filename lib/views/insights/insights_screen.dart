@@ -35,7 +35,8 @@ class InsightsScreen extends StatelessWidget {
           automaticallyImplyLeading: false),
       body: RefreshIndicator(
         onRefresh: () async {
-          await context.read<InsightProvider>().refreshAllData();
+          context.read<InsightProvider>().listenToUserCases();
+          await Future.delayed(const Duration(milliseconds: 500));
         },
         child: Consumer<InsightProvider>(
           builder: (context, insightProvider, child) {
@@ -65,9 +66,9 @@ class InsightsScreen extends StatelessWidget {
 
                       ExportButton(
                           onTap: () async {
-                             await insightProvider.fetchAllEventsForReport();
+                            await insightProvider.fetchAllEventsForReport();
 
-                             final childrenList = insightProvider.children;
+                            final childrenList = insightProvider.children;
 
                             if (childrenList.isEmpty) {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -81,7 +82,7 @@ class InsightsScreen extends StatelessWidget {
                               isScrollControlled: true,
                               backgroundColor: Colors.transparent,
                               builder: (context) => ExportFilterSheet(
-                                   children: childrenList,
+                                  children: childrenList,
                                   onApply: (options) {
                                     PDFGenerator.generateReport(
                                       caseName: insightProvider.selectedCase?.caseNumber ?? "Case Report",
@@ -98,54 +99,46 @@ class InsightsScreen extends StatelessWidget {
                   const SizedBox(height: 25),
 
 
-                         _buildCard(
-                          title: "Custody Compliance",
-                          subtitle: "Current Period",
-                          icon: Icons.person,
-                          iconColor: Colors.purple,
-                          onTap: () {
-                            Navigator.pushNamed(
-                            context,
-                            CustodyComplianceScreen.routeName,
-                            arguments: insightProvider.selectedCase,
-                          ); },
-                          child: Column(
-                            children: [
-                              const SizedBox(height: 15),
-                              Row(
-                                children: [
-                                   _buildStatItem("${insightProvider.fulfilledDays}", "Custody Days\n(fulfilled)"),
-                                  _buildStatItem("${insightProvider.justifiedDays}", "With\nJustification"),
-                                  _buildStatItem("${insightProvider.missedDays}", "Missed Days\n(No Just.)", color: Colors.red),
-                                ],
-                              ),
-                              const SizedBox(height: 15),
-                              const Divider(),
-                              const SizedBox(height: 10),
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
-                                  Text("${insightProvider.complianceRate.toStringAsFixed(1)}%",
-                                      style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
-                                ],
-                              )
-                            ],
-                          ),
+                  _buildCard(
+                    title: "Custody Compliance",
+                    subtitle: "Current Period",
+                    icon: Icons.person,
+                    iconColor: Colors.purple,
+                    onTap: () {
+                      Navigator.pushNamed(
+                        context,
+                        CustodyComplianceScreen.routeName,
+                        arguments: insightProvider.selectedCase,
+                      ); },
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 15),
+                        Row(
+                          children: [
+                            _buildStatItem("${insightProvider.fulfilledDays}", "Custody Days\n(fulfilled)"),
+                            _buildStatItem("${insightProvider.justifiedDays}", "With\nJustification"),
+                            _buildStatItem("${insightProvider.missedDays}", "Missed Days\n(No Just.)", color: Colors.red),
+                          ],
                         ),
                         const SizedBox(height: 15),
                         const Divider(),
                         const SizedBox(height: 10),
-                        const Row(
+                        Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
-                            Text("0%", style: TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
+                            const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
+                            Text("${insightProvider.complianceRate.toStringAsFixed(1)}%",
+                                style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
                           ],
-                        ),
-                     PaymentOverview(
+                        )
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 15),
+
+
+                  PaymentOverview(
                     provider: insightProvider,
-                    subtitle: "Case Overview",
                     onTap: () {
                       if (insightProvider.selectedCase != null) {
                         Navigator.pushNamed(
@@ -193,7 +186,7 @@ class InsightsScreen extends StatelessWidget {
                     totalCount: insightProvider.totalFlaggedCount,
                   ),
 
-                 ],
+                ],
               ),
             );
           },
@@ -285,7 +278,10 @@ class InsightsScreen extends StatelessWidget {
         )).toList(),
         onChanged: (value) => provider.setSelectedCase(value),
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
-        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12))),
+        dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),
+        color: Colors.white
+
+        )),
       ),
     );
   }

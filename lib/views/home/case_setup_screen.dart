@@ -285,7 +285,7 @@ class _Step1FormState extends State<_Step1Form> {
         child: ListTile(visualDensity: VisualDensity.compact,contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), leading: CircleAvatar(backgroundColor: Colors.purple.shade50, 
         child: const Icon(Icons.person, color: Colors.purple)), 
         title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)), 
-        subtitle: Text(DateFormat('dd MMM yyyy').format(c.dob)),
+        subtitle: Text(DateFormat('d MMM yyyy').format(c.dob)),
          trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), 
          onPressed: () => widget.provider.removeChild(c.id)),),)),
         const Divider(height: 30),],
@@ -299,7 +299,7 @@ class _Step1FormState extends State<_Step1Form> {
           child: Container(height: 54, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12), 
           decoration: BoxDecoration(color: AppColors.textFieldBackgroundColor), 
           child: Row(children: [
-            Text(_selectedDate == null ? "Select Date of Birth" : DateFormat('dd MMM yyyy').format(_selectedDate!), 
+            Text(_selectedDate == null ? "Select Date of Birth" : DateFormat('d MMM yyyy').format(_selectedDate!),
             style: TextStyle(color: _selectedDate == null ? AppColors.greyColor : Colors.black)), const Spacer(),
              const Icon(Icons.calendar_today, color: AppColors.greyColor)]),),),
         const SizedBox(height: 16),
@@ -506,7 +506,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         // 1. Start Date
         _buildFieldLabel("Rule Start Date"),
         _buildInputContainer(
-          text: startDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(startDate!),
+          text: startDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(startDate!),
           icon: Icons.calendar_today_outlined,
           onTap: () => _pickDate(true)
         ),
@@ -620,7 +620,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
             const SizedBox(height: 15),
             _buildFieldLabel("Rule End Date"),
             _buildInputContainer(
-                text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
+                text: endDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(endDate!),
                 icon: Icons.calendar_today_outlined,
                 onTap: () => _pickDate(false)
             ),
@@ -636,7 +636,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
           // If NOT repeating, End Date and Time are ALWAYS shown and REQUIRED
           _buildFieldLabel("Rule End Date"),
           _buildInputContainer(
-              text: endDate == null ? "--/--/----" : DateFormat('dd/MM/yyyy').format(endDate!),
+              text: endDate == null ? "--/--/----" : DateFormat('d MMM yyyy').format(endDate!),
               icon: Icons.calendar_today_outlined,
               onTap: () => _pickDate(false)
           ),
@@ -736,7 +736,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         ...widget.provider.caseData.children.map((c) => 
           _buildChildItem(
             c.name, 
-            DateFormat('dd MMM yyyy').format(c.dob), 
+            DateFormat('d MMM yyyy').format(c.dob),
             selectedChildIds.contains(c.id),
             () {
               setState(() {

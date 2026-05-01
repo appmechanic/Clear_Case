@@ -307,26 +307,65 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
 
 
   AppBar _buildAppBar(CalendarProvider calProvider) {
+    // Check if we are in Edit Mode
+    bool isEditMode = editRecordId != null;
+
     return AppBar(
-      title: Text(editRecordId == null ? "New Custody" : "Edit Custody",style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+      leading: IconButton(
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.arrow_back, color: Colors.black)
+      ),
+      title: Text(
+        !isEditMode ? "New Custody Record" : "Edit Custody Record",
+        softWrap: true,
+        style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold),
+      ),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      iconTheme: const IconThemeData(color: Colors.black),
       bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(60),
-          child:Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            child:  CustomDropDown<String>( // Note: Change <CaseModel> to <String>
-              hint: "Select a Case",
-              value: calProvider.selectedCase?.id, // Only pass the ID string
-              items: calProvider.allCases.map((c) => DropdownMenuItem(
-                value: c.id, // Value is the ID
-                child: Text(c.caseNumber),
-              )).toList(),
-              onChanged: (String? selectedId) {
-                // Find the full object based on the ID
-                final selectedCase = calProvider.allCases.firstWhere((c) => c.id == selectedId);
-                calProvider.setSelectedCase(selectedCase);
-              },
+        preferredSize: const Size.fromHeight(70), // Increased height slightly to accommodate wrapped text
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          child: IgnorePointer(
+            // Prevents switching the case during editing
+            ignoring: isEditMode,
+            child: Opacity(
+              // Visual indicator that the dropdown is locked during Edit
+              opacity: isEditMode ? 0.6 : 1.0,
+              child: CustomDropDown<String>(
+                hint: "Select a Case",
+                value: calProvider.selectedCase?.id,
+                items: calProvider.allCases.map((c) {
+                  return DropdownMenuItem<String>(
+                    value: c.id,
+                    child: Container(
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Text(
+                        calProvider.getCaseDisplayName(c), // Shows "Case Number (Child Name)"
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: Colors.black,
+                          height: 1.3, // Adds breathing room between wrapped lines
+                        ),
+                        softWrap: true,   // Allows text to wrap to second row
+                        maxLines: null,   // No limit on lines for many children
+                      ),
+                    ),
+                  );
+                }).toList(),
+                onChanged: (String? selectedId) {
+                  if (selectedId != null) {
+                    final selectedCase = calProvider.allCases.firstWhere((c) => c.id == selectedId);
+                    calProvider.setSelectedCase(selectedCase);
+                  }
+                },
+              ),
             ),
-          )
+          ),
+        ),
       ),
     );
   }

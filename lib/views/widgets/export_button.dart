@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 class ExportButton extends StatelessWidget {
-  final VoidCallback onTap; // பயனர் கிளிக் செய்வதைக் கையாள
+  final VoidCallback onTap;
 
   const ExportButton({
     super.key,
@@ -11,7 +11,7 @@ class ExportButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap, // கிளிக் செய்யும் வசதி
+      onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
@@ -19,7 +19,7 @@ class ExportButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
         ),
         child: const Row(
-          mainAxisSize: MainAxisSize.min, // பட்டன் அளவைச் சுருக்க
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               "Export",

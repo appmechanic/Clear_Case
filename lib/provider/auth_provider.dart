@@ -113,7 +113,7 @@ class AuthProvider extends ChangeNotifier {
           }, SetOptions(merge: true));
         }
 
-        // --- மற்ற நேவிகேஷன் லாஜிக் ---
+
         QuerySnapshot caseSnapshot = await _firestore
             .collection('users')
             .doc(user.uid)

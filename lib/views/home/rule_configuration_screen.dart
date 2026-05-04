@@ -169,8 +169,8 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
               );
             }).toList(),
 
-            const SizedBox(height: 15),
-            _buildAddNewChildButton(context, provider),
+            // const SizedBox(height: 15),
+            // _buildAddNewChildButton(context, provider),
             // const SizedBox(height: 20),
             // _buildEnableToggle(provider),
             const SizedBox(height: 30),

@@ -33,6 +33,8 @@ dependencies:
   flutter_timezone: ^5.0.2
   pdf: ^3.12.0
   printing: ^5.14.3
+  url_launcher: ^6.3.2
+  icons_launcher: ^3.1.0
 
 dev_dependencies:
   flutter_test:

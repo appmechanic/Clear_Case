@@ -4,6 +4,7 @@ import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../home/scheduled_dates_screen.dart';
 import '../widgets/custom_dialog.dart';
@@ -76,9 +77,16 @@ class SettingsScreen extends StatelessWidget {
                         const Text("Legal Info", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const SizedBox(height: 15),
 
-                        _buildLegalButton("Terms & Conditions"),
+                        _buildLegalButton(
+                            "Terms & Conditions",
+                            "https://docs.google.com/document/d/19_TmhTBYzsrhPEviQk6IMptCLSPhJfHN4ihuBcdiZJI/edit?usp=sharing"
+                        ),
                         const SizedBox(height: 12),
-                        _buildLegalButton("Privacy Policy"),
+                        // 2. Privacy Policy
+                        _buildLegalButton(
+                            "Privacy Policy",
+                            "https://docs.google.com/document/d/1M0pHs1VBdUwnaNqog1H_HpkRE5mqAfxcn_F3_Sd0laA/edit?usp=sharing"
+                        ),
 
                         const SizedBox(height: 25),
 
@@ -305,7 +313,8 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildLegalButton(String title) {
+
+  Widget _buildLegalButton(String title, String urlString) {
     return SizedBox(
       width: double.infinity,
       height: 50,
@@ -316,15 +325,30 @@ class SettingsScreen extends StatelessWidget {
           elevation: 0,
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(25),
-            side: BorderSide(color: Colors.blue.shade50), 
+            side: BorderSide(color: Colors.blue.shade50),
           ),
         ),
-        onPressed: () {},
+        onPressed: () async {
+          // Use the url exactly as it is provided
+          final Uri url = Uri.parse(urlString);
+
+          try {
+            if (await canLaunchUrl(url)) {
+              await launchUrl(
+                url,
+                mode: LaunchMode.externalApplication,
+              );
+            } else {
+              debugPrint("Could not launch $urlString");
+            }
+          } catch (e) {
+            debugPrint("Error: $e");
+          }
+        },
         child: Text(title, style: const TextStyle(fontWeight: FontWeight.normal, fontSize: 15)),
       ),
     );
   }
-
   void _showDeleteAccountConfirmation(BuildContext context, SettingsProvider provider) {
     TopPopupDialog.show(
       context: context,

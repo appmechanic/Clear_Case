@@ -279,8 +279,8 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
                   borderRadius: 8,
                   backgroundColor: Colors.grey.shade200,
                 ),
-                const SizedBox(height: 15),
-                _buildRepeatToggle(),
+                // const SizedBox(height: 15),
+                // _buildRepeatToggle(),
                 // if (isRepeat) ...[
                 //   const SizedBox(height: 10),
                 //   CustomTextField(

@@ -329,14 +329,19 @@ class SettingsScreen extends StatelessWidget {
           ),
         ),
         onPressed: () async {
-          // Use the url exactly as it is provided
           final Uri url = Uri.parse(urlString);
 
           try {
+            // Check if the URL can be handled
             if (await canLaunchUrl(url)) {
               await launchUrl(
                 url,
-                mode: LaunchMode.externalApplication,
+
+                mode: LaunchMode.inAppWebView,
+                webViewConfiguration: const WebViewConfiguration(
+                  enableJavaScript: true,
+                  enableDomStorage: true,
+                ),
               );
             } else {
               debugPrint("Could not launch $urlString");

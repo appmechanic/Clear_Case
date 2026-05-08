@@ -60,8 +60,9 @@
     <key>NSUserNotificationUsageDescription</key>
     <string>We need to send you custody reminders and schedule updates.</string>
     <key>LSApplicationQueriesSchemes</key>
-    <array>
-      <string>https</string>
-    </array>
+    <intent>
+        <action android:name="android.intent.action.VIEW" />
+        <data android:scheme="https" />
+      </intent>
 </dict>
 </plist>

@@ -1,8 +1,11 @@
 import 'package:clearcase/core/theme/app_colors.dart';
 import 'package:clearcase/core/utils/helping_functions.dart';
+import 'package:clearcase/services/notification_service.dart';
+import 'package:clearcase/views/auth/login_screen.dart';
 import 'package:clearcase/views/widgets/custom_secondary_button.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; 
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/case_setup_provider.dart';
 import '../widgets/custom_text_field.dart';
@@ -38,8 +41,31 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
     });
   }
 
+  Future<void> _handleLogout(BuildContext context) async {
+    try {
+      await PushNotificationService.deleteTokenOnLogout();
+      await FirebaseAuth.instance.signOut();
+    } catch (_) {
+      await FirebaseAuth.instance.signOut();
+    }
+    if (context.mounted) {
+      Navigator.pushNamedAndRemoveUntil(
+          context, LoginScreen.routeName, (route) => false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final bool isNewUser = !Navigator.canPop(context);
+    final List<Widget>? appBarActions = isNewUser
+        ? [
+            IconButton(
+              icon: const Icon(Icons.logout, color: Colors.red),
+              tooltip: "Logout",
+              onPressed: () => _handleLogout(context),
+            ),
+          ]
+        : null;
     return ChangeNotifierProvider(
       create: (_) => CaseSetupProvider(),
       child: Consumer<CaseSetupProvider>(
@@ -51,11 +77,11 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
               provider.previousStep();
             },
             child: Scaffold(
-              backgroundColor: AppColors.surfaceColor, 
+              backgroundColor: AppColors.surfaceColor,
               appBar: provider.currentStep>1 ? AppBar(
                 title: const Text("Case Setup", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 backgroundColor: AppColors.surfaceColor,
-                scrolledUnderElevation: 0, 
+                scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
                 leading: IconButton(
@@ -68,12 +94,14 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
                     }
                   },
                 ),
+                actions: appBarActions,
               ): AppBar(
                 title: const Text("Case Setup", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 backgroundColor: AppColors.surfaceColor,
-                scrolledUnderElevation: 0, 
+                scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
                 elevation: 0,
+                actions: appBarActions,
               ),
               body: Column(
                 children: [

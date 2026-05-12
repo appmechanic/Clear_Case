@@ -7,6 +7,7 @@ import '../../core/utils/helping_functions.dart';
 import '../../provider/auth_provider.dart';
 import '../widgets/custom_primary_button.dart';
 import '../widgets/custom_text_field.dart';
+import '../widgets/social_auth_button.dart';
 import 'auth_controller.dart';
 import 'forget_password_screen.dart';
 
@@ -91,18 +92,31 @@ class _LoginScreenState extends State<LoginScreen> {
                       CustomPrimaryButton(
                         text: 'Login',
                         isLoading: provider.isLoading,
-                        onPressed: () {
-                          if (authController.isLoginValidate(context: context)) {
-                            provider.loginFunction(
-                              context: context,
-                              email: authController.emailController.text.trim(),
-                              password: authController.passwordController.text.trim(),
-                            );
-                          }
-                        },
+                        onPressed: provider.isGoogleLoading
+                            ? null
+                            : () {
+                                if (authController.isLoginValidate(context: context)) {
+                                  provider.loginFunction(
+                                    context: context,
+                                    email: authController.emailController.text.trim(),
+                                    password: authController.passwordController.text.trim(),
+                                  );
+                                }
+                              },
                       ),
 
-                      const SizedBox(height: 40),
+                      const SizedBox(height: 32),
+
+                      const OrContinueWithDivider(),
+                      const SizedBox(height: 20),
+                      SocialAuthButton(
+                        isLoading: provider.isGoogleLoading,
+                        onPressed: provider.isLoading
+                            ? null
+                            : () => provider.googleSignInFunction(context: context),
+                      ),
+
+                      const SizedBox(height: 32),
 
                       RichText(
                         text: TextSpan(

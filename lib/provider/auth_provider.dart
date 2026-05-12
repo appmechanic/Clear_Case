@@ -28,6 +28,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isGoogleLoading = false;
+  bool get isGoogleLoading => _isGoogleLoading;
+
+  void setGoogleLoading(bool value) {
+    _isGoogleLoading = value;
+    notifyListeners();
+  }
+
   Future<void>  signUpFunction({
     required BuildContext context,
     required String email,
@@ -145,6 +153,110 @@ class AuthProvider extends ChangeNotifier {
       }
     }
   }
+  Future<void> googleSignInFunction({required BuildContext context}) async {
+    setGoogleLoading(true);
+    try {
+      final UserCredential? userCredential = await _authService.signInWithGoogle();
+
+      if (userCredential == null) {
+        setGoogleLoading(false);
+        return;
+      }
+
+      final User? user = userCredential.user;
+      if (user == null) {
+        setGoogleLoading(false);
+        return;
+      }
+
+      final String? idToken = await user.getIdToken();
+      if (idToken != null && idToken.isNotEmpty) {
+        await setDataToLocal(key: 'firebase_id_token', value: idToken);
+      }
+      await setDataToLocal(key: 'auth_provider', value: 'google');
+
+      final String? fcmToken = await FirebaseMessaging.instance.getToken();
+
+      final dynamic tz = await FlutterTimezone.getLocalTimezone();
+      final String rawTz = tz.toString();
+      final String currentTimeZone = rawTz.contains('(')
+          ? rawTz.split('(')[1].split(',')[0]
+          : rawTz;
+
+      final offset = DateTime.now().timeZoneOffset;
+      final String offsetString =
+          "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
+
+      final DocumentReference userDocRef = _firestore.collection('users').doc(user.uid);
+      final DocumentSnapshot userDoc = await userDocRef.get();
+
+      final String fullName = user.displayName ?? '';
+      final List<String> parts = fullName.trim().split(' ');
+      final String firstName = parts.isNotEmpty ? parts.first : '';
+      final String lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+
+      if (!userDoc.exists) {
+        await userDocRef.set({
+          'uid': user.uid,
+          'email': user.email,
+          'firstName': firstName,
+          'lastName': lastName,
+          'photoUrl': user.photoURL,
+          'authProvider': 'google',
+          'createdAt': FieldValue.serverTimestamp(),
+          'children': [],
+          'isDailyReminderEnabled': false,
+          'isRemindersEnabled': true,
+          'notificationTime': "09:00",
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
+          if (fcmToken != null) 'fcmToken': fcmToken,
+          if (fcmToken != null) 'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await userDocRef.set({
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
+          if (fcmToken != null) 'fcmToken': fcmToken,
+          if (fcmToken != null) 'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      if (context.mounted) {
+        Provider.of<SettingsProvider>(context, listen: false).init();
+      }
+
+      final QuerySnapshot caseSnapshot = await userDocRef
+          .collection('cases')
+          .limit(1)
+          .get();
+
+      setGoogleLoading(false);
+
+      if (context.mounted) {
+        if (caseSnapshot.docs.isEmpty) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            CaseSetupScreen.routeName,
+            (route) => false,
+          );
+        } else {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            MainScreen.routeName,
+            (route) => false,
+            arguments: 0,
+          );
+        }
+      }
+    } catch (e) {
+      setGoogleLoading(false);
+      if (context.mounted) {
+        showSnackBar(context, e.toString());
+      }
+    }
+  }
+
   Future<void> forgetPasswordFunction({
     required BuildContext context,
     required String email,

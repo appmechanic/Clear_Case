@@ -6,6 +6,7 @@ import '../../core/utils/helping_functions.dart';
 import '../../provider/auth_provider.dart';
 import '../widgets/custom_primary_button.dart';
 import '../widgets/custom_text_field.dart';
+import '../widgets/social_auth_button.dart';
 import 'auth_controller.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -84,19 +85,30 @@ class _SignupScreenState extends State<SignupScreen> {
                         CustomPrimaryButton(
                             text: "Create Account",
                             isLoading: provider.isLoading,
-                            onPressed: () {
-                                if (_formKey.currentState!.validate() && authController.isRegisterValidate(context: context)) {
-                                  provider.signUpFunction(
-                                    context: context,
-                                    email: authController.emailController.text.trim(),
-                                    password: authController.passwordController.text.trim(),
-                                    firstName: authController.firstNameController.text.trim(),
-                                    lastName: authController.lastNameController.text.trim(),
-                                  );
-                                }
-                              }
+                            onPressed: provider.isGoogleLoading
+                                ? null
+                                : () {
+                                    if (_formKey.currentState!.validate() && authController.isRegisterValidate(context: context)) {
+                                      provider.signUpFunction(
+                                        context: context,
+                                        email: authController.emailController.text.trim(),
+                                        password: authController.passwordController.text.trim(),
+                                        firstName: authController.firstNameController.text.trim(),
+                                        lastName: authController.lastNameController.text.trim(),
+                                      );
+                                    }
+                                  }
                         ),
-                        const SizedBox(height: 34),
+                        const SizedBox(height: 28),
+                        const OrContinueWithDivider(),
+                        const SizedBox(height: 20),
+                        SocialAuthButton(
+                          isLoading: provider.isGoogleLoading,
+                          onPressed: provider.isLoading
+                              ? null
+                              : () => provider.googleSignInFunction(context: context),
+                        ),
+                        const SizedBox(height: 28),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [

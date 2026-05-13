@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import '../core/utils/attachments.dart';
 import '../models/case_model.dart';
 import 'dart:async';
 
@@ -13,8 +14,25 @@ class CalendarProvider extends ChangeNotifier {
       app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  bool _isLoading = false;
-  bool get isLoading => _isLoading;
+  // Loader state. The 6 collection-listeners all call fetchEventsForCase in
+  // parallel on every Firestore notification, so a single bool would flap
+  // (true → false → true → false) as each fetch finishes. A counter keeps
+  // the loader on until *every* in-flight fetch is done. The latch covers
+  // the gap between app open and the first fetch firing.
+  bool _initialLoad = true;
+  int _ongoing = 0;
+  bool get isLoading => _initialLoad || _ongoing > 0;
+
+  void _beginBusy() {
+    _ongoing++;
+    notifyListeners();
+  }
+
+  void _endBusy() {
+    if (_ongoing > 0) _ongoing--;
+    if (_initialLoad) _initialLoad = false;
+    notifyListeners();
+  }
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
   List<ChildModel> get children => _selectedCase?.children ?? [];
@@ -29,6 +47,15 @@ class CalendarProvider extends ChangeNotifier {
   StreamSubscription? _casesSubscription;
   final List<StreamSubscription> _eventSubscriptions = [];
 
+  // Debouncer + reentrancy guard for the 6 sub-collection listeners. Any
+  // single record write fires all 6 listeners; the timer coalesces those
+  // into one fetch, and the in-flight flag prevents the next fetch from
+  // racing with an unfinished one (which would clear+repopulate `_events`
+  // concurrently and lose data).
+  Timer? _refetchDebounce;
+  bool _fetchInFlight = false;
+  bool _pendingRefetch = false;
+
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
   DateTime get focusedDay => _focusedDay;
@@ -41,11 +68,39 @@ class CalendarProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _refetchDebounce?.cancel();
     _casesSubscription?.cancel();
     for (var sub in _eventSubscriptions) {
       sub.cancel();
     }
     super.dispose();
+  }
+
+  /// Coalesces bursty Firestore notifications into a single fetch ~200ms
+  /// after the last change. If a fetch is already running, marks a pending
+  /// follow-up so the next refetch picks up anything that arrived mid-flight.
+  void _scheduleRefetch(String caseId) {
+    _refetchDebounce?.cancel();
+    _refetchDebounce = Timer(const Duration(milliseconds: 200), () {
+      _runRefetch(caseId);
+    });
+  }
+
+  Future<void> _runRefetch(String caseId) async {
+    if (_fetchInFlight) {
+      _pendingRefetch = true;
+      return;
+    }
+    _fetchInFlight = true;
+    try {
+      await fetchEventsForCase(caseId);
+    } finally {
+      _fetchInFlight = false;
+      if (_pendingRefetch) {
+        _pendingRefetch = false;
+        _scheduleRefetch(caseId);
+      }
+    }
   }
 
   // --- AUTOMATIC CASE UPDATES ---
@@ -127,8 +182,9 @@ class CalendarProvider extends ChangeNotifier {
 
     for (var coll in collections) {
       final sub = caseDocRef.collection(coll).snapshots().listen((_) {
-        // Trigger re-fetch whenever any sub-collection changes
-        fetchEventsForCase(caseId);
+        // Debounced + serialised so the 6 sub-collection listeners trigger
+        // ONE refetch per burst of changes instead of six concurrent ones.
+        _scheduleRefetch(caseId);
       });
       _eventSubscriptions.add(sub);
     }
@@ -140,7 +196,7 @@ class CalendarProvider extends ChangeNotifier {
     final user = _auth.currentUser;
     if (user == null) return;
 
-    // Note: We don't set _isLoading = true here to allow smooth background updates
+    _beginBusy();
     _events.clear();
 
     try {
@@ -179,7 +235,7 @@ class CalendarProvider extends ChangeNotifier {
             paymentMethod: data['paymentMethod'],
             transactionType: data['transactionType'],
             status: data['transactionType'],
-            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
+            attachmentUrls: readAttachmentUrls(data),
           ));
         }
       }
@@ -199,7 +255,7 @@ class CalendarProvider extends ChangeNotifier {
             description: data['notes'],
             childNames: _resolveChildNames(data['childIds'] ?? []),
             isFlagged: data['flagEntry'] == true,
-            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
+            attachmentUrls: readAttachmentUrls(data),
             isFulfilled: data['isFulfilled'] == true,
             isScheduled: data['isScheduled'] == true,
             location: data['location'],
@@ -221,7 +277,7 @@ class CalendarProvider extends ChangeNotifier {
             category: data['category'],
             party: data['party'],
             isFlagged: data['flagEntry'] == true,
-            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
+            attachmentUrls: readAttachmentUrls(data),
           ));
         }
       }
@@ -241,14 +297,14 @@ class CalendarProvider extends ChangeNotifier {
             party: data['party'],
             severity: data['severity'],
             proof: data['proof'],
-            attachmentUrls: List<String>.from(data['attachmentUrls'] ?? []),
+            attachmentUrls: readAttachmentUrls(data),
           ));
         }
       }
     } catch (e) {
       debugPrint("Error loading events: $e");
     } finally {
-      notifyListeners();
+      _endBusy();
     }
   }
 
@@ -433,8 +489,7 @@ class CalendarProvider extends ChangeNotifier {
     final caseId = _selectedCase?.id;
     if (user == null || caseId == null) return;
 
-    _isLoading = true;
-    notifyListeners();
+    _beginBusy();
 
     try {
       final storage = FirebaseStorage.instance;
@@ -462,6 +517,7 @@ class CalendarProvider extends ChangeNotifier {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Record deleted successfully")));
       }
-    } catch (e) { debugPrint("Delete error: $e"); } finally { _isLoading = false; notifyListeners(); }
+    } catch (e) { debugPrint("Delete error: $e"); } finally { _endBusy(); }
   }
 }
+

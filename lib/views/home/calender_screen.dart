@@ -287,8 +287,42 @@ class _CalenderScreenState extends State<CalenderScreen> {
               fontSize: 18),
         ),
         calendarBuilders: CalendarBuilders(
+          // Paints a soft, full-cell tinted background on days that have
+          // scheduled events (custody/payment/custom rules). This is the
+          // "schedule layer" — structural, subtle, and visually distinct
+          // from the manual entry icons rendered by markerBuilder.
+          // Consecutive days with the same tint join into a single pill so
+          // the schedule reads as a range, not a string of separate cells.
+          defaultBuilder: (context, date, focusedDay) {
+            final tint = _getScheduledTintColor(provider.getEventsForDay(date));
+            if (tint == null) return null;
+
+            // A scheduled "run" only connects within a single calendar row.
+            // The TableCalendar grid starts each row on Sunday (en_US default),
+            // so Sunday can't reach back to Saturday and vice-versa.
+            final prevTint = date.weekday == DateTime.sunday
+                ? null
+                : _getScheduledTintColor(provider
+                    .getEventsForDay(date.subtract(const Duration(days: 1))));
+            final nextTint = date.weekday == DateTime.saturday
+                ? null
+                : _getScheduledTintColor(provider
+                    .getEventsForDay(date.add(const Duration(days: 1))));
+
+            return _buildScheduledCell(
+              date,
+              tint,
+              connectLeft: prevTint == tint,
+              connectRight: nextTint == tint,
+            );
+          },
           markerBuilder: (context, date, events) {
-            if (events.isEmpty) return null;
+            // Only manual entries should appear as icon emblems.
+            // Scheduled-rule occurrences are represented by the cell
+            // background instead.
+            final manualEntries =
+                events.where((e) => !e.id.startsWith("rule_")).toList();
+            if (manualEntries.isEmpty) return null;
 
             double screenWidth = MediaQuery.of(context).size.width;
             // Lower the icons slightly by increasing bottom value
@@ -303,7 +337,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      ...events.take(2).map((e) {
+                      ...manualEntries.take(2).map((e) {
                         return Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 1.0),
                           child: Icon(
@@ -315,10 +349,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
                           ),
                         );
                       }),
-                      if (events.length > 2)
+                      if (manualEntries.length > 2)
                         FittedBox(
                           child: Text(
-                            "+${events.length - 2}",
+                            "+${manualEntries.length - 2}",
                             style: TextStyle(
                               fontSize: iconSize - 2,
                               fontWeight: FontWeight.bold,
@@ -358,8 +392,6 @@ class _CalenderScreenState extends State<CalenderScreen> {
   }
 
   void _showDayDetailsSheet(BuildContext context, CalendarProvider provider, DateTime date) {
-    final events = provider.getEventsForDay(date);
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -389,7 +421,30 @@ class _CalenderScreenState extends State<CalenderScreen> {
               style: const TextStyle(
                   fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: 20),
+
+            // Events list — re-reads from the provider so edits/deletes
+            // stay reactive while the sheet is open.
+            Consumer<CalendarProvider>(
+              builder: (context, p, _) {
+                final events = p.getEventsForDay(date);
+                if (events.isEmpty) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.4,
+                    ),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: events.length,
+                      itemBuilder: (context, index) => _buildEventCard(events[index]),
+                    ),
+                  ),
+                );
+              },
+            ),
 
             // 1. Add Entry (Primary Action)
             _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C),
@@ -409,15 +464,6 @@ class _CalenderScreenState extends State<CalenderScreen> {
                       arguments: date);
                 }),
 
-            const SizedBox(height: 12),
-
-            // 3. View Events (Opens the popup with Edit/Delete functionality)
-            _buildActionButton("View Events", Icons.calendar_today,
-                const Color(0xFF4A148C), const Color(0xFFE1F5FE), false, () {
-                  Navigator.pop(context);
-                  _showEventsPopup(context, date, events);
-                }),
-
             const SizedBox(height: 35), // Bottom padding
           ],
         ),
@@ -425,38 +471,96 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
   void _showLegendsPopup(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
     TopPopupDialog.show(
       context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Calendar Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          _buildLegendItem("Custody", Icons.person, Colors.purple),
-          _buildLegendItem("Payments", Icons.payment, Colors.green),
-          _buildLegendItem("Non-Compliance", Icons.cancel_presentation, Colors.red),
-          _buildLegendItem("Flagged Events", Icons.flag, Colors.orange),
-          _buildLegendItem("Reminders", Icons.notifications, Colors.purpleAccent),
-          _buildLegendItem("Disputes", Icons.error, Colors.redAccent),
-        ],
+      // Cap the popup at ~75% of screen height so the legend list can
+      // scroll inside when the device is too short to fit every row.
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: screenHeight * 0.75),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title row stays sticky at the top.
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Calendar Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Flexible(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        "Scheduled (background)",
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13),
+                      ),
+                    ),
+                    _buildScheduledLegendItem("Scheduled Custody", Colors.purple),
+                    _buildScheduledLegendItem("Scheduled Payments", Colors.green),
+                    _buildScheduledLegendItem("Custom Rules", Colors.purpleAccent),
+                    const SizedBox(height: 10),
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 8),
+                      child: Text(
+                        "Entries (icons)",
+                        style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13),
+                      ),
+                    ),
+                    _buildLegendItem("Custody", Icons.person, Colors.purple),
+                    _buildLegendItem("Payments", Icons.payment, Colors.green),
+                    _buildLegendItem("Non-Compliance", Icons.cancel_presentation, Colors.red),
+                    _buildLegendItem("Flagged Events", Icons.flag, Colors.orange),
+                    _buildLegendItem("Reminders", Icons.notifications, Colors.purpleAccent),
+                    _buildLegendItem("Disputes", Icons.error, Colors.redAccent),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildLegendItem(String title, IconData icon, Color color) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
           Icon(icon, color: color, size: 28),
+        ],
+      ),
+    );
+  }
+
+
+  Widget _buildScheduledLegendItem(String title, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          Container(
+            width: 36,
+            height: 28,
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.13),
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         ],
       ),
     );
@@ -657,47 +761,6 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
 
-  // --- 5. Top Popup Logic ---
-  void _showEventsPopup(BuildContext context, DateTime date, List<CalendarEvent> events) {
-    TopPopupDialog.show(
-      context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min, // Keeps it tight to content
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Events", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
-              IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(DateFormat('EEEE, MMMM d, y').format(date), style: const TextStyle(color: Colors.grey)),
-
-
-          // --- CHANGE HERE: Wrap in Expanded and ListView ---
-          // We use ConstrainedBox to limit the height so it doesn't take up the whole screen
-          if (events.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(20.0),
-              child: Text("No events found."),
-            )
-          else
-            ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.5, // Limit to 50% of screen height
-              ),
-              child: ListView.builder(
-                shrinkWrap: true, // Crucial for using ListView inside Column/Dialog
-                physics: const BouncingScrollPhysics(),
-                itemCount: events.length,
-                itemBuilder: (context, index) => _buildEventCard(events[index]),
-              ),
-            )
-        ],
-      ),
-    );
-  }
   Color _getColorForType(EventType type) {
     switch (type) {
       case EventType.custody: return Colors.purple;
@@ -706,6 +769,55 @@ class _CalenderScreenState extends State<CalenderScreen> {
       case EventType.breach: return Colors.redAccent;
       case EventType.reminder: return Colors.purpleAccent;
     }
+  }
+
+  // Returns the tint color to paint behind a day when it carries scheduled
+  // events (rule-generated custody / payment / reminders). Custody wins over
+  // payment when both apply, so the dominant visual cue stays consistent on
+  // mixed days. Returns null when the day has no scheduled events.
+  Color? _getScheduledTintColor(List<CalendarEvent> events) {
+    final scheduled =
+        events.where((e) => e.id.startsWith("rule_")).toList();
+    if (scheduled.isEmpty) return null;
+
+    final hasCustody = scheduled.any((e) => e.type == EventType.custody);
+    if (hasCustody) return _getColorForType(EventType.custody);
+    final hasPayment = scheduled.any((e) => e.type == EventType.payment);
+    if (hasPayment) return _getColorForType(EventType.payment);
+    return _getColorForType(scheduled.first.type);
+  }
+
+  Widget _buildScheduledCell(
+    DateTime date,
+    Color tint, {
+    bool connectLeft = false,
+    bool connectRight = false,
+  }) {
+    return Container(
+      // Drop the side margin on edges that should merge with a neighbour so
+      // adjacent scheduled cells render as one continuous pill.
+      margin: EdgeInsets.only(
+        left: connectLeft ? 0 : 2,
+        right: connectRight ? 0 : 2,
+        top: 1,
+        bottom: 1,
+      ),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.13),
+        borderRadius: BorderRadius.horizontal(
+          left: connectLeft ? Radius.zero : const Radius.circular(10),
+          right: connectRight ? Radius.zero : const Radius.circular(10),
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '${date.day}',
+        style: const TextStyle(
+          fontWeight: FontWeight.w600,
+          color: Colors.black,
+        ),
+      ),
+    );
   }
 
   IconData _getIconForType(EventType type) {

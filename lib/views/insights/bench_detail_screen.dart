@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../widgets/attachment_preview.dart';
+import '../widgets/file_type_icon.dart';
 
 class BreachDetailsScreen extends StatelessWidget {
   static const routeName = '/breach-details';
@@ -92,10 +94,57 @@ class BreachDetailsScreen extends StatelessWidget {
                     const SizedBox(height: 20),
                     _buildProofSummaryCard(record.proof!),
                   ],
+
+                  if (record.attachments != null && record.attachments!.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: record.attachments!.length,
+                        itemBuilder: (context, index) => _buildAttachmentThumbnail(context, record.attachments![index]),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAttachmentThumbnail(BuildContext context, String url) {
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
+
+    return GestureDetector(
+      onTap: () => AttachmentPreview.openUrl(context, url),
+      child: Container(
+        width: 80,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: isImage
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => FileTypeTile(info: typeInfo),
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  },
+                )
+              : FileTypeTile(info: typeInfo),
         ),
       ),
     );

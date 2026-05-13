@@ -3,6 +3,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../models/case_model.dart';
 import '../../provider/insight_provider.dart';
+import '../widgets/attachment_preview.dart';
+import '../widgets/file_type_icon.dart';
 
 
 class PaymentDetailsScreen extends StatelessWidget {
@@ -100,6 +102,20 @@ class PaymentDetailsScreen extends StatelessWidget {
                     Text(record.notes!, style: const TextStyle(color: Colors.grey, height: 1.4, fontSize: 13)),
                   ],
 
+                  if (record.attachmentUrls != null && record.attachmentUrls!.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 80,
+                      child: ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: record.attachmentUrls!.length,
+                        itemBuilder: (context, index) => _buildAttachmentThumbnail(context, record.attachmentUrls![index]),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 25),
                   const Text("Associated Children", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                   const SizedBox(height: 12),
@@ -183,6 +199,39 @@ class PaymentDetailsScreen extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(20)),
       child: Text(text, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 11)),
+    );
+  }
+
+  Widget _buildAttachmentThumbnail(BuildContext context, String url) {
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
+
+    return GestureDetector(
+      onTap: () => AttachmentPreview.openUrl(context, url),
+      child: Container(
+        width: 80,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: isImage
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => FileTypeTile(info: typeInfo),
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  },
+                )
+              : FileTypeTile(info: typeInfo),
+        ),
+      ),
     );
   }
 }

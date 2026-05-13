@@ -7,6 +7,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../core/utils/storage_cleanup.dart';
+
 
 class NewEntryProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -91,6 +93,13 @@ class NewEntryProvider extends ChangeNotifier {
     _isLoading = true; notifyListeners();
 
     try {
+      final recordRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('custodyRecords').doc(record.id);
+
+      // Capture the pre-edit URL list so we can diff and delete the files
+      // the user removed via the X button on existing attachments.
+      final oldSnap = await recordRef.get();
+      final List<String> previousUrls = List<String>.from((oldSnap.data() ?? const {})['attachmentUrls'] ?? const []);
+
       List<String> updatedUrls = List.from(record.attachmentUrls ?? []);
       for (File file in newImageFiles) {
         String? url = await uploadAttachment(file, 'custody_attachments', caseId);
@@ -100,7 +109,7 @@ class NewEntryProvider extends ChangeNotifier {
       recordData['attachmentUrls'] = updatedUrls;
 
       WriteBatch batch = _firestore.batch();
-      batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('custodyRecords').doc(record.id), recordData);
+      batch.update(recordRef, recordData);
 
       // Updated Path for Query: Searching inside the specific case
       var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
@@ -115,6 +124,15 @@ class NewEntryProvider extends ChangeNotifier {
         for (var doc in flaggedQuery.docs) batch.delete(doc.reference);
       }
       await batch.commit();
+
+      // Storage cleanup happens after the Firestore write so the record is
+      // the source of truth — if a delete fails the file becomes an orphan,
+      // but the user's edit is still saved correctly.
+      await deleteOrphanedStorageUrls(
+        oldUrls: previousUrls,
+        keptUrls: record.attachmentUrls ?? const [],
+      );
+
       _isLoading = false;
       notifyListeners();
 
@@ -207,6 +225,11 @@ class NewEntryProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      final recordRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('paymentRecords').doc(record.id);
+
+      final oldSnap = await recordRef.get();
+      final List<String> previousUrls = List<String>.from((oldSnap.data() ?? const {})['attachmentUrls'] ?? const []);
+
       List<String> updatedUrls = List.from(record.attachmentUrls ?? []);
       for (File file in newFiles) {
         String? url = await uploadAttachment(file, 'payment_attachments', caseId);
@@ -216,7 +239,7 @@ class NewEntryProvider extends ChangeNotifier {
       data['attachmentUrls'] = updatedUrls;
 
       WriteBatch batch = _firestore.batch();
-      batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('paymentRecords').doc(record.id), data);
+      batch.update(recordRef, data);
 
       // Updated Path for Query: Searching inside the specific case
       var flaggedQuery = await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('flaggedEvents').where('originId', isEqualTo: record.id).get();
@@ -237,6 +260,12 @@ class NewEntryProvider extends ChangeNotifier {
       }
 
       await batch.commit();
+
+      await deleteOrphanedStorageUrls(
+        oldUrls: previousUrls,
+        keptUrls: record.attachmentUrls ?? const [],
+      );
+
       _isLoading = false;
       notifyListeners();
 

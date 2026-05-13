@@ -10,6 +10,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/calender_provider.dart';
 import '../widgets/attachment_picker_widget.dart';
+import '../widgets/attachment_preview.dart';
+import '../widgets/file_type_icon.dart';
 import '../widgets/custom_dropdown.dart';
 
 class NewPaymentScreen extends StatefulWidget {
@@ -138,7 +140,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
           selectedPaymentType = record.paymentType ?? "Child Support";
 
           // CORRECTED FALLBACK
-          paymentCategory = record.paymentCategory ?? record.paymentCategory ?? "Additional";
+          paymentCategory = record.paymentCategory ?? "Additional";
           transactionType = record.transactionType ?? (record.isReceived == true ? "PaymentReceived" : "PaymentPaid");
 
           selectedPaymentMethod = record.paymentMethod ?? "Bank Transfer";
@@ -164,6 +166,11 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   void _submitForm(NewEntryProvider entryProvider, String caseId) {
+    if (selectedChildIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Please select at least one child")));
+      return;
+    }
     double? amount = double.tryParse(_amountController.text);
     if (amount == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Invalid amount")));
@@ -261,7 +268,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                   labelText: "Location",
                   hintText: "Tap to auto-fill or type manually",
                   controller: _locationController,
-                  node: FocusNode(),
+                  node: _locationNode,
                   borderRadius: 8,
                   backgroundColor: Colors.grey.shade200,
                   onTap: () {
@@ -355,7 +362,9 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   Widget _buildExistingFilePreview(String url) {
-    bool isPdf = url.toLowerCase().contains('.pdf');
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
 
     // Wrap the stack in a SizedBox or Padding to provide a "safe area" for the button
     return Padding(
@@ -363,18 +372,19 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
       child: Stack(
         clipBehavior: Clip.none, // <--- CRITICAL: Allows the icon to sit outside the box
         children: [
-          Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-              image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+          GestureDetector(
+            onTap: () => AttachmentPreview.openUrl(context, url),
+            child: Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+                image: isImage ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover) : null,
+              ),
+              child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
-            child: isPdf
-                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30)
-                : null,
           ),
           Positioned(
             right: -8, // Adjusted to sit nicely on the corner

@@ -7,7 +7,10 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
+import 'package:clearcase/core/utils/attachments.dart';
 import 'package:clearcase/views/widgets/attachment_picker_widget.dart';
+import 'package:clearcase/views/widgets/attachment_preview.dart';
+import 'package:clearcase/views/widgets/file_type_icon.dart';
 import '../../provider/calender_provider.dart';
 import '../../provider/breach_provider.dart';
 import '../widgets/custom_dropdown.dart';
@@ -76,13 +79,13 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
         setState(() {
           _descController.text = data['description'] ?? '';
           _proofController.text = data['proof'] ?? '';
-          selectedDate = (data['date'] as Timestamp).toDate();
+          selectedDate = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
           selectedType = data['type'] ?? "Late for pickup/handover";
           selectedParty = data['party'] ?? "Mother";
           severity = data['severity'] ?? "Serious";
           _nameController.text = data['name'] ?? '';
           flagEntry = data['flagEntry'] ?? false;
-          _existingAttachmentUrls = List<String>.from(data['attachments'] ?? []);
+          _existingAttachmentUrls = readAttachmentUrls(data);
         });
       }
     } finally {
@@ -273,21 +276,26 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
   }
 
   Widget _buildExistingFilePreview(String url) {
-    bool isPdf = url.toLowerCase().contains('.pdf');
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
     return Padding(
       padding: const EdgeInsets.only(top: 5, right: 5),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Container(
-            width: 70, height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-              image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+          GestureDetector(
+            onTap: () => AttachmentPreview.openUrl(context, url),
+            child: Container(
+              width: 70, height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+                image: isImage ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover) : null,
+              ),
+              child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
-            child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30) : null,
           ),
           Positioned(
             right: -8, top: -8,

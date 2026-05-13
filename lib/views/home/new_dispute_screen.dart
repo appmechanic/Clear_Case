@@ -9,7 +9,10 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
  import '../../provider/calender_provider.dart';
 import '../../provider/dispute_provider.dart';
+import '../../core/utils/attachments.dart';
 import '../widgets/attachment_picker_widget.dart';
+import '../widgets/attachment_preview.dart';
+import '../widgets/file_type_icon.dart';
 import '../widgets/custom_dropdown.dart';
 
 
@@ -54,13 +57,6 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
         if (calProvider.selectedCase != null) {
           _loadExistingData(args, calProvider.selectedCase!.id);
         }
-      } else if (args is Map<String, dynamic> && args.containsKey('id')) {
-        // Edit mode: ID + full data passed
-        _editingDisputeId = args['id'];
-        final data = args['data'];
-        _descController.text = data['description'] ?? '';
-        _existingAttachmentUrls = List<String>.from(data['attachments'] ?? []);
-        // ... fill other fields ...
       } else if (args is DateTime) {
         selectedDate = args;
       }
@@ -88,7 +84,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
           selectedParty = data['party'] ?? "Mother";
           flagEntry = data['flagEntry'] ?? false;
           _nameController.text = data['name'] ?? '';
-          _existingAttachmentUrls = List<String>.from(data['attachments'] ?? []);
+          _existingAttachmentUrls = readAttachmentUrls(data);
         });
       }
     } finally {
@@ -311,21 +307,26 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
 
 // 1. Add this to handle the "Remove" button
   Widget _buildExistingFilePreview(String url) {
-    bool isPdf = url.toLowerCase().contains('.pdf');
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
     return Padding(
       padding: const EdgeInsets.only(top: 5, right: 5),
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Container(
-            width: 70, height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-              image: isPdf ? null : DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+          GestureDetector(
+            onTap: () => AttachmentPreview.openUrl(context, url),
+            child: Container(
+              width: 70, height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+                image: isImage ? DecorationImage(image: NetworkImage(url), fit: BoxFit.cover) : null,
+              ),
+              child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
-            child: isPdf ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30) : null,
           ),
           Positioned(
             right: -8, top: -8,

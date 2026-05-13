@@ -6,6 +6,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../core/utils/attachments.dart';
+import '../core/utils/storage_cleanup.dart';
+
 class BreachProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -35,7 +38,7 @@ class BreachProvider extends ChangeNotifier {
       WriteBatch batch = _firestore.batch();
       DocumentReference ref = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc();
 
-      Map<String, dynamic> finalData = {...data, 'attachments': urls, 'createdAt': FieldValue.serverTimestamp()};
+      Map<String, dynamic> finalData = {...data, 'attachmentUrls': urls, 'createdAt': FieldValue.serverTimestamp()};
       batch.set(ref, finalData);
 
       if (data['flagEntry'] == true) {
@@ -69,6 +72,13 @@ class BreachProvider extends ChangeNotifier {
     _isLoading = true; notifyListeners();
 
     try {
+      final breachRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc(breachId);
+
+      final oldSnap = await breachRef.get();
+      // Read via helper so old records on the `attachments` key still get
+      // diffed correctly during storage cleanup.
+      final List<String> previousUrls = readAttachmentUrls(oldSnap.data() as Map<String, dynamic>?);
+
       List<String> finalUrls = List.from(existingUrls);
       for (var file in newFiles) {
         String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
@@ -77,9 +87,9 @@ class BreachProvider extends ChangeNotifier {
         finalUrls.add(await ref.getDownloadURL());
       }
 
-      Map<String, dynamic> updatedData = {...data, 'attachments': finalUrls, 'updatedAt': FieldValue.serverTimestamp()};
+      Map<String, dynamic> updatedData = {...data, 'attachmentUrls': finalUrls, 'updatedAt': FieldValue.serverTimestamp()};
       WriteBatch batch = _firestore.batch();
-      batch.update(_firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc(breachId), updatedData);
+      batch.update(breachRef, updatedData);
 
       // UPDATED QUERY: Look inside the specific case sub-collection
       var flaggedQuery = await _firestore
@@ -111,6 +121,12 @@ class BreachProvider extends ChangeNotifier {
       }
 
       await batch.commit();
+
+      await deleteOrphanedStorageUrls(
+        oldUrls: previousUrls,
+        keptUrls: existingUrls,
+      );
+
       _isLoading = false; notifyListeners();
       _showSnackBar(context, "Breach updated!");
       Navigator.pop(context);

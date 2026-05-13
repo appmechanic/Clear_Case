@@ -56,7 +56,7 @@ class AuthProvider extends ChangeNotifier {
           ? rawTz.split('(')[1].split(',')[0]
           : rawTz;
 
-      print("Clean Timezone: $currentTimeZone");
+      debugPrint("Clean Timezone: $currentTimeZone");
       final offset = DateTime.now().timeZoneOffset;
       final String offsetString = "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
         await _firestore.collection('users').doc(user?.uid).set({

@@ -6,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:firebase_storage/firebase_storage.dart';
 
+import '../core/utils/attachments.dart';
+import '../core/utils/storage_cleanup.dart';
+
 class DisputeProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -52,7 +55,7 @@ class DisputeProvider extends ChangeNotifier {
         ...data,
         'caseId': caseId,
         'disputeStatus': data['disputeStatus'] ?? 'Open', // Ensure default here
-        'attachments': fileUrls,
+        'attachmentUrls': fileUrls,
         'createdAt': FieldValue.serverTimestamp(),
       };
 
@@ -109,6 +112,16 @@ class DisputeProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
+      DocumentReference disputeRef = _firestore
+          .collection('users').doc(user.uid)
+          .collection('cases').doc(caseId)
+          .collection('disputeRecords').doc(disputeId);
+
+      final oldSnap = await disputeRef.get();
+      // Read via helper so legacy records on the `attachments` key still get
+      // diffed correctly during storage cleanup.
+      final List<String> previousUrls = readAttachmentUrls(oldSnap.data() as Map<String, dynamic>?);
+
       List<String> finalUrls = List.from(existingUrls);
 
       for (var file in newAttachments) {
@@ -126,16 +139,11 @@ class DisputeProvider extends ChangeNotifier {
 
       Map<String, dynamic> updatedData = {
         ...data,
-        'attachments': finalUrls,
+        'attachmentUrls': finalUrls,
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
       WriteBatch batch = _firestore.batch();
-
-      DocumentReference disputeRef = _firestore
-          .collection('users').doc(user.uid)
-          .collection('cases').doc(caseId)
-          .collection('disputeRecords').doc(disputeId);
 
       batch.update(disputeRef, updatedData);
 
@@ -170,6 +178,11 @@ class DisputeProvider extends ChangeNotifier {
       }
 
       await batch.commit();
+
+      await deleteOrphanedStorageUrls(
+        oldUrls: previousUrls,
+        keptUrls: existingUrls,
+      );
 
       _isLoading = false;
       notifyListeners();

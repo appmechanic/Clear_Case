@@ -4,7 +4,13 @@
       "Bash(flutter analyze *)",
       "Bash(flutter pub *)",
       "Bash(findstr /i \"google_sign_in\")",
-      "Bash(flutter --version)"
+      "Bash(flutter --version)",
+      "PowerShell(flutter analyze *)",
+      "PowerShell(Get-Content *)",
+      "Bash(Get-ChildItem -Path \"E:\\\\flutter\\\\Clear_Case\\\\lib\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(grep -v \"//\")"
     ]
   }
 }

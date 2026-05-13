@@ -5,6 +5,8 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/dispute_insight_provider.dart';
 import '../widgets/attachment_picker_widget.dart';
+import '../widgets/attachment_preview.dart';
+import '../widgets/file_type_icon.dart';
 import '../widgets/custom_text_field.dart';
 
 class DisputeDetailsScreen extends StatefulWidget {
@@ -158,6 +160,7 @@ class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
   }
 
   Widget _buildDetailView(Map<String, dynamic> log, bool isClosed) {
+    final List<String> attachments = (log['attachments'] as List?)?.map((e) => e.toString()).toList() ?? [];
     return Container(
       width: double.infinity, padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
@@ -173,7 +176,53 @@ class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
         const SizedBox(height: 20),
         Text(log['description'] ?? "", style: const TextStyle(fontSize: 16)),
 
+        if (attachments.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          const SizedBox(height: 12),
+          SizedBox(
+            height: 80,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: attachments.length,
+              itemBuilder: (context, index) => _buildAttachmentThumbnail(context, attachments[index]),
+            ),
+          ),
+        ],
       ]),
+    );
+  }
+
+  Widget _buildAttachmentThumbnail(BuildContext context, String url) {
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
+
+    return GestureDetector(
+      onTap: () => AttachmentPreview.openUrl(context, url),
+      child: Container(
+        width: 80,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: Colors.grey[100],
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: isImage
+              ? Image.network(
+                  url,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => FileTypeTile(info: typeInfo),
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  },
+                )
+              : FileTypeTile(info: typeInfo),
+        ),
+      ),
     );
   }
 
@@ -392,7 +441,9 @@ class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
   }
 
   Widget _buildExistingFilePreview(String url, VoidCallback onDelete) {
-    final bool isPdf = url.toLowerCase().contains('.pdf');
+    final ext = extensionFromUrl(url);
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
 
     return Stack(
       alignment: Alignment.topRight, // This replaces Positioned
@@ -400,24 +451,27 @@ class _DisputeDetailsScreenState extends State<DisputeDetailsScreen> {
         // 1. The Thumbnail with padding to make room for the floating icon
         Padding(
           padding: const EdgeInsets.only(top: 8, right: 8),
-          child: Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: isPdf
-                ? const Icon(Icons.picture_as_pdf, color: Colors.red, size: 30)
-                : ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                url,
-                fit: BoxFit.cover,
-                errorBuilder: (ctx, err, stack) =>
-                const Icon(Icons.picture_as_pdf, color: Colors.red),
+          child: GestureDetector(
+            onTap: () => AttachmentPreview.openUrl(context, url),
+            child: Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
               ),
+              child: isImage
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.network(
+                        url,
+                        fit: BoxFit.cover,
+                        errorBuilder: (ctx, err, stack) =>
+                            FileTypeTile(info: typeInfo),
+                      ),
+                    )
+                  : FileTypeTile(info: typeInfo),
             ),
           ),
         ),

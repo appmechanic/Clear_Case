@@ -6,6 +6,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../core/utils/storage_cleanup.dart';
 import '../models/filter_model.dart';
 
 // class DisputeInsightsProvider with ChangeNotifier {
@@ -399,7 +400,18 @@ class DisputeInsightsProvider with ChangeNotifier {
     required String title, required String desc, List<File>? files, List<String>? remainingUrls,
   }) async {
     final userId = _auth.currentUser?.uid;
-    List<String> finalUrls = remainingUrls ?? [];
+    final kept = remainingUrls ?? <String>[];
+    List<String> finalUrls = List.from(kept);
+
+    // For edits, capture the pre-save attachment list so removed files can
+    // be cleaned out of Storage after the update commits.
+    List<String> previousUrls = const [];
+    if (logId != null) {
+      final logSnap = await _db.collection('users').doc(userId).collection('cases').doc(caseId)
+          .collection('disputeRecords').doc(disputeId).collection('logs').doc(logId).get();
+      previousUrls = List<String>.from((logSnap.data() ?? const {})['attachments'] ?? const []);
+    }
+
     if (files != null && files.isNotEmpty) {
       for (var file in files) {
         String fileName = "${DateTime.now().millisecondsSinceEpoch}_${files.indexOf(file)}";
@@ -414,6 +426,7 @@ class DisputeInsightsProvider with ChangeNotifier {
       await docRef.add({'title': title, 'description': desc, 'attachments': finalUrls, 'createdAt': FieldValue.serverTimestamp()});
     } else {
       await docRef.doc(logId).update({'title': title, 'description': desc, 'attachments': finalUrls, 'updatedAt': FieldValue.serverTimestamp()});
+      await deleteOrphanedStorageUrls(oldUrls: previousUrls, keptUrls: kept);
     }
   }
 

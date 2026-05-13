@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/utils/attachments.dart';
+
 enum EventType { custody, payment, dispute, breach, reminder }
 
 class CalendarEvent {
@@ -76,7 +78,7 @@ class CalendarEvent {
       amount: (map['amount'] as num?)?.toDouble(),
       childNames: List<String>.from(map['childNames'] ?? []),
       isFlagged: map['flagEntry'] == true,
-      attachmentUrls: List<String>.from(map['attachmentUrls'] ?? []),
+      attachmentUrls: readAttachmentUrls(map),
       location: map['location'],
       party: map['party'],
       paymentCategory: map['paymentCategory'],

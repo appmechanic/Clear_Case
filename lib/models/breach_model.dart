@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../core/utils/attachments.dart';
+
 class BreachRecordModel {
   String id;
   String name;
@@ -35,7 +37,7 @@ class BreachRecordModel {
       description: map['description'] ?? '',
       proof: map['proof'] ?? '',
       flagEntry: map['flagEntry'] ?? false,
-      attachments: map['attachments'] != null ? List<String>.from(map['attachments']) : [],
+      attachments: readAttachmentUrls(map),
       date: (map['date'] as Timestamp?)?.toDate(),
     );
   }

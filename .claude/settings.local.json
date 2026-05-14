@@ -10,7 +10,12 @@
       "Bash(Get-ChildItem -Path \"E:\\\\flutter\\\\Clear_Case\\\\lib\" -Recurse -Directory)",
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Sort-Object)",
-      "Bash(grep -v \"//\")"
+      "Bash(grep -v \"//\")",
+      "Bash(npm --version)",
+      "Bash(firebase --version)",
+      "Bash(firebase deploy *)",
+      "Bash(firebase functions:delete *)",
+      "Bash(firebase functions:list *)"
     ]
   }
 }

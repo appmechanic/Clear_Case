@@ -64,25 +64,67 @@ class SettingsProvider extends ChangeNotifier {
     if (user != null) {
       try {
         DocumentSnapshot doc = await _firestore.collection('users').doc(user.uid).get();
-        if (doc.exists) {
-          final data = doc.data() as Map<String, dynamic>;
-          
-          // Parse Profile
-          _userProfile = UserModel.fromMap(data);
+        final Map<String, dynamic> data = doc.exists
+            ? (doc.data() as Map<String, dynamic>)
+            : <String, dynamic>{};
 
-          // Parse the 3 new toggles
-          _isScheduledDatesEnabled = data['isScheduledDatesEnabled'] ?? true;
-          _isRemindersEnabled = data['isRemindersEnabled'] ?? true;
-          _isDailyReminderEnabled = data['isDailyReminderEnabled'] ?? false;
+        // Heal docs that were created without name/email/uid by falling back
+        // to FirebaseAuth's currentUser, then write the missing fields back.
+        final Map<String, dynamic> backfill = {};
 
-          if (data.containsKey('notificationTime')) {
-            // Stored as "HH:mm" string
-            final timeParts = (data['notificationTime'] as String).split(':');
-            _notificationTime = TimeOfDay(
-              hour: int.parse(timeParts[0]), 
-              minute: int.parse(timeParts[1])
-            );
+        final bool firstNameMissing = (data['firstName'] ?? '').toString().isEmpty;
+        final bool lastNameMissing = (data['lastName'] ?? '').toString().isEmpty;
+        if (firstNameMissing || lastNameMissing) {
+          final String fullName = (user.displayName ?? '').trim();
+          if (fullName.isNotEmpty) {
+            final parts = fullName.split(' ');
+            final String firstName = parts.first;
+            final String lastName =
+                parts.length > 1 ? parts.sublist(1).join(' ') : '';
+            if (firstNameMissing) {
+              data['firstName'] = firstName;
+              backfill['firstName'] = firstName;
+            }
+            if (lastNameMissing && lastName.isNotEmpty) {
+              data['lastName'] = lastName;
+              backfill['lastName'] = lastName;
+            }
           }
+        }
+
+        if ((data['email'] ?? '').toString().isEmpty &&
+            (user.email ?? '').isNotEmpty) {
+          data['email'] = user.email;
+          backfill['email'] = user.email;
+        }
+
+        if ((data['uid'] ?? '').toString().isEmpty) {
+          data['uid'] = user.uid;
+          backfill['uid'] = user.uid;
+        }
+
+        if (backfill.isNotEmpty) {
+          await _firestore
+              .collection('users')
+              .doc(user.uid)
+              .set(backfill, SetOptions(merge: true));
+        }
+
+        // Parse Profile
+        _userProfile = UserModel.fromMap(data);
+
+        // Parse the 3 new toggles
+        _isScheduledDatesEnabled = data['isScheduledDatesEnabled'] ?? true;
+        _isRemindersEnabled = data['isRemindersEnabled'] ?? true;
+        _isDailyReminderEnabled = data['isDailyReminderEnabled'] ?? false;
+
+        if (data.containsKey('notificationTime')) {
+          // Stored as "HH:mm" string
+          final timeParts = (data['notificationTime'] as String).split(':');
+          _notificationTime = TimeOfDay(
+            hour: int.parse(timeParts[0]),
+            minute: int.parse(timeParts[1]),
+          );
         }
       } catch (e) {
         debugPrint("Error fetching profile: $e");

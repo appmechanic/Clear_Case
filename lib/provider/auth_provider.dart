@@ -36,6 +36,29 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Backfills default notification settings on login for any user
+  // whose doc is missing them (older accounts, edge cases).
+  // Idempotent: never overwrites fields the user has already customized.
+  Future<void> _ensureUserDefaults(String uid) async {
+    try {
+      final docRef = _firestore.collection('users').doc(uid);
+      final snap = await docRef.get();
+      final data = (snap.data() as Map<String, dynamic>?) ?? {};
+
+      final Map<String, dynamic> updates = {};
+      if (!data.containsKey('isRemindersEnabled')) updates['isRemindersEnabled'] = true;
+      if (!data.containsKey('isScheduledDatesEnabled')) updates['isScheduledDatesEnabled'] = true;
+      if (!data.containsKey('isDailyReminderEnabled')) updates['isDailyReminderEnabled'] = false;
+      if (!data.containsKey('notificationTime')) updates['notificationTime'] = '09:00';
+
+      if (updates.isNotEmpty) {
+        await docRef.set(updates, SetOptions(merge: true));
+      }
+    } catch (e) {
+      debugPrint('ensureUserDefaults failed: $e');
+    }
+  }
+
   Future<void>  signUpFunction({
     required BuildContext context,
     required String email,
@@ -68,6 +91,7 @@ class AuthProvider extends ChangeNotifier {
           'children': [],
           'isDailyReminderEnabled': false,
           'isRemindersEnabled': true,
+          'isScheduledDatesEnabled': true,
           'notificationTime': "09:00",
           'timezone': currentTimeZone,
           'utcOffset': offsetString,
@@ -121,6 +145,7 @@ class AuthProvider extends ChangeNotifier {
           }, SetOptions(merge: true));
         }
 
+        await _ensureUserDefaults(user.uid);
 
         QuerySnapshot caseSnapshot = await _firestore
             .collection('users')
@@ -207,6 +232,7 @@ class AuthProvider extends ChangeNotifier {
           'children': [],
           'isDailyReminderEnabled': false,
           'isRemindersEnabled': true,
+          'isScheduledDatesEnabled': true,
           'notificationTime': "09:00",
           'timezone': currentTimeZone,
           'utcOffset': offsetString,
@@ -221,6 +247,8 @@ class AuthProvider extends ChangeNotifier {
           if (fcmToken != null) 'tokenUpdatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
       }
+
+      await _ensureUserDefaults(user.uid);
 
       if (context.mounted) {
         Provider.of<SettingsProvider>(context, listen: false).init();

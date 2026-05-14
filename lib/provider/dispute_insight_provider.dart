@@ -433,6 +433,23 @@ class DisputeInsightsProvider with ChangeNotifier {
   Future<void> updateDisputeStatus(String caseId, String disputeId, String newStatus) async {
     await _db.collection('users').doc(_auth.currentUser?.uid).collection('cases').doc(caseId)
         .collection('disputeRecords').doc(disputeId).update({'disputeStatus': newStatus, 'updatedAt': FieldValue.serverTimestamp()});
+
+    // Keep the in-memory cache in sync so the previous (list) screen reflects
+    // the change without needing a manual refresh.
+    for (final dispute in _allDisputes) {
+      if (dispute['id'] == disputeId) {
+        final String oldStatus = (dispute['disputeStatus'] ?? "Open").toString();
+        if (oldStatus != newStatus) {
+          if (oldStatus == "Open" && openCount > 0) openCount--;
+          if (oldStatus == "Resolved" && resolvedCount > 0) resolvedCount--;
+          if (newStatus == "Open") openCount++;
+          if (newStatus == "Resolved") resolvedCount++;
+        }
+        dispute['disputeStatus'] = newStatus;
+        break;
+      }
+    }
+    _runCombinedFilters();
   }
 
   Future<void> deleteLogWithStorage(String caseId, String disputeId, Map<String, dynamic> log) async {

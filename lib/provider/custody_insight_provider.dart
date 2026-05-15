@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -27,6 +29,40 @@ class CustodyInsightProvider with ChangeNotifier {
   int unfulfilledCount = 0;
   int justifiedCount = 0; // If you have a 'justified' field in DB later
   double complianceRate = 0.0;
+
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
+
+  CustodyInsightProvider() {
+    _currentUid = _auth.currentUser?.uid;
+    // Clear cached custody records when the signed-in user changes, so a
+    // fresh login never sees the previous account's data.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _allRecords = [];
+    _filteredRecords = [];
+    _currentSearchQuery = "";
+    _currentFilters = FilterOptions(
+      selectedTimePeriod: "All Time",
+      selectedCategory: "All Records",
+    );
+    fulfilledCount = 0;
+    unfulfilledCount = 0;
+    justifiedCount = 0;
+    complianceRate = 0.0;
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   List<Map<String, dynamic>> get records => _filteredRecords;
   bool get isLoading => _isLoading;

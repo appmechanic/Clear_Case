@@ -46,6 +46,8 @@ class CalendarProvider extends ChangeNotifier {
   // Stream Subscriptions for automatic updates
   StreamSubscription? _casesSubscription;
   final List<StreamSubscription> _eventSubscriptions = [];
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
 
   // Debouncer + reentrancy guard for the 6 sub-collection listeners. Any
   // single record write fires all 6 listeners; the timer coalesces those
@@ -63,11 +65,45 @@ class CalendarProvider extends ChangeNotifier {
 
   CalendarProvider() {
     _selectedDay = _focusedDay;
-    listenToUserCases();
+    // Drive all listeners off auth state so logging out / switching accounts
+    // tears down the previous user's data and rebinds to the new uid.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _resetForUserChange();
+    if (user != null) {
+      listenToUserCases();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void _resetForUserChange() {
+    _refetchDebounce?.cancel();
+    _refetchDebounce = null;
+    _casesSubscription?.cancel();
+    _casesSubscription = null;
+    for (var sub in _eventSubscriptions) {
+      sub.cancel();
+    }
+    _eventSubscriptions.clear();
+    _fetchInFlight = false;
+    _pendingRefetch = false;
+    _events.clear();
+    _allCases = [];
+    _selectedCase = null;
+    _focusedDay = DateTime.now();
+    _selectedDay = _focusedDay;
+    _initialLoad = true;
+    _ongoing = 0;
   }
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _refetchDebounce?.cancel();
     _casesSubscription?.cancel();
     for (var sub in _eventSubscriptions) {
@@ -175,7 +211,7 @@ class CalendarProvider extends ChangeNotifier {
       'paymentRecords',
       'custodyRecords',
       'disputeRecords',
-      'breachRecords',
+      'nonComplianceRecords',
       'reminders',
       'scheduledRules'
     ];
@@ -206,7 +242,7 @@ class CalendarProvider extends ChangeNotifier {
         caseDocRef.collection('paymentRecords').get(),
         caseDocRef.collection('custodyRecords').get(),
         caseDocRef.collection('disputeRecords').get(),
-        caseDocRef.collection('breachRecords').get(),
+        caseDocRef.collection('nonComplianceRecords').get(),
       ]);
 
       await fetchRemindersForCase(caseId);
@@ -282,16 +318,16 @@ class CalendarProvider extends ChangeNotifier {
         }
       }
 
-      // 4. Process Breaches
+      // 4. Process Non-compliances
       for (var doc in snapshots[3].docs) {
         final data = doc.data();
         final DateTime? date = (data['date'] as Timestamp?)?.toDate();
         if (date != null) {
           _addEventToMap(CalendarEvent(
             id: doc.id,
-            title: data['type'] ?? 'Breach',
+            title: data['type'] ?? 'Non-compliance',
             date: date,
-            type: EventType.breach,
+            type: EventType.nonCompliance,
             description: data['description'],
             isFlagged: data['flagEntry'] == true,
             party: data['party'],
@@ -502,7 +538,7 @@ class CalendarProvider extends ChangeNotifier {
         case EventType.custody: coll = 'custodyRecords'; break;
         case EventType.payment: coll = 'paymentRecords'; break;
         case EventType.dispute: coll = 'disputeRecords'; break;
-        case EventType.breach: coll = 'breachRecords'; break;
+        case EventType.nonCompliance: coll = 'nonComplianceRecords'; break;
         case EventType.reminder: coll = 'reminders'; break;
       }
 

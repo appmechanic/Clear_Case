@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/models/user_model.dart';
 import 'package:clearcase/views/auth/login_screen.dart';
@@ -42,6 +44,42 @@ class SettingsProvider extends ChangeNotifier {
 
   TimeOfDay _notificationTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay get notificationTime => _notificationTime;
+
+  StreamSubscription<User?>? _authSubscription;
+  StreamSubscription<QuerySnapshot>? _casesSubscription;
+  String? _currentUid;
+
+  SettingsProvider() {
+    _currentUid = _auth.currentUser?.uid;
+    // Clear cached profile, cases, and notification prefs when the signed-in
+    // user changes, so a fresh login never sees the previous account's data.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _casesSubscription?.cancel();
+    _casesSubscription = null;
+    _userProfile = null;
+    _cases = [];
+    _isScheduledDatesEnabled = true;
+    _isRemindersEnabled = true;
+    _isDailyReminderEnabled = false;
+    _notificationTime = const TimeOfDay(hour: 9, minute: 0);
+    _isLoading = true;
+    notifyListeners();
+    if (user != null) {
+      init();
+    }
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    _casesSubscription?.cancel();
+    super.dispose();
+  }
 
   // --- INIT ---
   void init() {
@@ -152,29 +190,29 @@ class SettingsProvider extends ChangeNotifier {
     _saveSettingsToFirebase();
   }
 
-  // 2. Fetch Cases List
+  // 2. Subscribe to Cases List
+  // Uses a snapshot listener (not a one-shot get) so the Settings screen
+  // reflects newly-created cases live, without a manual refresh.
   Future<void> _fetchUserCases() async {
     final user = _auth.currentUser;
+    _casesSubscription?.cancel();
     if (user != null) {
-      try {
-        QuerySnapshot snapshot = await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('cases')
-            .orderBy('createdAt', descending: true)
-            .get();
-
+      _casesSubscription = _firestore
+          .collection('users')
+          .doc(user.uid)
+          .collection('cases')
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen((snapshot) {
         _cases = snapshot.docs.map((doc) {
-          final data = doc.data() as Map<String, dynamic>;
-          // Assign doc ID strictly
-          CaseModel c = CaseModel.fromMap(data); 
-          c.id = doc.id; 
+          final data = doc.data();
+          CaseModel c = CaseModel.fromMap(data);
+          c.id = doc.id;
           return c;
         }).toList();
-
-      } catch (e) {
-        debugPrint("Error fetching cases: $e");
-      }
+        _isLoading = false;
+        notifyListeners();
+      }, onError: (e) => debugPrint("Error subscribing to cases: $e"));
     }
     _isLoading = false;
     notifyListeners();
@@ -268,7 +306,7 @@ class SettingsProvider extends ChangeNotifier {
           .doc(caseId);
 
       List<String> subCollections = [
-        'custodyRecords', 'paymentRecords', 'breachRecords',
+        'custodyRecords', 'paymentRecords', 'nonComplianceRecords',
         'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
       ];
 
@@ -389,7 +427,7 @@ class SettingsProvider extends ChangeNotifier {
       for (var caseDoc in casesSnapshot.docs) {
         final caseRef = caseDoc.reference;
         List<String> subCollections = [
-          'custodyRecords', 'paymentRecords', 'breachRecords',
+          'custodyRecords', 'paymentRecords', 'nonComplianceRecords',
           'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
         ];
 

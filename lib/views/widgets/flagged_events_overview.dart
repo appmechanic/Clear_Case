@@ -4,7 +4,7 @@ class FlaggedEventsOverview extends StatelessWidget {
   final int custodyCount;
   final int paymentsCount;
   final int disputesCount;
-  final int breachCount;
+  final int nonComplianceCount;
   final int totalCount;
 
   const FlaggedEventsOverview({
@@ -12,7 +12,7 @@ class FlaggedEventsOverview extends StatelessWidget {
     required this.custodyCount,
     required this.paymentsCount,
     required this.disputesCount,
-    required this.breachCount,
+    required this.nonComplianceCount,
     required this.totalCount,
   });
 
@@ -62,7 +62,7 @@ class FlaggedEventsOverview extends StatelessWidget {
           Row(
             children: [
               Expanded(child: _buildStatItem("$disputesCount", "Disputes", Colors.black87)),
-              Expanded(child: _buildStatItem("$breachCount", "Non Compliance", Colors.black87)),
+              Expanded(child: _buildStatItem("$nonComplianceCount", "Non Compliance", Colors.black87)),
             ],
           ),
 

@@ -47,7 +47,7 @@ import 'package:flutter/material.dart';
 
        _isLoading = false;
        notifyListeners();
-       showSnackBar(context, "All reminders added successfully!");
+       showSnackBar(context, "Reminders added successfully!");
        if (context.mounted) Navigator.pop(context);
      } catch (e) {
        _isLoading = false;

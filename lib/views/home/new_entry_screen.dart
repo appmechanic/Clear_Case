@@ -1,4 +1,4 @@
-import 'package:clearcase/views/home/new_breach_screen.dart';
+import 'package:clearcase/views/home/new_non_compliance_screen.dart';
 import 'package:clearcase/views/home/new_custody_screen.dart';
 import 'package:clearcase/views/home/new_dispute_screen.dart';
 import 'package:clearcase/views/home/new_payment_screen.dart';
@@ -83,7 +83,7 @@ class NewEntryScreen extends StatelessWidget {
                   final DateTime? date = ModalRoute.of(context)?.settings.arguments as DateTime?;
                   Navigator.pushNamed(
                     context,
-                    NewBreachScreen.routeName,
+                    NewNonComplianceScreen.routeName,
                     arguments: date, //
                   );
                 }

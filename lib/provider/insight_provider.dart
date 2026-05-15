@@ -27,6 +27,8 @@ class InsightProvider with ChangeNotifier {
   // Real-time Listeners
   StreamSubscription? _casesSubscription;
   final List<StreamSubscription> _caseDetailSubscriptions = [];
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
 
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
@@ -44,8 +46,8 @@ class InsightProvider with ChangeNotifier {
   double totalCompulsory = 0.0;
   double totalAdditional = 0.0;
 
-  // Breach & Dispute Variables
-  int totalBreachCount = 0;
+  // Non-compliance & Dispute Variables
+  int totalNonComplianceCount = 0;
   int totalDisputes = 0;
   int communicationCount = 0;
   int transferIssuesCount = 0;
@@ -55,7 +57,7 @@ class InsightProvider with ChangeNotifier {
   int flaggedCustodyCount = 0;
   int flaggedPaymentsCount = 0;
   int flaggedDisputesCount = 0;
-  int flaggedBreachCount = 0;
+  int flaggedNonComplianceCount = 0;
 
   // Report Variables
   List<CalendarEvent> _allEvents = [];
@@ -64,14 +66,41 @@ class InsightProvider with ChangeNotifier {
   bool get isLoading => _isLoading;
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
-  int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedBreachCount;
+  int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedNonComplianceCount;
   List<ChildModel> get children => _selectedCase?.children ?? [];
 
   // FIX: Only sum Paid and Received to prevent double-counting sub-categories
   double get totalPayments => totalPaid + totalReceived;
 
   InsightProvider() {
-    listenToUserCases();
+    // Drive all listeners off auth state so logging out / switching accounts
+    // tears down the previous user's data and rebinds to the new uid.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _resetForUserChange();
+    if (user != null) {
+      listenToUserCases();
+    } else {
+      notifyListeners();
+    }
+  }
+
+  void _resetForUserChange() {
+    _casesSubscription?.cancel();
+    _casesSubscription = null;
+    for (var sub in _caseDetailSubscriptions) {
+      sub.cancel();
+    }
+    _caseDetailSubscriptions.clear();
+    _allCases = [];
+    _selectedCase = null;
+    _allEvents = [];
+    _isLoading = false;
+    _resetStats();
   }
 
   /// 1. REAL-TIME: Listen to the list of cases
@@ -147,10 +176,10 @@ class InsightProvider with ChangeNotifier {
         caseDoc.collection('custodyRecords').snapshots().listen((_) => calculateCustodyCompliance())
     );
 
-    // Breaches Listener
+    // Non-compliances Listener
     _caseDetailSubscriptions.add(
-        caseDoc.collection('breachRecords').snapshots().listen((snap) {
-          totalBreachCount = snap.docs.length;
+        caseDoc.collection('nonComplianceRecords').snapshots().listen((snap) {
+          totalNonComplianceCount = snap.docs.length;
           notifyListeners();
         })
     );
@@ -212,11 +241,11 @@ class InsightProvider with ChangeNotifier {
       final String origin = doc.data()['originCollection'] ?? "";
       if (origin == "paymentRecords") tempP++;
       else if (origin == "disputeRecords") tempD++;
-      else if (origin == "breachRecords") tempB++;
+      else if (origin == "nonComplianceRecords") tempB++;
       else tempC++;
     }
     flaggedCustodyCount = tempC; flaggedPaymentsCount = tempP;
-    flaggedDisputesCount = tempD; flaggedBreachCount = tempB;
+    flaggedDisputesCount = tempD; flaggedNonComplianceCount = tempB;
     notifyListeners();
   }
 
@@ -266,9 +295,9 @@ class InsightProvider with ChangeNotifier {
 
   void _resetStats() {
     totalPaid = 0.0; totalReceived = 0.0; totalCompulsory = 0.0; totalAdditional = 0.0;
-    totalBreachCount = 0; totalDisputes = 0; communicationCount = 0;
+    totalNonComplianceCount = 0; totalDisputes = 0; communicationCount = 0;
     transferIssuesCount = 0; paymentDisputesCount = 0;
-    flaggedCustodyCount = 0; flaggedPaymentsCount = 0; flaggedDisputesCount = 0; flaggedBreachCount = 0;
+    flaggedCustodyCount = 0; flaggedPaymentsCount = 0; flaggedDisputesCount = 0; flaggedNonComplianceCount = 0;
     fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
   }
 
@@ -295,7 +324,7 @@ class InsightProvider with ChangeNotifier {
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('paymentRecords').get(),
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get(),
         _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('disputeRecords').get(),
-        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('breachRecords').get(),
+        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('nonComplianceRecords').get(),
       ]);
       _allEvents = snaps.expand((s) => s.docs.map((d) => CalendarEvent.fromMap(d.data(), docId: d.id))).toList();
       _allEvents.sort((a, b) => b.date.compareTo(a.date));
@@ -304,6 +333,7 @@ class InsightProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    _authSubscription?.cancel();
     _casesSubscription?.cancel();
     for (var sub in _caseDetailSubscriptions) { sub.cancel(); }
     super.dispose();

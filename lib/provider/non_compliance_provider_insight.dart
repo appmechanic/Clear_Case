@@ -1,19 +1,21 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import '../models/breach_model.dart';
+import '../models/non_compliance_model.dart';
 import '../models/filter_model.dart'; // Ensure this path is correct
 
-// class BreachProviderInsight with ChangeNotifier {
+// class NonComplianceProviderInsight with ChangeNotifier {
 //   final FirebaseFirestore _db = FirebaseFirestore.instanceFor(
 //     app: Firebase.app(),
 //     databaseId: 'clearcase',
 //   );
 //   final FirebaseAuth _auth = FirebaseAuth.instance;
 //
-//   List<BreachRecordModel> _allBreaches = [];
-//   List<BreachRecordModel> _filteredBreaches = [];
+//   List<NonComplianceRecordModel> _allNonCompliances = [];
+//   List<NonComplianceRecordModel> _filteredNonCompliances = [];
 //   bool _isLoading = false;
 //
 //   // Severity Stats for the Header Card
@@ -22,21 +24,21 @@ import '../models/filter_model.dart'; // Ensure this path is correct
 //   int totalMinor = 0;
 //
 //   // Getters
-//   List<BreachRecordModel> get breaches => _filteredBreaches;
+//   List<NonComplianceRecordModel> get nonCompliances => _filteredNonCompliances;
 //   bool get isLoading => _isLoading;
 //
-//   /// Fetch all breach records for a specific case
-//   Future<void> fetchBreaches(String caseId) async {
+//   /// Fetch all non-compliance records for a specific case
+//   Future<void> fetchNonCompliances(String caseId) async {
 //     final String? userId = _auth.currentUser?.uid;
 //
 //     if (userId == null) {
-//       debugPrint("BreachProvider Error: No authenticated user found.");
+//       debugPrint("NonComplianceProvider Error: No authenticated user found.");
 //       return;
 //     }
 //
 //     _isLoading = true;
-//     _allBreaches = [];
-//     _filteredBreaches = [];
+//     _allNonCompliances = [];
+//     _filteredNonCompliances = [];
 //     _resetTotals();
 //     notifyListeners();
 //
@@ -46,21 +48,21 @@ import '../models/filter_model.dart'; // Ensure this path is correct
 //           .doc(userId)
 //           .collection('cases')
 //           .doc(caseId)
-//           .collection('breachRecords')
+//           .collection('nonComplianceRecords')
 //           .orderBy('date', descending: true)
 //           .get();
 //
-//       _allBreaches = snapshot.docs.map((doc) {
-//         return BreachRecordModel.fromMap(doc.data(), doc.id);
+//       _allNonCompliances = snapshot.docs.map((doc) {
+//         return NonComplianceRecordModel.fromMap(doc.data(), doc.id);
 //       }).toList();
 //
-//       _filteredBreaches = List.from(_allBreaches);
-//       _calculateSeverityTotals(_filteredBreaches);
+//       _filteredNonCompliances = List.from(_allNonCompliances);
+//       _calculateSeverityTotals(_filteredNonCompliances);
 //
 //     } catch (e) {
-//       debugPrint("Error fetching breach records: $e");
-//       _allBreaches = [];
-//       _filteredBreaches = [];
+//       debugPrint("Error fetching non-compliance records: $e");
+//       _allNonCompliances = [];
+//       _filteredNonCompliances = [];
 //     } finally {
 //       _isLoading = false;
 //       notifyListeners();
@@ -68,12 +70,12 @@ import '../models/filter_model.dart'; // Ensure this path is correct
 //   }
 //
 //   /// Filters the list based on type, name, or severity
-//   void filterBreaches(String query) {
+//   void filterNonCompliances(String query) {
 //     if (query.isEmpty) {
-//       _filteredBreaches = List.from(_allBreaches);
+//       _filteredNonCompliances = List.from(_allNonCompliances);
 //     } else {
 //       final q = query.toLowerCase();
-//       _filteredBreaches = _allBreaches.where((b) {
+//       _filteredNonCompliances = _allNonCompliances.where((b) {
 //         final typeMatch = b.type.toLowerCase().contains(q);
 //         final nameMatch = b.name.toLowerCase().contains(q);
 //         final severityMatch = b.severity.toLowerCase().contains(q);
@@ -84,12 +86,12 @@ import '../models/filter_model.dart'; // Ensure this path is correct
 //     }
 //
 //     // Update the header stats based on what is currently on screen
-//     _calculateSeverityTotals(_filteredBreaches);
+//     _calculateSeverityTotals(_filteredNonCompliances);
 //     notifyListeners();
 //   }
 //
 //   /// Calculates totals for the summary card
-//   void _calculateSeverityTotals(List<BreachRecordModel> list) {
+//   void _calculateSeverityTotals(List<NonComplianceRecordModel> list) {
 //     _resetTotals();
 //     for (var b in list) {
 //       // Logic handles "Significant" as "Moderate" based on your preference
@@ -111,15 +113,15 @@ import '../models/filter_model.dart'; // Ensure this path is correct
 //
 //   /// Clears the search filter
 //   void clearSearch() {
-//     _filteredBreaches = List.from(_allBreaches);
-//     _calculateSeverityTotals(_filteredBreaches);
+//     _filteredNonCompliances = List.from(_allNonCompliances);
+//     _calculateSeverityTotals(_filteredNonCompliances);
 //     notifyListeners();
 //   }
 // }
 
 
 
-class BreachProviderInsight with ChangeNotifier {
+class NonComplianceProviderInsight with ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instanceFor(
     app: Firebase.app(),
     databaseId: 'clearcase',
@@ -127,9 +129,9 @@ class BreachProviderInsight with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   // MASTER LIST: Always holds every record from Firestore
-  List<BreachRecordModel> _allBreaches = [];
+  List<NonComplianceRecordModel> _allNonCompliances = [];
   // DISPLAY LIST: What the UI actually shows
-  List<BreachRecordModel> _filteredBreaches = [];
+  List<NonComplianceRecordModel> _filteredNonCompliances = [];
 
   bool _isLoading = false;
   String _currentSearchQuery = "";
@@ -145,13 +147,43 @@ class BreachProviderInsight with ChangeNotifier {
   int totalModerate = 0;
   int totalMinor = 0;
 
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
+
+  NonComplianceProviderInsight() {
+    // Clear cached records when the signed-in user changes, so a fresh login
+    // never sees the previous account's non-compliance list.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _allNonCompliances = [];
+    _filteredNonCompliances = [];
+    _currentSearchQuery = "";
+    _currentFilters = FilterOptions(
+      selectedTimePeriod: "All Time",
+      selectedCategory: "All Severities(Combined)",
+    );
+    _isLoading = false;
+    _resetTotals();
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
+
   // Getters
-  List<BreachRecordModel> get breaches => _filteredBreaches;
+  List<NonComplianceRecordModel> get nonCompliances => _filteredNonCompliances;
   bool get isLoading => _isLoading;
 
-  /// Fetch all breach records for a specific case
-  /// Fetch all breach records for a specific case
-  Future<void> fetchBreaches(String caseId) async {
+  /// Fetch all non-compliance records for a specific case
+  /// Fetch all non-compliance records for a specific case
+  Future<void> fetchNonCompliances(String caseId) async {
     final String? userId = _auth.currentUser?.uid;
     if (userId == null) return;
 
@@ -171,17 +203,17 @@ class BreachProviderInsight with ChangeNotifier {
       final snapshot = await _db
           .collection('users').doc(userId)
           .collection('cases').doc(caseId)
-          .collection('breachRecords')
+          .collection('nonComplianceRecords')
           .orderBy('date', descending: true)
           .get();
 
-      _allBreaches = snapshot.docs.map((doc) {
-        return BreachRecordModel.fromMap(doc.data(), doc.id);
+      _allNonCompliances = snapshot.docs.map((doc) {
+        return NonComplianceRecordModel.fromMap(doc.data(), doc.id);
       }).toList();
 
       _runCombinedFilters();
     } catch (e) {
-      debugPrint("Error fetching breach records: $e");
+      debugPrint("Error fetching non-compliance records: $e");
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -190,20 +222,20 @@ class BreachProviderInsight with ChangeNotifier {
 
   /// THE ENGINE
   void _runCombinedFilters() {
-    List<BreachRecordModel> results = List.from(_allBreaches);
+    List<NonComplianceRecordModel> results = List.from(_allNonCompliances);
 
-    results = results.where((breach) {
+    results = results.where((nonCompliance) {
       // 1. Severity Filter
       bool matchesSeverity = true;
 
       // IMPROVED LOGIC: Only filter if the category isn't "All" or the "Combined" string
       if (_currentFilters.selectedCategory != "All Severities(Combined)" &&
           _currentFilters.selectedCategory != "All") {
-        matchesSeverity = breach.severity == _currentFilters.selectedCategory;
+        matchesSeverity = nonCompliance.severity == _currentFilters.selectedCategory;
       }
 
       // 2. Time Filter
-      bool matchesTime = _checkTimePeriod(breach.date, _currentFilters.selectedTimePeriod);
+      bool matchesTime = _checkTimePeriod(nonCompliance.date, _currentFilters.selectedTimePeriod);
 
       return matchesSeverity && matchesTime;
     }).toList();
@@ -218,8 +250,8 @@ class BreachProviderInsight with ChangeNotifier {
       }).toList();
     }
 
-    _filteredBreaches = results;
-    _calculateSeverityTotals(_filteredBreaches);
+    _filteredNonCompliances = results;
+    _calculateSeverityTotals(_filteredNonCompliances);
     notifyListeners();
   }
 
@@ -266,7 +298,7 @@ class BreachProviderInsight with ChangeNotifier {
     _runCombinedFilters();
   }
 
-  void _calculateSeverityTotals(List<BreachRecordModel> list) {
+  void _calculateSeverityTotals(List<NonComplianceRecordModel> list) {
     _resetTotals();
     for (var b in list) {
       if (b.severity == "Serious") totalSerious++;

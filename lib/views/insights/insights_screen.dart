@@ -8,10 +8,10 @@ import '../widgets/dispute_overview.dart';
 import '../widgets/export_button.dart';
 import '../widgets/export_filter.dart';
 import '../widgets/flagged_events_overview.dart';
-import '../widgets/non_complicance_overview.dart';
+import '../widgets/non_compliance_overview.dart';
 import '../widgets/payment_overview_card.dart';
 import '../widgets/pdf_generator.dart';
-import 'breach_history_screen.dart';
+import 'non_compliance_history_screen.dart';
 import 'custody_compliance_screen.dart';
 import 'dispute_log_screen.dart';
 
@@ -162,13 +162,13 @@ class InsightsScreen extends StatelessWidget {
                     },
                   ),
                   const SizedBox(height: 20),
-                  BreachOverview(
+                  NonComplianceOverview(
                     provider: insightProvider,
                     onTap: () {
                       if (insightProvider.selectedCase != null) {
                         Navigator.pushNamed(
                           context,
-                          BreachHistoryScreen.routeName,
+                          NonComplianceHistoryScreen.routeName,
                           arguments: insightProvider.selectedCase,
                         );
                       }
@@ -182,7 +182,7 @@ class InsightsScreen extends StatelessWidget {
                     custodyCount: insightProvider.flaggedCustodyCount,
                     paymentsCount: insightProvider.flaggedPaymentsCount,
                     disputesCount: insightProvider.flaggedDisputesCount,
-                    breachCount: insightProvider.flaggedBreachCount,
+                    nonComplianceCount: insightProvider.flaggedNonComplianceCount,
                     totalCount: insightProvider.totalFlaggedCount,
                   ),
 

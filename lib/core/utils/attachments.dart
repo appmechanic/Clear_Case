@@ -2,7 +2,7 @@
 /// document map.
 ///
 /// Custody and payment records historically used the key `attachmentUrls`,
-/// while breach and dispute records used `attachments`. Going forward
+/// while non-compliance and dispute records used `attachments`. Going forward
 /// everything writes `attachmentUrls`, but existing documents on the
 /// `attachments` key still need to render correctly — read sites use this
 /// helper so they don't have to know which generation a record belongs to.

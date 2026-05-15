@@ -1,6 +1,6 @@
 import 'package:clearcase/models/calender_event_model.dart';
 import 'package:clearcase/provider/calender_provider.dart';
-import 'package:clearcase/views/home/new_breach_screen.dart';
+import 'package:clearcase/views/home/new_non_compliance_screen.dart';
 import 'package:clearcase/views/home/new_custody_screen.dart';
 import 'package:clearcase/views/home/new_dispute_screen.dart';
 import 'package:clearcase/views/home/new_entry_screen.dart';
@@ -507,7 +507,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     ),
                     _buildScheduledLegendItem("Scheduled Custody", Colors.purple),
                     _buildScheduledLegendItem("Scheduled Payments", Colors.green),
-                    _buildScheduledLegendItem("Custom Rules", Colors.purpleAccent),
+                    _buildScheduledLegendItem("Custom Rules", Colors.lightBlue),
                     const SizedBox(height: 10),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8),
@@ -632,7 +632,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                           case EventType.payment: routeName = NewPaymentScreen.routeName; break;
                           case EventType.reminder: routeName = NewReminderScreen.routeName; break;
                           case EventType.dispute: routeName = NewDisputeScreen.routeName; break;
-                          case EventType.breach: routeName = NewBreachScreen.routeName; break;
+                          case EventType.nonCompliance: routeName = NewNonComplianceScreen.routeName; break;
                         }
 
                         if (routeName != null) {
@@ -766,7 +766,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
       case EventType.custody: return Colors.purple;
       case EventType.payment: return Colors.green;
       case EventType.dispute: return Colors.red;
-      case EventType.breach: return Colors.redAccent;
+      case EventType.nonCompliance: return Colors.redAccent;
       case EventType.reminder: return Colors.purpleAccent;
     }
   }
@@ -784,7 +784,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
     if (hasCustody) return _getColorForType(EventType.custody);
     final hasPayment = scheduled.any((e) => e.type == EventType.payment);
     if (hasPayment) return _getColorForType(EventType.payment);
-    return _getColorForType(scheduled.first.type);
+    return Colors.lightBlue;
   }
 
   Widget _buildScheduledCell(
@@ -825,7 +825,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
       case EventType.custody: return Icons.person;
       case EventType.payment: return Icons.payment;
       case EventType.dispute: return Icons.error_outlined;
-      case EventType.breach: return Icons.cancel_presentation;
+      case EventType.nonCompliance: return Icons.cancel_presentation;
       case EventType.reminder: return Icons.notifications;
     }
   }

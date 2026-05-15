@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/utils/attachments.dart';
 
-enum EventType { custody, payment, dispute, breach, reminder }
+enum EventType { custody, payment, dispute, nonCompliance, reminder }
 
 class CalendarEvent {
   String id;
@@ -61,8 +61,8 @@ class CalendarEvent {
       detectedType = EventType.payment;
     } else if (origin.contains('dispute') || map.containsKey('issue')) {
       detectedType = EventType.dispute;
-    } else if (origin.contains('breach') || map.containsKey('severity')) {
-      detectedType = EventType.breach;
+    } else if (origin.toLowerCase().contains('noncompliance') || map.containsKey('severity')) {
+      detectedType = EventType.nonCompliance;
     } else {
       detectedType = _parseEventType(map['type'] ?? origin);
     }
@@ -99,7 +99,7 @@ class CalendarEvent {
     if (typeStr.contains('custody')) return EventType.custody;
     if (typeStr.contains('payment')) return EventType.payment;
     if (typeStr.contains('dispute')) return EventType.dispute;
-    if (typeStr.contains('breach')) return EventType.breach;
+    if (typeStr.contains('noncompliance') || typeStr.contains('non-compliance')) return EventType.nonCompliance;
     return EventType.reminder;
   }
 }

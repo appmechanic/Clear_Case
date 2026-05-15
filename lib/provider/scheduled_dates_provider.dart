@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -34,7 +36,33 @@ class ScheduledDatesProvider extends ChangeNotifier {
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
 
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
 
+  ScheduledDatesProvider() {
+    _currentUid = _auth.currentUser?.uid;
+    // Clear cached cases and rule records when the signed-in user changes,
+    // so a fresh login never sees the previous account's data.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _allCases = [];
+    _selectedCase = null;
+    custodyRecords = [];
+    paymentRecords = [];
+    customRecords = [];
+    isLoading = true;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   Future<void> init({String? initialCaseId}) async {
     isLoading = true;

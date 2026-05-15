@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import '../core/utils/attachments.dart';
 import '../core/utils/storage_cleanup.dart';
 
-class BreachProvider extends ChangeNotifier {
+class NonComplianceProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
       app: Firebase.app(), databaseId: 'clearcase');
@@ -21,7 +21,7 @@ class BreachProvider extends ChangeNotifier {
     if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  Future<void> addBreach(BuildContext context, String caseId, Map<String, dynamic> data, List<File> files) async {
+  Future<void> addNonCompliance(BuildContext context, String caseId, Map<String, dynamic> data, List<File> files) async {
     final user = _auth.currentUser;
     if (user == null) return;
     _isLoading = true; notifyListeners();
@@ -30,13 +30,13 @@ class BreachProvider extends ChangeNotifier {
       List<String> urls = [];
       for (var file in files) {
         String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
-        Reference ref = FirebaseStorage.instance.ref().child('users/${user.uid}/cases/$caseId/breachRecords/$fileName');
+        Reference ref = FirebaseStorage.instance.ref().child('users/${user.uid}/cases/$caseId/nonComplianceRecords/$fileName');
         await ref.putFile(file);
         urls.add(await ref.getDownloadURL());
       }
 
       WriteBatch batch = _firestore.batch();
-      DocumentReference ref = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc();
+      DocumentReference ref = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('nonComplianceRecords').doc();
 
       Map<String, dynamic> finalData = {...data, 'attachmentUrls': urls, 'createdAt': FieldValue.serverTimestamp()};
       batch.set(ref, finalData);
@@ -50,7 +50,7 @@ class BreachProvider extends ChangeNotifier {
 
         batch.set(flaggedRef, {
           ...finalData,
-          'originCollection': 'breachRecords',
+          'originCollection': 'nonComplianceRecords',
           'originId': ref.id,
           'caseId': caseId
         });
@@ -58,7 +58,7 @@ class BreachProvider extends ChangeNotifier {
 
       await batch.commit();
       _isLoading = false; notifyListeners();
-      _showSnackBar(context, "Breach recorded!");
+      _showSnackBar(context, "Non-compliance recorded!");
       Navigator.pop(context);
     } catch (e) {
       _isLoading = false; notifyListeners();
@@ -66,15 +66,15 @@ class BreachProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> updateBreach(BuildContext context, String caseId, String breachId, Map<String, dynamic> data, List<File> newFiles, List<String> existingUrls) async {
+  Future<void> updateNonCompliance(BuildContext context, String caseId, String nonComplianceId, Map<String, dynamic> data, List<File> newFiles, List<String> existingUrls) async {
     final user = _auth.currentUser;
     if (user == null) return;
     _isLoading = true; notifyListeners();
 
     try {
-      final breachRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('breachRecords').doc(breachId);
+      final nonComplianceRef = _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).collection('nonComplianceRecords').doc(nonComplianceId);
 
-      final oldSnap = await breachRef.get();
+      final oldSnap = await nonComplianceRef.get();
       // Read via helper so old records on the `attachments` key still get
       // diffed correctly during storage cleanup.
       final List<String> previousUrls = readAttachmentUrls(oldSnap.data() as Map<String, dynamic>?);
@@ -82,21 +82,21 @@ class BreachProvider extends ChangeNotifier {
       List<String> finalUrls = List.from(existingUrls);
       for (var file in newFiles) {
         String fileName = "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
-        Reference ref = FirebaseStorage.instance.ref().child('users/${user.uid}/cases/$caseId/breachRecords/$fileName');
+        Reference ref = FirebaseStorage.instance.ref().child('users/${user.uid}/cases/$caseId/nonComplianceRecords/$fileName');
         await ref.putFile(file);
         finalUrls.add(await ref.getDownloadURL());
       }
 
       Map<String, dynamic> updatedData = {...data, 'attachmentUrls': finalUrls, 'updatedAt': FieldValue.serverTimestamp()};
       WriteBatch batch = _firestore.batch();
-      batch.update(breachRef, updatedData);
+      batch.update(nonComplianceRef, updatedData);
 
       // UPDATED QUERY: Look inside the specific case sub-collection
       var flaggedQuery = await _firestore
           .collection('users').doc(user.uid)
           .collection('cases').doc(caseId)
           .collection('flaggedEvents')
-          .where('originId', isEqualTo: breachId)
+          .where('originId', isEqualTo: nonComplianceId)
           .get();
 
       if (data['flagEntry'] == true) {
@@ -109,8 +109,8 @@ class BreachProvider extends ChangeNotifier {
 
           batch.set(newFlagRef, {
             ...updatedData,
-            'originCollection': 'breachRecords',
-            'originId': breachId,
+            'originCollection': 'nonComplianceRecords',
+            'originId': nonComplianceId,
             'caseId': caseId
           });
         } else {
@@ -128,7 +128,7 @@ class BreachProvider extends ChangeNotifier {
       );
 
       _isLoading = false; notifyListeners();
-      _showSnackBar(context, "Breach updated!");
+      _showSnackBar(context, "Non-compliance updated!");
       Navigator.pop(context);
     } catch (e) {
       _isLoading = false; notifyListeners();

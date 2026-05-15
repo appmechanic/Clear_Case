@@ -2,7 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/utils/attachments.dart';
 
-class BreachRecordModel {
+class NonComplianceRecordModel {
   String id;
   String name;
   String type;
@@ -14,7 +14,7 @@ class BreachRecordModel {
   List<String>? attachments;
   bool flagEntry;
 
-  BreachRecordModel({
+  NonComplianceRecordModel({
     required this.id,
     required this.name,
     required this.type,
@@ -27,8 +27,8 @@ class BreachRecordModel {
     this.flagEntry = false,
   });
 
-  factory BreachRecordModel.fromMap(Map<String, dynamic> map, String documentId) {
-    return BreachRecordModel(
+  factory NonComplianceRecordModel.fromMap(Map<String, dynamic> map, String documentId) {
+    return NonComplianceRecordModel(
       id: documentId,
       name: map['name'] ?? '',
       type: map['type'] ?? 'General Violation',

@@ -39,7 +39,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>ClearCase needs access to your photo library so you can attach evidence (photos, scanned documents) to custody, payment, breach and dispute records.</string>
+	<string>ClearCase needs access to your photo library so you can attach evidence (photos, scanned documents) to custody, payment, non-compliance and dispute records.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>ClearCase needs access to the camera so you can capture photographic evidence — automatically stamped with date, time and location — for your custody and dispute records.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>

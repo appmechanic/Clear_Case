@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../provider/insight_provider.dart';
 
-class BreachOverview extends StatelessWidget {
+class NonComplianceOverview extends StatelessWidget {
   final InsightProvider provider;
   final String subtitle;
   final VoidCallback? onTap;
 
-  const BreachOverview({
+  const NonComplianceOverview({
     super.key,
     required this.provider,
     this.subtitle = "Court order violations",
@@ -61,7 +61,7 @@ class BreachOverview extends StatelessWidget {
                 const SizedBox(height: 20),
                 // Centered Total Count
                 Text(
-                  "${provider.totalBreachCount}",
+                  "${provider.totalNonComplianceCount}",
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 36, // Slightly larger for emphasis

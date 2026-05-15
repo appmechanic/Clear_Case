@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -26,6 +28,36 @@ class PaymentProvider with ChangeNotifier {
       selectedTimePeriod: "All Time",
       selectedCategory: "All Payments(Combined)"
   );
+
+  StreamSubscription<User?>? _authSubscription;
+  String? _currentUid;
+
+  PaymentProvider() {
+    _currentUid = _auth.currentUser?.uid;
+    // Clear cached payments when the signed-in user changes, so a fresh
+    // login never sees the previous account's data.
+    _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+  }
+
+  void _handleAuthChanged(User? user) {
+    if (_currentUid == user?.uid) return;
+    _currentUid = user?.uid;
+    _masterPayments = [];
+    _filteredPayments = [];
+    _currentSearchQuery = "";
+    _currentFilters = FilterOptions(
+      selectedTimePeriod: "All Time",
+      selectedCategory: "All Payments(Combined)",
+    );
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   // Getters
   List<PaymentRecordModel> get payments => _filteredPayments;

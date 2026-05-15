@@ -1,9 +1,9 @@
-import 'package:clearcase/provider/breach_provider_insight.dart';
+import 'package:clearcase/provider/non_compliance_provider_insight.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../../models/breach_model.dart';
+import '../../models/non_compliance_model.dart';
 import '../../models/case_model.dart';
 import '../../models/filter_model.dart';
 import '../../provider/insight_provider.dart';
@@ -11,17 +11,17 @@ import '../widgets/custom_search_box.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 
 import '../widgets/filter_ui.dart';
-import 'bench_detail_screen.dart';
+import 'non_compliance_detail_screen.dart';
 
-class BreachHistoryScreen extends StatefulWidget {
-  static const routeName = '/breach-history';
-  const BreachHistoryScreen({super.key});
+class NonComplianceHistoryScreen extends StatefulWidget {
+  static const routeName = '/non-compliance-history';
+  const NonComplianceHistoryScreen({super.key});
 
   @override
-  State<BreachHistoryScreen> createState() => _BreachHistoryScreenState();
+  State<NonComplianceHistoryScreen> createState() => _NonComplianceHistoryScreenState();
 }
 
-class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
+class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   bool _isInit = true;
 
@@ -46,7 +46,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
           setState(() => _currentFilters = newFilters);
 
           // 2. Update Provider logic
-          Provider.of<BreachProviderInsight>(context, listen: false)
+          Provider.of<NonComplianceProviderInsight>(context, listen: false)
               .applyAdvancedFilters(newFilters);
         },
       ),
@@ -59,12 +59,12 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
       final selectedCase = ModalRoute.of(context)!.settings.arguments as dynamic;
       if (selectedCase != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Sync global case selection and fetch initial breaches
+          // Sync global case selection and fetch initial non-compliances
           final insightProv = Provider.of<InsightProvider>(context, listen: false);
           insightProv.setSelectedCase(selectedCase);
 
-          Provider.of<BreachProviderInsight>(context, listen: false)
-              .fetchBreaches(selectedCase.id);
+          Provider.of<NonComplianceProviderInsight>(context, listen: false)
+              .fetchNonCompliances(selectedCase.id);
         });
       }
       _isInit = false;
@@ -88,13 +88,13 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.black),
       ),
-      body: Consumer2<BreachProviderInsight, InsightProvider>(
-        builder: (context, breachProv, insightProv, child) {
+      body: Consumer2<NonComplianceProviderInsight, InsightProvider>(
+        builder: (context, nonComplianceProv, insightProv, child) {
 
           return RefreshIndicator(
             onRefresh: () async {
               if (insightProv.selectedCase != null) {
-                await breachProv.fetchBreaches(insightProv.selectedCase!.id);
+                await nonComplianceProv.fetchNonCompliances(insightProv.selectedCase!.id);
               }
             },
             child: SingleChildScrollView(
@@ -107,7 +107,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                     children: [
                       // 1. Case Dropdown (Takes remaining space)
                       Expanded(
-                        child:  _buildDropdownSection(insightProv, breachProv),
+                        child:  _buildDropdownSection(insightProv, nonComplianceProv),
                       ),
                       const SizedBox(width: 12),
                       // 2. Filter Icon Button
@@ -134,19 +134,19 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                   const SizedBox(height: 20),
 
                   // Show loader only for the records section
-                  if (breachProv.isLoading)
+                  if (nonComplianceProv.isLoading)
                     const Center(child: Padding(
                       padding: EdgeInsets.symmetric(vertical: 50),
                       child: CircularProgressIndicator(),
                     ))
                   else ...[
-                    _buildHeaderCard(breachProv),
+                    _buildHeaderCard(nonComplianceProv),
                     const SizedBox(height: 20),
                     CustomSearchBar(
                       hintText: "Search by name, severity, type, party",
                       controller: _searchController,
-                      onChanged: (val) => breachProv.filterBySearch(val),
-                      onClear: () => breachProv.clearAll(),
+                      onChanged: (val) => nonComplianceProv.filterBySearch(val),
+                      onClear: () => nonComplianceProv.clearAll(),
                     ),
                     const SizedBox(height: 20),
                     Row(
@@ -159,7 +159,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                     ),
                     const SizedBox(height: 10),
 
-                    if (breachProv.breaches.isEmpty)
+                    if (nonComplianceProv.nonCompliances.isEmpty)
                       const Padding(
                         padding: EdgeInsets.symmetric(vertical: 40),
                         child: Text("No compliance issues found.", style: TextStyle(color: Colors.grey)),
@@ -168,15 +168,15 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        itemCount: breachProv.breaches.length,
+                        itemCount: nonComplianceProv.nonCompliances.length,
                         itemBuilder: (context, index) {
-                          final record = breachProv.breaches[index];
+                          final record = nonComplianceProv.nonCompliances[index];
 
                           bool showMonthHeader = false;
                           if (record.date != null) {
                             if (index == 0) showMonthHeader = true;
                             else {
-                              final prevDate = breachProv.breaches[index - 1].date;
+                              final prevDate = nonComplianceProv.nonCompliances[index - 1].date;
                               if (prevDate != null && (record.date!.month != prevDate.month || record.date!.year != prevDate.year)) {
                                 showMonthHeader = true;
                               }
@@ -191,11 +191,11 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
                                 onTap: () {
                                   Navigator.pushNamed(
                                     context,
-                                    BreachDetailsScreen.routeName,
+                                    NonComplianceDetailsScreen.routeName,
                                     arguments: record,
                                   );
                                 },
-                                child: _buildBreachItem(record),
+                                child: _buildNonComplianceItem(record),
                               ),
                             ],
                           );
@@ -212,7 +212,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
   }
 
   // --- REUSABLE DROPDOWN ---
-  Widget _buildDropdownSection(InsightProvider insightProv, BreachProviderInsight breachProv) {
+  Widget _buildDropdownSection(InsightProvider insightProv, NonComplianceProviderInsight nonComplianceProv) {
     return DropdownButtonHideUnderline(
       child: DropdownButton2<dynamic>(
         isExpanded: true,
@@ -225,7 +225,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
         onChanged: (value) {
           insightProv.setSelectedCase(value);
           if (value != null) {
-            breachProv.fetchBreaches((value as CaseModel).id);
+            nonComplianceProv.fetchNonCompliances((value as CaseModel).id);
           }
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
@@ -242,7 +242,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
     );
   }
 
-  Widget _buildHeaderCard(BreachProviderInsight prov) {
+  Widget _buildHeaderCard(NonComplianceProviderInsight prov) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
@@ -256,7 +256,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
             ],
           ),
           const SizedBox(height: 10),
-          Text("${prov.breaches.length}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 32)),
+          Text("${prov.nonCompliances.length}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 32)),
           const Text("Total Issues", style: TextStyle(color: Colors.grey, fontSize: 12)),
           const SizedBox(height: 20),
           Row(
@@ -272,7 +272,7 @@ class _BreachHistoryScreenState extends State<BreachHistoryScreen> {
     );
   }
 
-  Widget _buildBreachItem(BreachRecordModel record) {
+  Widget _buildNonComplianceItem(NonComplianceRecordModel record) {
     Color severityColor = record.severity == "Serious" ? Colors.red :
     (record.severity == "Minor" ? Colors.green : Colors.orange);
 

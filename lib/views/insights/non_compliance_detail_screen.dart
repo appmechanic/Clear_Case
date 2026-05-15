@@ -3,9 +3,9 @@ import 'package:intl/intl.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/file_type_icon.dart';
 
-class BreachDetailsScreen extends StatelessWidget {
-  static const routeName = '/breach-details';
-  const BreachDetailsScreen({super.key});
+class NonComplianceDetailsScreen extends StatelessWidget {
+  static const routeName = '/non-compliance-details';
+  const NonComplianceDetailsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {

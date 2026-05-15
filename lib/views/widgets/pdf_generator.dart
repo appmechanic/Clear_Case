@@ -24,7 +24,7 @@ class PDFGenerator {
       if (event.type == EventType.custody && options.reportSections["Custody"] == true) sectionEnabled = true;
       if (event.type == EventType.payment && options.reportSections["Payments"] == true) sectionEnabled = true;
       if (event.type == EventType.dispute && options.reportSections["Disputes"] == true) sectionEnabled = true;
-      if (event.type == EventType.breach && options.reportSections["Non-Compliance"] == true) sectionEnabled = true;
+      if (event.type == EventType.nonCompliance && options.reportSections["Non-Compliance"] == true) sectionEnabled = true;
 
       bool matchesDate = true;
       DateTime eventDay = DateTime(event.date.year, event.date.month, event.date.day);
@@ -103,7 +103,7 @@ class PDFGenerator {
               ),
             ),
             // Type cell
-            _cell(e.type == EventType.breach ? "NON-COMPLIANCE" : e.type.name.toUpperCase(), bold),
+            _cell(e.type == EventType.nonCompliance ? "NON-COMPLIANCE" : e.type.name.toUpperCase(), bold),
             // Details cell
             _buildDetailedRow(e, bold),
           ],
@@ -155,7 +155,7 @@ class PDFGenerator {
             pw.Text("Description: ${e.description ?? ''}", style: const pw.TextStyle(fontSize: 10)),
           ],
 
-          if (e.type == EventType.breach) ...[
+          if (e.type == EventType.nonCompliance) ...[
             pw.Text("Non-Compliance Type: ${e.title}", style: pw.TextStyle(font: bold, fontSize: 11, color: PdfColors.red900)),
             pw.Text("Severity: ${e.severity ?? 'N/A'}", style: const pw.TextStyle(fontSize: 10)),
             pw.Text("Party Responsible: ${e.party ?? 'N/A'}", style: const pw.TextStyle(fontSize: 10)),

@@ -12,18 +12,18 @@ import 'package:clearcase/views/widgets/attachment_picker_widget.dart';
 import 'package:clearcase/views/widgets/attachment_preview.dart';
 import 'package:clearcase/views/widgets/file_type_icon.dart';
 import '../../provider/calender_provider.dart';
-import '../../provider/breach_provider.dart';
+import '../../provider/non_compliance_provider.dart';
 import '../widgets/custom_dropdown.dart';
 
-class NewBreachScreen extends StatefulWidget {
-  static const routeName = '/new-breach';
-  const NewBreachScreen({super.key});
+class NewNonComplianceScreen extends StatefulWidget {
+  static const routeName = '/new-non-compliance';
+  const NewNonComplianceScreen({super.key});
 
   @override
-  State<NewBreachScreen> createState() => _NewBreachScreenState();
+  State<NewNonComplianceScreen> createState() => _NewNonComplianceScreenState();
 }
 
-class _NewBreachScreenState extends State<NewBreachScreen> {
+class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
   final _descController = TextEditingController();
   final _proofController = TextEditingController();
   final _descNode = FocusNode();
@@ -39,7 +39,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
   bool isInitialized = false;
   bool _isFetching = false;
 
-  String? _editingBreachId;
+  String? _editingNonComplianceId;
   List<File> _selectedFiles = [];
   List<String> _existingAttachmentUrls = [];
 
@@ -51,7 +51,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
       final calProvider = Provider.of<CalendarProvider>(context, listen: false);
 
       if (args is String) {
-        _editingBreachId = args;
+        _editingNonComplianceId = args;
         if (calProvider.selectedCase != null) {
           _loadExistingData(args, calProvider.selectedCase!.id);
         }
@@ -63,7 +63,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
   }
 
 // 2. Update the loading function
-  Future<void> _loadExistingData(String breachId, String caseId) async {
+  Future<void> _loadExistingData(String nonComplianceId, String caseId) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -72,7 +72,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
     try {
       final doc = await FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase')
           .collection('users').doc(user.uid).collection('cases').doc(caseId)
-          .collection('breachRecords').doc(breachId).get();
+          .collection('nonComplianceRecords').doc(nonComplianceId).get();
 
       if (doc.exists && mounted) {
         final data = doc.data()!;
@@ -93,7 +93,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
     }
   }
 
-  void _submitForm(BreachProvider provider, String caseId) {
+  void _submitForm(NonComplianceProvider provider, String caseId) {
     final data = {
       'date': selectedDate,
       'type': selectedType,
@@ -105,10 +105,10 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
       'flagEntry': flagEntry,
     };
 
-    if (_editingBreachId == null) {
-      provider.addBreach(context, caseId, data, _selectedFiles);
+    if (_editingNonComplianceId == null) {
+      provider.addNonCompliance(context, caseId, data, _selectedFiles);
     } else {
-      provider.updateBreach(context, caseId, _editingBreachId!, data, _selectedFiles, _existingAttachmentUrls);
+      provider.updateNonCompliance(context, caseId, _editingNonComplianceId!, data, _selectedFiles, _existingAttachmentUrls);
     }
   }
 
@@ -125,13 +125,13 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer2<CalendarProvider, BreachProvider>(
-      builder: (context, calProvider, breachProvider, child) {
+    return Consumer2<CalendarProvider, NonComplianceProvider>(
+      builder: (context, calProvider, nonComplianceProvider, child) {
         final selectedCase = calProvider.selectedCase;
         return Scaffold(
           backgroundColor: const Color(0xFFF5F5F5),
           appBar: _buildAppBar(calProvider),
-            body: (breachProvider.isLoading || _isFetching)
+            body: (nonComplianceProvider.isLoading || _isFetching)
           ? const Center(child: AppLoader())
               : SingleChildScrollView(
             padding: const EdgeInsets.all(20),
@@ -143,10 +143,10 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
                   if (d != null) setState(() => selectedDate = d);
                 }),
                 const SizedBox(height: 15),
-                _buildLabel("Breach Type"),
+                _buildLabel("Non-compliance Type"),
                 CustomDropDown<String>(
                   value: selectedType,
-                  hint: "Select Breach Type",
+                  hint: "Select Non-compliance Type",
                   items: ["Late for pickup/handover", "Missed Visit", "Unauthorized Travel"]
                       .map((v) => DropdownMenuItem(value: v, child: Text(v)))
                       .toList(),
@@ -156,7 +156,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
                 Align(alignment: Alignment.centerLeft, child: Text("Severity", style: TextStyle(fontWeight: FontWeight.w500))),
                 Row(children: ["Serious", "Moderate", "Minor"].map((l) => Padding(padding: const EdgeInsets.only(right: 10), child: _buildChip(l))).toList()),
                 const SizedBox(height: 15),
-                CustomTextField(labelText: "Description", hintText: "Describe the breach...", maxLines: 3, controller: _descController, node: _descNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Description", hintText: "Describe the non-compliance...", maxLines: 3, controller: _descController, node: _descNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
                 const SizedBox(height: 15),
                  CustomTextField(
                   labelText: "Name of the Related party",
@@ -193,8 +193,8 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
 
                 SizedBox(width: double.infinity, height: 50, child: ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-                  onPressed: selectedCase == null ? null : () => _submitForm(breachProvider, selectedCase.id),
-                  child: Text(_editingBreachId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white)),
+                  onPressed: selectedCase == null ? null : () => _submitForm(nonComplianceProvider, selectedCase.id),
+                  child: Text(_editingNonComplianceId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white)),
                 )),
               ],
             ),
@@ -219,7 +219,7 @@ class _NewBreachScreenState extends State<NewBreachScreen> {
 
 
   AppBar _buildAppBar(CalendarProvider calProvider) {
-    bool isEditMode = _editingBreachId != null;
+    bool isEditMode = _editingNonComplianceId != null;
 
     return AppBar(
       title: Text(

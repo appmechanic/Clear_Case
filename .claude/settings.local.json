@@ -15,7 +15,10 @@
       "Bash(firebase --version)",
       "Bash(firebase deploy *)",
       "Bash(firebase functions:delete *)",
-      "Bash(firebase functions:list *)"
+      "Bash(firebase functions:list *)",
+      "PowerShell(firebase *)",
+      "PowerShell(firebase.cmd --version)",
+      "PowerShell(firebase.cmd deploy --only functions)"
     ]
   }
 }

@@ -75,7 +75,7 @@ async function handleInvalidToken(userDocRef, userId, err) {
 
 exports.pushNotifications = onSchedule(
   {
-    schedule: "every 1 minutes",
+    schedule: "every 5 minutes",
     timeZone: "UTC",
     region: "us-central1",
     memory: "256MiB",
@@ -115,8 +115,30 @@ exports.pushNotifications = onSchedule(
         continue;
       }
 
-      // Both reminders and scheduledRules fire at the user's notificationTime.
-      if (nowLocal.toFormat("HH:mm") !== notificationTime) continue;
+      // Window-based trigger: fire once we're at or past the user's
+      // notificationTime today, and rely on each doc's lastNotifiedDate guard
+      // below to prevent duplicates. This tolerates Scheduler drift, cold
+      // starts, DST gaps, and mid-day toggle-ons that an exact-minute equality
+      // check would silently miss.
+      const [hStr, mStr] = String(notificationTime).split(":");
+      const triggerHour = parseInt(hStr, 10);
+      const triggerMinute = parseInt(mStr, 10);
+      if (isNaN(triggerHour) || isNaN(triggerMinute)) {
+        logger.warn("Invalid notificationTime format", {
+          userId,
+          notificationTime,
+        });
+        continue;
+      }
+
+      const triggerLocal = nowLocal.set({
+        hour: triggerHour,
+        minute: triggerMinute,
+        second: 0,
+        millisecond: 0,
+      });
+      if (!triggerLocal.isValid) continue;
+      if (nowLocal < triggerLocal) continue;
 
       const todayStart = nowLocal.startOf("day");
       const todayStr = todayStart.toISODate();

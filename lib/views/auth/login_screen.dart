@@ -1,4 +1,6 @@
+import 'dart:io' show Platform;
 import 'package:clearcase/views/auth/signup_screen.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -92,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       CustomPrimaryButton(
                         text: 'Login',
                         isLoading: provider.isLoading,
-                        onPressed: provider.isGoogleLoading
+                        onPressed: (provider.isGoogleLoading || provider.isAppleLoading)
                             ? null
                             : () {
                                 if (authController.isLoginValidate(context: context)) {
@@ -109,9 +111,18 @@ class _LoginScreenState extends State<LoginScreen> {
 
                       const OrContinueWithDivider(),
                       const SizedBox(height: 20),
-                      SocialAuthButton(
+                      if (!kIsWeb && Platform.isIOS) ...[
+                        AppleSignInButton(
+                          isLoading: provider.isAppleLoading,
+                          onPressed: (provider.isLoading || provider.isGoogleLoading)
+                              ? null
+                              : () => provider.appleSignInFunction(context: context),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      GoogleSignInButton(
                         isLoading: provider.isGoogleLoading,
-                        onPressed: provider.isLoading
+                        onPressed: (provider.isLoading || provider.isAppleLoading)
                             ? null
                             : () => provider.googleSignInFunction(context: context),
                       ),

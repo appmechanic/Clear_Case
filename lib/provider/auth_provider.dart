@@ -36,6 +36,14 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isAppleLoading = false;
+  bool get isAppleLoading => _isAppleLoading;
+
+  void setAppleLoading(bool value) {
+    _isAppleLoading = value;
+    notifyListeners();
+  }
+
   // Backfills default notification settings on login for any user
   // whose doc is missing them (older accounts, edge cases).
   // Idempotent: never overwrites fields the user has already customized.
@@ -279,6 +287,119 @@ class AuthProvider extends ChangeNotifier {
       }
     } catch (e) {
       setGoogleLoading(false);
+      if (context.mounted) {
+        showSnackBar(context, e.toString());
+      }
+    }
+  }
+
+  Future<void> appleSignInFunction({required BuildContext context}) async {
+    setAppleLoading(true);
+    try {
+      final AppleSignInResult? result = await _authService.signInWithApple();
+
+      if (result == null) {
+        setAppleLoading(false);
+        return;
+      }
+
+      final User? user = result.userCredential.user;
+      if (user == null) {
+        setAppleLoading(false);
+        return;
+      }
+
+      final String? idToken = await user.getIdToken();
+      if (idToken != null && idToken.isNotEmpty) {
+        await setDataToLocal(key: 'firebase_id_token', value: idToken);
+      }
+      await setDataToLocal(key: 'auth_provider', value: 'apple');
+
+      final String firstNameFromApple = (result.givenName ?? '').trim();
+      final String lastNameFromApple = (result.familyName ?? '').trim();
+      final String fullFromApple =
+          [firstNameFromApple, lastNameFromApple].where((p) => p.isNotEmpty).join(' ');
+      if (fullFromApple.isNotEmpty && (user.displayName ?? '').trim().isEmpty) {
+        await _authService.updateUserName(fullFromApple);
+      }
+
+      final String? fcmToken = await FirebaseMessaging.instance.getToken();
+
+      final dynamic tz = await FlutterTimezone.getLocalTimezone();
+      final String rawTz = tz.toString();
+      final String currentTimeZone = rawTz.contains('(')
+          ? rawTz.split('(')[1].split(',')[0]
+          : rawTz;
+
+      final offset = DateTime.now().timeZoneOffset;
+      final String offsetString =
+          "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
+
+      final DocumentReference userDocRef = _firestore.collection('users').doc(user.uid);
+      final DocumentSnapshot userDoc = await userDocRef.get();
+
+      if (!userDoc.exists) {
+        await userDocRef.set({
+          'uid': user.uid,
+          'email': user.email,
+          'firstName': firstNameFromApple,
+          'lastName': lastNameFromApple,
+          'authProvider': 'apple',
+          if (result.appleUserIdentifier != null)
+            'appleUserId': result.appleUserIdentifier,
+          'createdAt': FieldValue.serverTimestamp(),
+          'children': [],
+          'isDailyReminderEnabled': false,
+          'isRemindersEnabled': true,
+          'isScheduledDatesEnabled': true,
+          'notificationTime': "09:00",
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
+          if (fcmToken != null) 'fcmToken': fcmToken,
+          if (fcmToken != null) 'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        });
+      } else {
+        await userDocRef.set({
+          'timezone': currentTimeZone,
+          'utcOffset': offsetString,
+          if (result.appleUserIdentifier != null)
+            'appleUserId': result.appleUserIdentifier,
+          if (fcmToken != null) 'fcmToken': fcmToken,
+          if (fcmToken != null) 'tokenUpdatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+
+      await _ensureUserDefaults(user.uid);
+
+      if (context.mounted) {
+        Provider.of<SettingsProvider>(context, listen: false).init();
+      }
+
+      final QuerySnapshot caseSnapshot = await userDocRef
+          .collection('cases')
+          .limit(1)
+          .get();
+
+      setAppleLoading(false);
+
+      if (context.mounted) {
+        if (caseSnapshot.docs.isEmpty) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            CaseSetupScreen.routeName,
+            (route) => false,
+          );
+        } else {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            MainScreen.routeName,
+            (route) => false,
+            arguments: 0,
+          );
+        }
+      }
+    } catch (e) {
+      setAppleLoading(false);
       if (context.mounted) {
         showSnackBar(context, e.toString());
       }

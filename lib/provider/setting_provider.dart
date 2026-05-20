@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 
 import '../core/utils/helping_functions.dart';
+import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 
 class SettingsProvider extends ChangeNotifier {
@@ -396,21 +397,41 @@ class SettingsProvider extends ChangeNotifier {
       _isLoading = true;
       notifyListeners();
 
-      // --- STEP 1: PRE-EMPTIVE AUTH CHECK ---
-      // We attempt a "dry run" or check if deletion is possible.
-      // If the session is old, this throws 'requires-recent-login' immediately,
-      // before any Firestore or Storage data is deleted.
-      // We can use reauthenticate or simply attempt a tiny operation,
-      // but the most reliable way is to try the delete early or check the time.
+      // --- STEP 1: DETECT AUTH PROVIDER ---
+      // Apple's App Store guideline 5.1.1(v) requires us to revoke the Apple
+      // token when an Apple-authenticated user deletes their account. We read
+      // the user doc once to decide whether the Apple revoke path applies.
+      final userDocSnap =
+          await _firestore.collection('users').doc(user.uid).get();
+      final userDocData = userDocSnap.data() ?? const <String, dynamic>{};
+      final String authProvider =
+          (userDocData['authProvider'] as String?) ?? '';
 
-      // Check: Has the user logged in within the last 5 minutes?
-      final lastSignIn = user.metadata.lastSignInTime;
-      final now = DateTime.now();
-      if (lastSignIn != null && now.difference(lastSignIn).inMinutes > 5) {
-        throw FirebaseAuthException(code: 'requires-recent-login');
+      // --- STEP 2: AUTH FRESHNESS ---
+      // For Apple users we re-authenticate explicitly (also yields a fresh
+      // authorization code for revocation). For other providers we keep the
+      // existing 5-minute heuristic so old sessions are caught before any
+      // destructive cleanup runs.
+      String? appleAuthorizationCode;
+      if (authProvider == 'apple') {
+        final AppleSignInResult? reauth =
+            await AuthService().reauthenticateWithApple();
+        if (reauth == null) {
+          // User canceled the Apple sheet — abort deletion silently.
+          _isLoading = false;
+          notifyListeners();
+          return;
+        }
+        appleAuthorizationCode = reauth.authorizationCode;
+      } else {
+        final lastSignIn = user.metadata.lastSignInTime;
+        final now = DateTime.now();
+        if (lastSignIn != null && now.difference(lastSignIn).inMinutes > 5) {
+          throw FirebaseAuthException(code: 'requires-recent-login');
+        }
       }
 
-      // --- STEP 2: NOTIFICATION CLEANUP ---
+      // --- STEP 3: NOTIFICATION CLEANUP ---
       await PushNotificationService.deleteTokenOnLogout();
 
       // --- STEP 3: STORAGE CLEANUP ---
@@ -442,7 +463,16 @@ class SettingsProvider extends ChangeNotifier {
         await caseRef.delete();
       }
 
-      // --- STEP 5: DOCUMENT & ACCOUNT DELETION ---
+      // --- STEP 5: APPLE TOKEN REVOKE ---
+      // Required by App Store guideline 5.1.1(v) for Apple-authenticated users.
+      // Revoke before deleting the Firebase user — revoke needs a valid
+      // authenticated session and a fresh authorization code from the
+      // reauthenticateWithApple step above.
+      if (authProvider == 'apple' && appleAuthorizationCode != null) {
+        await AuthService().revokeAppleTokenWith(appleAuthorizationCode);
+      }
+
+      // --- STEP 6: DOCUMENT & ACCOUNT DELETION ---
       await _firestore.collection('users').doc(user.uid).delete();
       await user.delete();
 

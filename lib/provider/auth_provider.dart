@@ -36,6 +36,20 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Stamps the user's own doc with the current server time so the admin
+  // panel's Status / Last Active columns light up. Merge so it never
+  // overwrites other fields. Best-effort: failures must not block login.
+  Future<void> _touchLastActive(String uid) async {
+    try {
+      await _firestore.collection('users').doc(uid).set(
+        {'lastActive': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+    } catch (e) {
+      debugPrint('touchLastActive failed: $e');
+    }
+  }
+
   // Backfills default notification settings on login for any user
   // whose doc is missing them (older accounts, edge cases).
   // Idempotent: never overwrites fields the user has already customized.
@@ -146,6 +160,7 @@ class AuthProvider extends ChangeNotifier {
         }
 
         await _ensureUserDefaults(user.uid);
+        await _touchLastActive(user.uid);
 
         QuerySnapshot caseSnapshot = await _firestore
             .collection('users')
@@ -249,6 +264,7 @@ class AuthProvider extends ChangeNotifier {
       }
 
       await _ensureUserDefaults(user.uid);
+      await _touchLastActive(user.uid);
 
       if (context.mounted) {
         Provider.of<SettingsProvider>(context, listen: false).init();

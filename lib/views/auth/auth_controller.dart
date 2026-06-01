@@ -77,6 +77,18 @@ class AuthController {
       if (user != null) {
         if (user.emailVerified) {
           try {
+            // Stamp lastActive on app open so the admin panel's
+            // Status / Last Active columns stay current. Best-effort,
+            // merge so it never overwrites other user fields.
+            try {
+              await _firestore.collection('users').doc(user.uid).set(
+                {'lastActive': FieldValue.serverTimestamp()},
+                SetOptions(merge: true),
+              );
+            } catch (e) {
+              debugPrint('touchLastActive failed: $e');
+            }
+
             QuerySnapshot caseSnapshot = await _firestore
                 .collection('users')
                 .doc(user.uid)

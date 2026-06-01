@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -85,7 +87,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         CustomPrimaryButton(
                             text: "Create Account",
                             isLoading: provider.isLoading,
-                            onPressed: provider.isGoogleLoading
+                            onPressed: (provider.isGoogleLoading || provider.isAppleLoading)
                                 ? null
                                 : () {
                                     if (_formKey.currentState!.validate() && authController.isRegisterValidate(context: context)) {
@@ -102,9 +104,18 @@ class _SignupScreenState extends State<SignupScreen> {
                         const SizedBox(height: 28),
                         const OrContinueWithDivider(),
                         const SizedBox(height: 20),
-                        SocialAuthButton(
+                        if (!kIsWeb && Platform.isIOS) ...[
+                          AppleSignInButton(
+                            isLoading: provider.isAppleLoading,
+                            onPressed: (provider.isLoading || provider.isGoogleLoading)
+                                ? null
+                                : () => provider.appleSignInFunction(context: context),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        GoogleSignInButton(
                           isLoading: provider.isGoogleLoading,
-                          onPressed: provider.isLoading
+                          onPressed: (provider.isLoading || provider.isAppleLoading)
                               ? null
                               : () => provider.googleSignInFunction(context: context),
                         ),

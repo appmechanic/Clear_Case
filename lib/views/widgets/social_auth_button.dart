@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../../core/theme/app_colors.dart';
 
-class SocialAuthButton extends StatelessWidget {
+class GoogleSignInButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final bool isLoading;
 
-  const SocialAuthButton({
+  const GoogleSignInButton({
     super.key,
     this.onPressed,
     this.isLoading = false,
@@ -18,12 +18,72 @@ class SocialAuthButton extends StatelessWidget {
   Widget build(BuildContext context) {
     if (kIsWeb) return const SizedBox.shrink();
 
-    final isIOS = Platform.isIOS;
-    final isAndroid = Platform.isAndroid;
-    if (!isIOS && !isAndroid) return const SizedBox.shrink();
+    return SizedBox(
+      width: double.infinity,
+      height: 54,
+      child: ElevatedButton(
+        onPressed: isLoading ? null : onPressed,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.whiteColor,
+          disabledBackgroundColor: AppColors.whiteColor,
+          foregroundColor: Colors.black87,
+          shadowColor: Colors.transparent,
+          elevation: 0,
+          side: BorderSide(
+            color: AppColors.greyColor.withValues(alpha: 0.4),
+            width: 1,
+          ),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
+        ),
+        child: isLoading
+            ? const SizedBox(
+                height: 22,
+                width: 22,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.black54),
+                ),
+              )
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SvgPicture.asset(
+                    'assets/icons/google.svg',
+                    height: 22,
+                    width: 22,
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
+                    'Continue With Google',
+                    style: TextStyle(
+                      color: Colors.black87,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
 
-    final assetPath = isIOS ? 'assets/icons/apple.svg' : 'assets/icons/google.svg';
-    final label = isIOS ? 'Continue With Apple' : 'Continue With Google';
+class AppleSignInButton extends StatelessWidget {
+  final VoidCallback? onPressed;
+  final bool isLoading;
+
+  const AppleSignInButton({
+    super.key,
+    this.onPressed,
+    this.isLoading = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb) return const SizedBox.shrink();
+    if (!Platform.isIOS) return const SizedBox.shrink();
 
     return SizedBox(
       width: double.infinity,
@@ -53,17 +113,18 @@ class SocialAuthButton extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SvgPicture.asset(
-                    assetPath,
+                    'assets/icons/apple.svg',
                     height: 22,
                     width: 22,
-                    colorFilter: isIOS
-                        ? const ColorFilter.mode(AppColors.whiteColor, BlendMode.srcIn)
-                        : null,
+                    colorFilter: const ColorFilter.mode(
+                      AppColors.whiteColor,
+                      BlendMode.srcIn,
+                    ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    label,
-                    style: const TextStyle(
+                  const Text(
+                    'Continue With Apple',
+                    style: TextStyle(
                       color: AppColors.whiteColor,
                       fontSize: 16,
                       fontWeight: FontWeight.w600,

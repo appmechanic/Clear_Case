@@ -50,7 +50,11 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSLocationWhenInUseUsageDescription</key>
-    <string>ClearCase needs location access to pre-populate custody and dispute records.</string>
+	<string>ClearCase needs location access to pre-populate custody and dispute records.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>ClearCase needs location access to pre-populate custody and dispute records.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>ClearCase needs location access to pre-populate custody and dispute records.</string>
     <key>UIBackgroundModes</key>
     <array>
         <string>remote-notification</string>

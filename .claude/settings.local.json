@@ -18,7 +18,9 @@
       "Bash(firebase functions:list *)",
       "PowerShell(firebase *)",
       "PowerShell(firebase.cmd --version)",
-      "PowerShell(firebase.cmd deploy --only functions)"
+      "PowerShell(firebase.cmd deploy --only functions)",
+      "Bash(git add *)",
+      "Bash(xargs grep -l \"users\")"
     ]
   }
 }

@@ -299,7 +299,6 @@ class SettingsProvider extends ChangeNotifier {
       await _deleteStorageFolder(storageRef);
 
       // 2. DELETE ALL FIRESTORE DATA (Records & Sub-collections)
-      final WriteBatch batch = _firestore.batch();
       final DocumentReference caseRef = _firestore
           .collection('users')
           .doc(user.uid)
@@ -311,18 +310,32 @@ class SettingsProvider extends ChangeNotifier {
         'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
       ];
 
+      // Gather every child document reference across all sub-collections.
+      // Children added to the case are embedded in the case document itself,
+      // so they are removed when caseRef is deleted below.
+      final List<DocumentReference> refsToDelete = [];
       for (String subName in subCollections) {
         final querySnapshot = await caseRef.collection(subName).get();
         for (var doc in querySnapshot.docs) {
-          batch.delete(doc.reference);
+          refsToDelete.add(doc.reference);
         }
       }
+      // The main case document is deleted last.
+      refsToDelete.add(caseRef);
 
-      // Delete the main case document
-      batch.delete(caseRef);
-
-      // Commit all Firestore deletions at once
-      await batch.commit();
+      // Firestore batches are capped at 500 writes, so commit in chunks to
+      // guarantee large cases are fully removed (no orphaned records).
+      const int chunkSize = 450;
+      for (int i = 0; i < refsToDelete.length; i += chunkSize) {
+        final WriteBatch batch = _firestore.batch();
+        final end = (i + chunkSize < refsToDelete.length)
+            ? i + chunkSize
+            : refsToDelete.length;
+        for (int j = i; j < end; j++) {
+          batch.delete(refsToDelete[j]);
+        }
+        await batch.commit();
+      }
 
       // 3. UPDATE LOCAL UI
       _cases.removeWhere((c) => c.id == caseId);

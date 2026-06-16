@@ -12,6 +12,7 @@ class CalendarEvent {
   final String? description;
   final double? amount;
   final List<String> childNames;
+  final List<String> childIds;
   final bool isFlagged;
   final List<String> attachmentUrls;
   final String? location;
@@ -35,6 +36,7 @@ class CalendarEvent {
     this.description,
     this.amount,
     this.childNames = const [],
+    this.childIds = const [],
     this.isFlagged = false,
     this.attachmentUrls = const [],
     this.location,
@@ -77,6 +79,7 @@ class CalendarEvent {
       description: map['notes'] ?? map['description'],
       amount: (map['amount'] as num?)?.toDouble(),
       childNames: List<String>.from(map['childNames'] ?? []),
+      childIds: List<String>.from(map['childIds'] ?? []),
       isFlagged: map['flagEntry'] == true,
       attachmentUrls: readAttachmentUrls(map),
       location: map['location'],

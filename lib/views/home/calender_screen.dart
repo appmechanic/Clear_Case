@@ -67,10 +67,18 @@ class _CalenderScreenState extends State<CalenderScreen> {
                         child: Column(
                           children: [
                             _buildBottomButton("Scheduled Dates", () {
-                              Navigator.pushNamed(context, ScheduledDatesScreen.routeName);
+                              // Carry over the case currently selected on the
+                              // calendar so the Scheduled Dates screen opens on
+                              // the same case (and its children) instead of
+                              // defaulting to the first case.
+                              Navigator.pushNamed(
+                                context,
+                                ScheduledDatesScreen.routeName,
+                                arguments: provider.selectedCase?.id,
+                              );
                             }),
                             const SizedBox(height: 12),
-                            _buildBottomButton("Calendar legends", () {
+                            _buildBottomButton("Calendar Legend", () {
                               _showLegendsPopup(context);
                             }),
                           ],
@@ -205,6 +213,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                          onApply: (options) {
                            PDFGenerator.generateReport(
                              caseName: provider.selectedCase?.caseNumber ?? "Case Report",
+                             caseId: provider.selectedCase?.id ?? '',
                              options: options,
                              allEvents: provider.allEvents,
                            );
@@ -265,10 +274,12 @@ class _CalenderScreenState extends State<CalenderScreen> {
           outsideDaysVisible: false,
           weekendTextStyle: const TextStyle(color: Colors.black),
           defaultTextStyle: const TextStyle(fontWeight: FontWeight.w600),
-          todayDecoration: BoxDecoration(
-            color: AppColors.primary.withOpacity(0.3),
-            shape: BoxShape.rectangle,
-            borderRadius: BorderRadius.circular(12),
+          // No separate highlight for "today" — only the currently
+          // selected day shows a box.
+          todayDecoration: const BoxDecoration(color: Colors.transparent),
+          todayTextStyle: const TextStyle(
+            color: Colors.black,
+            fontWeight: FontWeight.w600,
           ),
           selectedDecoration: BoxDecoration(
             color: AppColors.primary,
@@ -486,7 +497,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Calendar Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                const Text("Calendar Legend", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
               ],
             ),

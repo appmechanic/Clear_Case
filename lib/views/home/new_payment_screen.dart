@@ -105,8 +105,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
   }
 
   // State Variables
-  String transactionType = "PaymentReceived"; // "PaymentReceived" | "PaymentPaid"
-  String paymentCategory = "Additional"; // Renamed from paymentTypeToggle
+  String transactionType = "PaymentPaid"; // "PaymentReceived" | "PaymentPaid"
+  String paymentCategory = "Compulsory"; // Renamed from paymentTypeToggle
 
 
   @override

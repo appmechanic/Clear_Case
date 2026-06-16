@@ -86,6 +86,7 @@ class InsightsScreen extends StatelessWidget {
                                   onApply: (options) {
                                     PDFGenerator.generateReport(
                                       caseName: insightProvider.selectedCase?.caseNumber ?? "Case Report",
+                                      caseId: insightProvider.selectedCase?.id ?? '',
                                       options: options,
                                       allEvents: insightProvider.allEvents,
                                     );

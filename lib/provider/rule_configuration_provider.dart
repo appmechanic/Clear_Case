@@ -124,6 +124,15 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleDay(int weekday) {
+    if (selectedDays.contains(weekday)) {
+      selectedDays.remove(weekday);
+    } else {
+      selectedDays.add(weekday);
+    }
+    notifyListeners();
+  }
+
   // --- NEW: Radio/Toggle Selection Logic ---
 
   void toggleChildSelection(String childId) {

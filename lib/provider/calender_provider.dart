@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import '../core/utils/attachments.dart';
 import '../models/case_model.dart';
+import '../services/case_selection_service.dart';
 import 'dart:async';
 
 
@@ -68,6 +69,28 @@ class CalendarProvider extends ChangeNotifier {
     // Drive all listeners off auth state so logging out / switching accounts
     // tears down the previous user's data and rebinds to the new uid.
     _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+    // Keep the case selection in sync with the rest of the app.
+    CaseSelectionService.instance.addListener(_onSharedSelectionChanged);
+  }
+
+  // Reflects a case selection made on another screen. Guarded so it only acts
+  // on a genuinely different, known case (avoids feedback loops).
+  void _onSharedSelectionChanged() {
+    final id = CaseSelectionService.instance.selectedCaseId;
+    if (id == null || _selectedCase?.id == id) return;
+    final matches = _allCases.where((c) => c.id == id);
+    if (matches.isNotEmpty) setSelectedCase(matches.first);
+  }
+
+  // Default selection on first load: honour a case already chosen elsewhere in
+  // the app, otherwise fall back to the first case.
+  CaseModel _initialCase() {
+    final id = CaseSelectionService.instance.selectedCaseId;
+    if (id != null) {
+      final matches = _allCases.where((c) => c.id == id);
+      if (matches.isNotEmpty) return matches.first;
+    }
+    return _allCases.first;
   }
 
   void _handleAuthChanged(User? user) {
@@ -95,6 +118,7 @@ class CalendarProvider extends ChangeNotifier {
     _events.clear();
     _allCases = [];
     _selectedCase = null;
+    CaseSelectionService.instance.clear();
     _focusedDay = DateTime.now();
     _selectedDay = _focusedDay;
     _initialLoad = true;
@@ -103,6 +127,7 @@ class CalendarProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    CaseSelectionService.instance.removeListener(_onSharedSelectionChanged);
     _authSubscription?.cancel();
     _refetchDebounce?.cancel();
     _casesSubscription?.cancel();
@@ -160,7 +185,7 @@ class CalendarProvider extends ChangeNotifier {
 
       if (_allCases.isNotEmpty) {
         if (_selectedCase == null) {
-          setSelectedCase(_allCases.first);
+          setSelectedCase(_initialCase());
         } else {
           // Update the selected case object if metadata changed
           final stillExists = _allCases.any((c) => c.id == _selectedCase!.id);
@@ -176,10 +201,17 @@ class CalendarProvider extends ChangeNotifier {
   }
 
   void setSelectedCase(CaseModel? selected) {
-    // If the same case is selected, do nothing
-    if (_selectedCase?.id == selected?.id && _events.isNotEmpty) return;
+    // If the same case is selected, do nothing (but keep shared state in sync).
+    if (_selectedCase?.id == selected?.id && _events.isNotEmpty) {
+      CaseSelectionService.instance.select(selected?.id);
+      return;
+    }
 
     _selectedCase = selected;
+    // Broadcast AFTER updating local state so our own listener sees them in
+    // sync and ignores the notification — this prevents reentrancy. Other
+    // screens see a changed id and follow.
+    CaseSelectionService.instance.select(selected?.id);
     _events.clear();
 
      _focusedDay = DateTime.now();
@@ -368,6 +400,10 @@ class CalendarProvider extends ChangeNotifier {
         bool hasValidFrequency = freq != null && freq != "None" && freq != "null";
         String frequency = hasValidFrequency ? freq : "None";
 
+        // Selected weekdays for the "Custom" frequency (DateTime.weekday: Mon=1..Sun=7)
+        final List<int> customDays =
+            ((data['customDays'] as List?) ?? []).map((e) => (e as num).toInt()).toList();
+
         if (startDate == null) continue;
 
         List<DateTime> instances = _generateRuleInstances(
@@ -375,6 +411,7 @@ class CalendarProvider extends ChangeNotifier {
           endDate: endDate,
           isRepeat: hasValidFrequency,
           frequency: frequency,
+          customDays: customDays,
         );
 
         for (DateTime instanceDate in instances) {
@@ -405,6 +442,7 @@ class CalendarProvider extends ChangeNotifier {
     DateTime? endDate,
     required bool isRepeat,
     required String frequency,
+    List<int> customDays = const [],
   }) {
     List<DateTime> instances = [];
     DateTime currentStart = DateTime(startDate.year, startDate.month, startDate.day);
@@ -414,6 +452,21 @@ class CalendarProvider extends ChangeNotifier {
       while (!currentStart.isAfter(rangeEnd)) {
         instances.add(currentStart);
         currentStart = currentStart.add(const Duration(days: 1));
+      }
+      return instances;
+    }
+
+    // CUSTOM: highlight every selected weekday from start until end date,
+    // or two years out when no end date is set (matches other frequencies).
+    if (isRepeat && frequency == "Custom") {
+      if (customDays.isEmpty) return instances;
+      DateTime customLimit = endDate != null
+          ? DateTime(endDate.year, endDate.month, endDate.day)
+          : currentStart.add(const Duration(days: 730));
+      DateTime cursor = currentStart;
+      while (!cursor.isAfter(customLimit)) {
+        if (customDays.contains(cursor.weekday)) instances.add(cursor);
+        cursor = cursor.add(const Duration(days: 1));
       }
       return instances;
     }
@@ -465,8 +518,10 @@ class CalendarProvider extends ChangeNotifier {
   }
 
   String getCaseDisplayName(CaseModel caseItem) {
+    // Show the child name(s); fall back to the case number only when a case
+    // has no children attached.
     if (caseItem.children.isEmpty) return caseItem.caseNumber;
-    return "${caseItem.caseNumber} (${caseItem.children.map((c) => c.name.trim()).join(' & ')})";
+    return caseItem.children.map((c) => c.name.trim()).join(' & ');
   }
 
   Future<void> fetchRemindersForCase(String caseId) async {

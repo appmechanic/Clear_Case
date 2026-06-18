@@ -216,6 +216,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                              caseId: provider.selectedCase?.id ?? '',
                              options: options,
                              allEvents: provider.allEvents,
+                             caseModel: provider.selectedCase,
                            );
                          }
                     ));

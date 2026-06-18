@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../models/case_model.dart';
+import '../services/case_selection_service.dart';
 
 // Ensure CaseModel import is here
 
@@ -44,6 +45,18 @@ class ScheduledDatesProvider extends ChangeNotifier {
     // Clear cached cases and rule records when the signed-in user changes,
     // so a fresh login never sees the previous account's data.
     _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+    // Keep the case selection in sync with the rest of the app.
+    CaseSelectionService.instance.addListener(_onSharedSelectionChanged);
+  }
+
+  // Reflects a case selection made on another screen. Guarded so it only acts
+  // on a genuinely different, known case (avoids feedback loops). When the
+  // cases haven't been loaded yet, init() reconciles with the shared selection.
+  void _onSharedSelectionChanged() {
+    final id = CaseSelectionService.instance.selectedCaseId;
+    if (id == null || _selectedCase?.id == id) return;
+    final matches = _allCases.where((c) => c.id == id);
+    if (matches.isNotEmpty) setSelectedCase(matches.first);
   }
 
   void _handleAuthChanged(User? user) {
@@ -60,6 +73,7 @@ class ScheduledDatesProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    CaseSelectionService.instance.removeListener(_onSharedSelectionChanged);
     _authSubscription?.cancel();
     super.dispose();
   }
@@ -80,12 +94,17 @@ class ScheduledDatesProvider extends ChangeNotifier {
       );
       _selectedCase = foundCase;
     } else if (_allCases.isNotEmpty) {
-      // Default to first case if no ID provided
-      _selectedCase = _allCases.first;
+      // Honour a case already chosen elsewhere in the app, else first.
+      final sharedId = CaseSelectionService.instance.selectedCaseId;
+      _selectedCase = (sharedId != null)
+          ? _allCases.firstWhere((c) => c.id == sharedId, orElse: () => _allCases.first)
+          : _allCases.first;
     }
 
     // 3. Now check the rules for the selected case
     if (_selectedCase != null) {
+      // Broadcast so other screens follow this selection.
+      CaseSelectionService.instance.select(_selectedCase!.id);
       await checkSubCollections();
     }
 
@@ -122,6 +141,8 @@ class ScheduledDatesProvider extends ChangeNotifier {
     // 1. Set to loading state
     isLoading = true;
     _selectedCase = caseModel as CaseModel?;
+    // Broadcast to the rest of the app (no-op when unchanged, so it can't loop).
+    CaseSelectionService.instance.select(_selectedCase?.id);
     notifyListeners(); // This notifies the UI to show the loader
 
     // 2. Perform the async work
@@ -163,10 +184,12 @@ class ScheduledDatesProvider extends ChangeNotifier {
 
   String getCaseDisplayName(dynamic caseItem) {
     if (caseItem is! CaseModel) return "Select Case";
-    final caseNum = caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
-    if (caseItem.children.isEmpty) return caseNum;
-    final names = caseItem.children.map((child) => child.name.trim()).join(' & ');
-    return "$caseNum ($names)";
+    // Show the child name(s); fall back to the case number only when a case
+    // has no children attached.
+    if (caseItem.children.isEmpty) {
+      return caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
+    }
+    return caseItem.children.map((child) => child.name.trim()).join(' & ');
   }
 
   Future<void> deleteRule(String caseId, String recordId, String category) async {

@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
   <color name="ic_launcher_background">#FFFFFFFF</color>
+  <!-- Brand colour shown on the native launch screen (matches AppColors.primary) -->
+  <color name="splash_background">#45086D</color>
 </resources>

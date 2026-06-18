@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/case_setup_provider.dart';
 import '../widgets/custom_text_field.dart';
+import '../widgets/weekday_selector.dart';
 
 class CaseSetupScreen extends StatefulWidget {
   static const routeName = '/case-setup';
@@ -397,7 +398,10 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
    String selectedFrequency = "Weekly";
 
-  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly"];
+  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly", "Custom"];
+
+  // Selected weekdays for the "Custom" frequency (DateTime.weekday: Mon=1..Sun=7)
+  Set<int> selectedDays = {};
   @override
   void initState() {
     super.initState();
@@ -421,6 +425,11 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
     } else {
       // RECURRING RULE: Check Days and Toggle
 
+      // Custom frequency requires at least one weekday
+      if (selectedFrequency == "Custom" && selectedDays.isEmpty) {
+        showSnackBar(context, "Please select at least one day of the week");
+        return;
+      }
 
       if (hasEndDate && (endDate == null || endTime == null)) {
         showSnackBar(context, "Please select an end date and time or turn off the toggle");
@@ -455,6 +464,9 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
 
       "notificationPref": notificationPref,
        "repeatFrequency": isRepeat ? selectedFrequency : null,
+      "customDays": (isRepeat && selectedFrequency == "Custom")
+          ? selectedDays.toList()
+          : null,
       "notes": _notesController.text,
       "appliedChildren": childrenData,
     };
@@ -514,6 +526,7 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
       startTime = null;
       endTime = null;
       selectedFrequency = "Weekly";
+      selectedDays = {};
       isRepeat = true;
       hasEndDate = false;
       selectedChildIds = widget.provider.caseData.children.map((e) => e.id).toSet();
@@ -619,6 +632,27 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
               );
             },
           ),
+
+          // Weekday picker (only for "Custom" frequency)
+          if (selectedFrequency == "Custom") ...[
+            const SizedBox(height: 16),
+            const Text("Repeat On", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+            const SizedBox(height: 2),
+            const Text("Select one or more days of the week",
+                style: TextStyle(color: Colors.grey, fontSize: 11)),
+            const SizedBox(height: 12),
+            WeekdaySelector(
+              selectedDays: selectedDays,
+              onToggle: (weekday) => setState(() {
+                if (selectedDays.contains(weekday)) {
+                  selectedDays.remove(weekday);
+                } else {
+                  selectedDays.add(weekday);
+                }
+              }),
+            ),
+          ],
+
           const SizedBox(height: 20),
 
           // NEW: Add End Date Toggle (Only shows if isRepeat is TRUE)

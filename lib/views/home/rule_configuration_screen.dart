@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:clearcase/models/case_model.dart'; // Ensure ChildModel is accessible
 import 'package:clearcase/views/widgets/custom_text_field.dart';
+import 'package:clearcase/views/widgets/weekday_selector.dart';
 import '../../provider/rule_configuration_provider.dart';
 import '../main_screen.dart';
 import '../widgets/custom_dropdown.dart';
@@ -29,8 +30,6 @@ class RuleConfigurationScreen extends StatefulWidget {
 
 
 class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
-  List<int> selectedDays = [];
-
   @override
   void initState() {
     super.initState();
@@ -84,6 +83,21 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
               const Text("Repeat Frequency", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
               const SizedBox(height: 12),
               _buildFrequencySelector(provider), // New Method
+
+              // Weekday picker (only for "Custom" frequency)
+              if (provider.selectedFrequency == "Custom") ...[
+                const SizedBox(height: 16),
+                const Text("Repeat On", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 4),
+                const Text("Select one or more days of the week",
+                    style: TextStyle(color: Colors.grey, fontSize: 11)),
+                const SizedBox(height: 12),
+                WeekdaySelector(
+                  selectedDays: provider.selectedDays,
+                  onToggle: provider.toggleDay,
+                ),
+              ],
+
                const SizedBox(height: 20),
 
                Row(
@@ -395,6 +409,16 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
           // 2. Start Date & Time Validation
           if (provider.startDate == null || provider.startTime == null) {
             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select Start Date and Time.")));
+            return;
+          }
+
+          // Custom frequency requires at least one weekday
+          if (provider.isRepeat &&
+              provider.selectedFrequency == "Custom" &&
+              provider.selectedDays.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Please select at least one day of the week."))
+            );
             return;
           }
 

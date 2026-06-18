@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../models/calender_event_model.dart';
 import '../models/case_model.dart';
+import '../services/case_selection_service.dart';
 
 
 import 'dart:async';
@@ -76,6 +77,17 @@ class InsightProvider with ChangeNotifier {
     // Drive all listeners off auth state so logging out / switching accounts
     // tears down the previous user's data and rebinds to the new uid.
     _authSubscription = _auth.authStateChanges().listen(_handleAuthChanged);
+    // Keep the case selection in sync with the rest of the app.
+    CaseSelectionService.instance.addListener(_onSharedSelectionChanged);
+  }
+
+  // Reflects a case selection made on another screen. Guarded so it only acts
+  // on a genuinely different, known case (avoids feedback loops).
+  void _onSharedSelectionChanged() {
+    final id = CaseSelectionService.instance.selectedCaseId;
+    if (id == null || _selectedCase?.id == id) return;
+    final matches = _allCases.where((c) => c.id == id);
+    if (matches.isNotEmpty) setSelectedCase(matches.first);
   }
 
   void _handleAuthChanged(User? user) {
@@ -131,7 +143,12 @@ class InsightProvider with ChangeNotifier {
           orElse: () => _allCases.isNotEmpty ? _allCases.first : _selectedCase!,
         );
       } else if (_allCases.isNotEmpty) {
-        setSelectedCase(_allCases.first);
+        // Honour a case already chosen elsewhere in the app, else first.
+        final sharedId = CaseSelectionService.instance.selectedCaseId;
+        final initial = (sharedId != null)
+            ? _allCases.firstWhere((c) => c.id == sharedId, orElse: () => _allCases.first)
+            : _allCases.first;
+        setSelectedCase(initial);
       }
 
       _isLoading = false;
@@ -145,6 +162,8 @@ class InsightProvider with ChangeNotifier {
   /// 2. SET CASE: Updates listeners for the specific case sub-collections
   void setSelectedCase(dynamic caseModel) {
     _selectedCase = caseModel as CaseModel?;
+    // Broadcast to the rest of the app (no-op when unchanged, so it can't loop).
+    CaseSelectionService.instance.select(_selectedCase?.id);
     _resetStats();
     _startListeningToCaseDetails();
     notifyListeners();
@@ -308,10 +327,12 @@ class InsightProvider with ChangeNotifier {
 
   String getCaseDisplayName(dynamic caseItem) {
     if (caseItem is! CaseModel) return "Select Case";
-    final caseNum = caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
-    if (caseItem.children.isEmpty) return caseNum;
-    final names = caseItem.children.map((child) => child.name.trim()).join(' & ');
-    return "$caseNum ($names)";
+    // Show the child name(s); fall back to the case number only when a case
+    // has no children attached.
+    if (caseItem.children.isEmpty) {
+      return caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
+    }
+    return caseItem.children.map((child) => child.name.trim()).join(' & ');
   }
 
   Future<void> fetchAllEventsForReport() async {
@@ -333,6 +354,7 @@ class InsightProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    CaseSelectionService.instance.removeListener(_onSharedSelectionChanged);
     _authSubscription?.cancel();
     _casesSubscription?.cancel();
     for (var sub in _caseDetailSubscriptions) { sub.cancel(); }

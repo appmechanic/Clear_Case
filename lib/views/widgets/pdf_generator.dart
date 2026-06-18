@@ -6,6 +6,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import '../../models/calender_event_model.dart';
+import '../../models/case_model.dart';
 import 'export_filter.dart';
 import 'file_type_icon.dart';
 
@@ -17,10 +18,14 @@ class PDFGenerator {
     required String caseId,
     required ExportOptions options,
     required List<CalendarEvent> allEvents,
+    CaseModel? caseModel,
   }) async {
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.jostRegular();
     final fontBold = await PdfGoogleFonts.jostBold();
+
+    // Parent / guardian = the logged-in account holder.
+    final parent = await _fetchParentDetails();
 
     bool matchesDate(CalendarEvent event) {
       final eventDay = DateTime(event.date.year, event.date.month, event.date.day);
@@ -80,6 +85,24 @@ class PDFGenerator {
 
     final summaryWidgets = _buildSummary(stats, custody, options, fontBold);
 
+    // Page 1: cover sheet with all the key case information.
+    pdf.addPage(
+      pw.Page(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(35),
+        theme: pw.ThemeData.withFont(base: font, bold: fontBold),
+        build: (context) => _buildCoverPage(
+          caseName: caseName,
+          caseModel: caseModel,
+          options: options,
+          parentName: parent['name']!,
+          parentEmail: parent['email']!,
+          font: font,
+          bold: fontBold,
+        ),
+      ),
+    );
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
@@ -121,6 +144,167 @@ class PDFGenerator {
         pw.Divider(thickness: 1.5, color: primaryColor),
       ],
     );
+  }
+
+  // --- Cover sheet (Page 1) ---
+  //
+  // Holds all the key case information up front: child name(s) & DOB, case
+  // number, legal representative, parent/guardian, the period the report
+  // covers, and the date it was generated.
+  static pw.Widget _buildCoverPage({
+    required String caseName,
+    required CaseModel? caseModel,
+    required ExportOptions options,
+    required String parentName,
+    required String parentEmail,
+    required pw.Font font,
+    required pw.Font bold,
+  }) {
+    // Only the children actually included in this report (per the export filter).
+    final children = (caseModel?.children ?? [])
+        .where((c) => options.childIds.isEmpty || options.childIds.contains(c.id))
+        .toList();
+
+    final String childNames =
+        children.isEmpty ? "—" : children.map((c) => c.name).join(", ");
+    final String dobs = children.isEmpty
+        ? "—"
+        : children.map((c) => DateFormat('dd/MM/yyyy').format(c.dob)).join("\n");
+
+    final String legalRep =
+        (caseModel?.legalRep ?? "").trim().isEmpty ? "—" : caseModel!.legalRep.trim();
+
+    final String guardian = parentEmail == "—"
+        ? parentName
+        : "$parentName\n$parentEmail";
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.SizedBox(height: 40),
+        pw.Text("EVIDENCE REPORT",
+            style: pw.TextStyle(font: bold, fontSize: 30, color: primaryColor)),
+        pw.SizedBox(height: 6),
+        pw.Text("ClearCase — Custody & Compliance Record",
+            style: const pw.TextStyle(fontSize: 13, color: PdfColors.grey700)),
+        pw.SizedBox(height: 20),
+        pw.Divider(thickness: 2, color: primaryColor),
+        pw.SizedBox(height: 30),
+
+        // Key case information block.
+        pw.Container(
+          padding: const pw.EdgeInsets.all(20),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFF7F2FB),
+            borderRadius: pw.BorderRadius.circular(10),
+            border: pw.Border.all(color: primaryColor, width: 0.5),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text("CASE INFORMATION",
+                  style: pw.TextStyle(font: bold, fontSize: 13, color: primaryColor)),
+              pw.SizedBox(height: 14),
+              _coverInfoRow(children.length > 1 ? "Child Names" : "Child Name", childNames, bold),
+              _coverInfoRow("Case Number", caseName, bold),
+              _coverInfoRow("Date of Birth", dobs, bold),
+              _coverInfoRow("Legal Representative", legalRep, bold),
+              _coverInfoRow("Parent / Guardian", guardian, bold),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 20),
+
+        // Report metadata block.
+        pw.Container(
+          padding: const pw.EdgeInsets.all(20),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFF7F2FB),
+            borderRadius: pw.BorderRadius.circular(10),
+            border: pw.Border.all(color: primaryColor, width: 0.5),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text("REPORT DETAILS",
+                  style: pw.TextStyle(font: bold, fontSize: 13, color: primaryColor)),
+              pw.SizedBox(height: 14),
+              _coverInfoRow("Report Period Covered", _reportPeriod(options), bold),
+              _coverInfoRow("Report Generated On",
+                  DateFormat('dd/MM/yyyy  hh:mm a').format(DateTime.now()), bold),
+            ],
+          ),
+        ),
+
+        pw.Spacer(),
+        pw.Center(
+          child: pw.Text(
+            "Generated by ClearCase. This document is intended for legal and court reference.",
+            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _coverInfoRow(String label, String value, pw.Font bold) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 6),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          pw.SizedBox(
+            width: 170,
+            child: pw.Text(label,
+                style: pw.TextStyle(font: bold, fontSize: 11, color: primaryColor)),
+          ),
+          pw.Expanded(
+            child: pw.Text(value, style: const pw.TextStyle(fontSize: 11)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Human-readable description of the time span the report covers.
+  static String _reportPeriod(ExportOptions options) {
+    final start = options.startDate;
+    final end = options.endDate;
+    final fmt = DateFormat('dd/MM/yyyy');
+    if (start != null && end != null) return "${fmt.format(start)} - ${fmt.format(end)}";
+    if (start != null) return "From ${fmt.format(start)}";
+    if (end != null) return "Up to ${fmt.format(end)}";
+    return options.timePeriod ?? "All Time";
+  }
+
+  // Parent / guardian = the signed-in account holder. Prefers the Auth
+  // display name; falls back to the Firestore user document's first/last name.
+  static Future<Map<String, String>> _fetchParentDetails() async {
+    final user = FirebaseAuth.instance.currentUser;
+    String name = (user?.displayName ?? '').trim();
+    String email = (user?.email ?? '').trim();
+
+    if (name.isEmpty && user != null) {
+      try {
+        final firestore =
+            FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
+        final doc = await firestore.collection('users').doc(user.uid).get();
+        final data = doc.data();
+        if (data != null) {
+          final fn = (data['firstName'] ?? '').toString().trim();
+          final ln = (data['lastName'] ?? '').toString().trim();
+          name = "$fn $ln".trim();
+          if (email.isEmpty) email = (data['email'] ?? '').toString().trim();
+        }
+      } catch (_) {
+        // Falls back to whatever Auth provided (possibly empty).
+      }
+    }
+
+    return {
+      'name': name.isEmpty ? '—' : name,
+      'email': email.isEmpty ? '—' : email,
+    };
   }
 
   // --- Insights summary (mirrors the in-app Insights screen) ---

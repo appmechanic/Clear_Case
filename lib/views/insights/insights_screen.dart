@@ -89,6 +89,7 @@ class InsightsScreen extends StatelessWidget {
                                       caseId: insightProvider.selectedCase?.id ?? '',
                                       options: options,
                                       allEvents: insightProvider.allEvents,
+                                      caseModel: insightProvider.selectedCase,
                                     );
                                   }
                               ),

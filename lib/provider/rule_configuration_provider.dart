@@ -32,7 +32,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get appliedChildrenList => _appliedChildrenList;
 
   String selectedFrequency = "Weekly";
-  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly"];
+  final List<String> frequencyOptions = ["Weekly", "Fortnightly", "Monthly", "Custom"];
+
+  // Selected weekdays for the "Custom" frequency (DateTime.weekday: Mon=1..Sun=7)
+  Set<int> selectedDays = {};
 
   void init(String? caseId, String category, List<ChildModel> available) {
     reset();
@@ -73,6 +76,10 @@ class RuleConfigurationProvider extends ChangeNotifier {
         String? freq = data['repeatFrequency'];
         isRepeat = (freq != null && freq.isNotEmpty && freq != "None");
         selectedFrequency = freq ?? "Weekly";
+
+        // Restore custom weekday selection
+        final List<dynamic> days = data['customDays'] ?? [];
+        selectedDays = days.map((e) => (e as num).toInt()).toSet();
 
         // LOGIC: If there is an endDate in DB, hasEndDate should be TRUE
         endDate = DateTime.tryParse(data['endDate'] ?? "");
@@ -245,6 +252,9 @@ class RuleConfigurationProvider extends ChangeNotifier {
         "startDate": startDate?.toIso8601String(),
         "startTime": startTime != null ? "${startTime!.hour}:${startTime!.minute}" : null,
          "repeatFrequency": isRepeat ? selectedFrequency : null,
+        "customDays": (isRepeat && selectedFrequency == "Custom")
+            ? selectedDays.toList()
+            : null,
         "endDate": (!isRepeat || (isRepeat && hasEndDate)) ? endDate?.toIso8601String() : null,
         "endTime": (!isRepeat || (isRepeat && hasEndDate)) && endTime != null
             ? "${endTime!.hour}:${endTime!.minute}" : null,
@@ -295,6 +305,7 @@ class RuleConfigurationProvider extends ChangeNotifier {
     notesController.clear();
 
     selectedFrequency = "Weekly";
+    selectedDays = {};
     _appliedChildrenList = [];
     _addedChildrenOnly = [];
     _masterAvailableChildren = [];

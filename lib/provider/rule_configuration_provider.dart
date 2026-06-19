@@ -295,11 +295,21 @@ class RuleConfigurationProvider extends ChangeNotifier {
     return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     notesController.dispose();
     notesNode.dispose();
     super.dispose();
+  }
+
+  // Guard against notifying after disposal (in-flight async fetches/sync).
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   void reset() {

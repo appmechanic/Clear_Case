@@ -71,11 +71,21 @@ class ScheduledDatesProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     CaseSelectionService.instance.removeListener(_onSharedSelectionChanged);
     _authSubscription?.cancel();
     super.dispose();
+  }
+
+  // Guard against notifying after disposal (in-flight async fetches).
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   Future<void> init({String? initialCaseId}) async {

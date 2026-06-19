@@ -1,6 +1,9 @@
+import 'dart:io';
+import 'dart:ui' as ui;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -630,8 +633,16 @@ class PDFGenerator {
 
   // Resolves every record's attachments up front. Image bytes are downloaded
   // so photos can render as thumbnails; documents are kept as link targets.
+  // Bounds on embedded images so a photo-heavy report can't exhaust memory or
+  // produce an unusable multi-hundred-MB PDF. Images beyond the cap, and any
+  // that fail to load, render as a tappable link chip instead.
+  static const int _maxEmbeddedImages = 50;
+  static const int _imageMaxWidth = 1280;
+
   static Future<Map<String, List<_Attachment>>> _collectAttachments(List<CalendarEvent> events) async {
     final map = <String, List<_Attachment>>{};
+    int embedded = 0;
+    int skippedForCap = 0;
     for (final e in events) {
       if (e.attachmentUrls.isEmpty) continue;
       final list = <_Attachment>[];
@@ -640,10 +651,13 @@ class PDFGenerator {
         final fileName = _fileNameFromUrl(url);
         if (isImageExtension(ext)) {
           pw.ImageProvider? image;
-          try {
-            image = await networkImage(url);
-          } catch (_) {
-            image = null; // Falls back to a link chip below.
+          if (embedded < _maxEmbeddedImages) {
+            // Downscale on load: caps the decoded pixel buffer regardless of
+            // the original photo resolution. null -> link-chip fallback below.
+            image = await _downscaledNetworkImage(url, maxWidth: _imageMaxWidth);
+            if (image != null) embedded++;
+          } else {
+            skippedForCap++;
           }
           list.add(_Attachment(url: url, fileName: fileName, isImage: true, image: image));
         } else {
@@ -652,7 +666,38 @@ class PDFGenerator {
       }
       map[e.id] = list;
     }
+    if (skippedForCap > 0) {
+      debugPrint(
+          'PDF export: embedded $_maxEmbeddedImages image(s); $skippedForCap more shown as links to bound memory/file size.');
+    }
     return map;
+  }
+
+  /// Downloads [url] and returns a PDF image downscaled to at most [maxWidth]
+  /// pixels wide. Resizing via the platform codec bounds the decoded buffer —
+  /// the real driver of out-of-memory crashes when many large photos are
+  /// embedded. Returns null on any failure so the caller renders a link chip.
+  static Future<pw.ImageProvider?> _downscaledNetworkImage(String url, {required int maxWidth}) async {
+    HttpClient? client;
+    try {
+      client = HttpClient();
+      final request = await client.getUrl(Uri.parse(url));
+      final response = await request.close();
+      if (response.statusCode != 200) return null;
+      final bytes = await consolidateHttpClientResponseBytes(response);
+
+      final codec = await ui.instantiateImageCodec(bytes, targetWidth: maxWidth);
+      final frame = await codec.getNextFrame();
+      final pngData = await frame.image.toByteData(format: ui.ImageByteFormat.png);
+      frame.image.dispose();
+      codec.dispose();
+      if (pngData == null) return null;
+      return pw.MemoryImage(pngData.buffer.asUint8List());
+    } catch (_) {
+      return null;
+    } finally {
+      client?.close(force: true);
+    }
   }
 
   // --- Custody compliance (identical to InsightProvider.calculateCustodyCompliance) ---
@@ -681,9 +726,11 @@ class PDFGenerator {
       final Set<String> scheduledDates = {};
       for (final doc in rulesSnap.docs) {
         final data = doc.data();
-        if (data['startDate'] == null) continue;
-        final start = DateTime.parse(data['startDate']);
-        final end = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
+        // Skip rules with a missing/malformed startDate rather than throwing —
+        // the outer catch would otherwise zero out the whole court report.
+        final start = DateTime.tryParse(data['startDate']?.toString() ?? '');
+        if (start == null) continue;
+        final end = DateTime.tryParse(data['endDate']?.toString() ?? '');
         final calcEnd = (end != null && end.isBefore(today)) ? end : today;
 
         for (var date = DateTime(start.year, start.month, start.day);
@@ -719,6 +766,7 @@ class PDFGenerator {
 
       return _CustodyCompliance(fulfilled, justified, missed, rate.toDouble());
     } catch (e) {
+      debugPrint('Custody compliance calc failed for report: $e');
       return const _CustodyCompliance(0, 0, 0, 0);
     }
   }

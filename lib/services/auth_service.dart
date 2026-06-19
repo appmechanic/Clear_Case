@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -169,15 +170,18 @@ class AuthService {
     }
   }
 
-  Future<void> revokeAppleTokenWith(String authorizationCode) async {
+  /// Revokes the Apple refresh token (App Store guideline 5.1.1(v)).
+  /// Returns `true` on success. Revocation should never hard-block account
+  /// deletion if Apple's endpoint hiccups, so we swallow the error here and
+  /// let the caller decide what to do — but we report the outcome instead of
+  /// silently dropping it.
+  Future<bool> revokeAppleTokenWith(String authorizationCode) async {
     try {
       await _auth.revokeTokenWithAuthorizationCode(authorizationCode);
+      return true;
     } catch (e) {
-      // Revocation is required by Apple but should never block account
-      // deletion entirely if Apple's endpoint hiccups; we surface a log
-      // and let the caller proceed with Firebase + Firestore cleanup.
-      // ignore: avoid_print
-      print('Apple token revoke failed: $e');
+      debugPrint('Apple token revoke failed: $e');
+      return false;
     }
   }
 

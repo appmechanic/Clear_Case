@@ -282,8 +282,11 @@ class InsightProvider with ChangeNotifier {
       Set<String> scheduledDates = {};
       for (var doc in rulesSnap.docs) {
         final data = doc.data();
-        DateTime start = DateTime.parse(data['startDate']);
-        DateTime? end = data['endDate'] != null ? DateTime.parse(data['endDate']) : null;
+        // Skip rules with a missing/malformed startDate instead of letting one
+        // bad row throw and silently zero out the entire compliance result.
+        final DateTime? start = DateTime.tryParse(data['startDate']?.toString() ?? '');
+        if (start == null) continue;
+        final DateTime? end = DateTime.tryParse(data['endDate']?.toString() ?? '');
         DateTime calcEnd = (end != null && end.isBefore(today)) ? end : today;
 
         for (DateTime date = DateTime(start.year, start.month, start.day); !date.isAfter(calcEnd); date = date.add(const Duration(days: 1))) {
@@ -352,12 +355,22 @@ class InsightProvider with ChangeNotifier {
     } finally { _isLoading = false; notifyListeners(); }
   }
 
+  bool _disposed = false;
+
   @override
   void dispose() {
+    _disposed = true;
     CaseSelectionService.instance.removeListener(_onSharedSelectionChanged);
     _authSubscription?.cancel();
     _casesSubscription?.cancel();
     for (var sub in _caseDetailSubscriptions) { sub.cancel(); }
     super.dispose();
+  }
+
+  // Guard against notifying after disposal (in-flight async fetches).
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 }

@@ -37,6 +37,9 @@ class AttachmentThumbnail extends StatelessWidget {
     final ext = extensionFromUrl(url);
     final isImage = isImageExtension(ext);
     final typeInfo = fileTypeFromExtension(ext);
+    // Decode the remote image down to the thumbnail's physical pixel size
+    // instead of holding the full-resolution bitmap in memory per tile.
+    final int cacheSize = (80 * MediaQuery.of(context).devicePixelRatio).round();
 
     return Container(
       width: 80,
@@ -62,6 +65,8 @@ class AttachmentThumbnail extends StatelessWidget {
                         width: 80,
                         height: 80,
                         fit: BoxFit.cover,
+                        cacheWidth: cacheSize,
+                        cacheHeight: cacheSize,
                         errorBuilder: (context, error, stackTrace) => FileTypeTile(info: typeInfo),
                         loadingBuilder: (context, child, loadingProgress) {
                           if (loadingProgress == null) return child;

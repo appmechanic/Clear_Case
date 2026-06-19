@@ -26,6 +26,8 @@ class SettingsProvider extends ChangeNotifier {
   bool _isLoading = true;
   bool get isLoading => _isLoading;
 
+  bool _disposed = false;
+
   // Data Holders
   UserModel? _userProfile;
   UserModel? get userProfile => _userProfile;
@@ -77,9 +79,18 @@ class SettingsProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _authSubscription?.cancel();
     _casesSubscription?.cancel();
     super.dispose();
+  }
+
+  // Guard against "A ChangeNotifier was used after being disposed" when an
+  // in-flight async fetch resolves after the provider has been torn down.
+  @override
+  void notifyListeners() {
+    if (_disposed) return;
+    super.notifyListeners();
   }
 
   // --- INIT ---
@@ -220,12 +231,6 @@ class SettingsProvider extends ChangeNotifier {
   }
 
   // --- ACTIONS ---
-
-  // Update Push Notification Toggle
-  Future<void> toggleNotifications(bool value) async {
-    notifyListeners();
-    _saveSettingsToFirebase();
-  }
 
   // Update Time
   Future<void> updateNotificationTime(TimeOfDay newTime) async {
@@ -375,6 +380,20 @@ class SettingsProvider extends ChangeNotifier {
     }
   }
 
+  // Deletes the given document refs in batches that stay safely under
+  // Firestore's hard limit of 500 writes per batch.
+  Future<void> _commitDeletesInChunks(List<DocumentReference> refs,
+      {int chunkSize = 450}) async {
+    for (var i = 0; i < refs.length; i += chunkSize) {
+      final end = (i + chunkSize < refs.length) ? i + chunkSize : refs.length;
+      final batch = _firestore.batch();
+      for (final ref in refs.sublist(i, end)) {
+        batch.delete(ref);
+      }
+      await batch.commit();
+    }
+  }
+
   Future<void> logout(BuildContext context) async {
     _isLoading = true;
     notifyListeners();
@@ -397,7 +416,7 @@ class SettingsProvider extends ChangeNotifier {
       await _auth.signOut();
       if (context.mounted) showSnackBar(context, "Logged out with errors");
     } finally {
-      _isLoading = true;
+      _isLoading = false;
       notifyListeners();
     }
   }
@@ -452,29 +471,33 @@ class SettingsProvider extends ChangeNotifier {
       await _deleteStorageFolder(storageUserRef);
 
       // --- STEP 4: FIRESTORE CLEANUP ---
+      // NOTE: data must be deleted while the user is still authenticated —
+      // once `user.delete()` runs (STEP 6) the session is gone and Firestore
+      // rules reject any further writes. Hence data-first / auth-last ordering.
       final casesSnapshot = await _firestore
           .collection('users')
           .doc(user.uid)
           .collection('cases')
           .get();
 
+      const subCollections = [
+        'custodyRecords', 'paymentRecords', 'nonComplianceRecords',
+        'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
+      ];
+
+      // Collect every doc reference first, then commit in chunks well under
+      // Firestore's 500-writes-per-batch limit so large accounts don't fail.
+      final List<DocumentReference> refsToDelete = [];
       for (var caseDoc in casesSnapshot.docs) {
         final caseRef = caseDoc.reference;
-        List<String> subCollections = [
-          'custodyRecords', 'paymentRecords', 'nonComplianceRecords',
-          'scheduledRules', 'flaggedEvents', 'disputeRecords', 'reminders',
-        ];
-
-        for (String subName in subCollections) {
+        for (final subName in subCollections) {
           final subSnapshot = await caseRef.collection(subName).get();
-          final subBatch = _firestore.batch();
-          for (var doc in subSnapshot.docs) {
-            subBatch.delete(doc.reference);
-          }
-          await subBatch.commit();
+          refsToDelete.addAll(subSnapshot.docs.map((d) => d.reference));
         }
-        await caseRef.delete();
+        refsToDelete.add(caseRef);
       }
+
+      await _commitDeletesInChunks(refsToDelete);
 
       // --- STEP 5: APPLE TOKEN REVOKE ---
       // Required by App Store guideline 5.1.1(v) for Apple-authenticated users.
@@ -482,7 +505,15 @@ class SettingsProvider extends ChangeNotifier {
       // authenticated session and a fresh authorization code from the
       // reauthenticateWithApple step above.
       if (authProvider == 'apple' && appleAuthorizationCode != null) {
-        await AuthService().revokeAppleTokenWith(appleAuthorizationCode);
+        final revoked =
+            await AuthService().revokeAppleTokenWith(appleAuthorizationCode);
+        if (!revoked) {
+          // Apple's endpoint failed. We still proceed with deletion (per
+          // Apple's guidance not to strand the user), but log it so the
+          // failure isn't silently lost.
+          debugPrint(
+              "Apple token revoke did not succeed; proceeding with account deletion.");
+        }
       }
 
       // --- STEP 6: DOCUMENT & ACCOUNT DELETION ---

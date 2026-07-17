@@ -136,7 +136,7 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
               : SingleChildScrollView(
             padding: const EdgeInsets.all(20),
             child: Column(
-              crossAxisAlignment: .start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildClickableField("Date", DateFormat('dd MMM yyyy').format(selectedDate), () async {
                   final d = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2030));

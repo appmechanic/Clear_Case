@@ -1,10 +1,10 @@
 import 'package:clearcase/core/utils/helping_functions.dart';
 import 'package:clearcase/provider/setting_provider.dart';
+import 'package:clearcase/services/notification_service.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
 import 'package:clearcase/views/main_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
@@ -145,7 +145,7 @@ class AuthProvider extends ChangeNotifier {
 
       if (user != null && context.mounted) {
 
-         String? token = await FirebaseMessaging.instance.getToken();
+         String? token = await PushNotificationService.fetchToken();
 
          final dynamic tz = await FlutterTimezone.getLocalTimezone();
         String rawTz = tz.toString();
@@ -223,7 +223,7 @@ class AuthProvider extends ChangeNotifier {
       }
       await setDataToLocal(key: 'auth_provider', value: 'google');
 
-      final String? fcmToken = await FirebaseMessaging.instance.getToken();
+      final String? fcmToken = await PushNotificationService.fetchToken();
 
       final dynamic tz = await FlutterTimezone.getLocalTimezone();
       final String rawTz = tz.toString();
@@ -339,7 +339,7 @@ class AuthProvider extends ChangeNotifier {
         await _authService.updateUserName(fullFromApple);
       }
 
-      final String? fcmToken = await FirebaseMessaging.instance.getToken();
+      final String? fcmToken = await PushNotificationService.fetchToken();
 
       final dynamic tz = await FlutterTimezone.getLocalTimezone();
       final String rawTz = tz.toString();

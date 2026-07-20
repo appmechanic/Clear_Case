@@ -111,12 +111,33 @@ class PushNotificationService {
     }
 
     // Token management — runs regardless of permission grant.
-    final String? token = await _fcm.getToken();
+    final String? token = await fetchToken();
     if (token != null) {
       await _saveTokenToFirestore(token);
     }
 
     _fcm.onTokenRefresh.listen(_saveTokenToFirestore);
+  }
+
+  /// Returns the FCM token, or null if one isn't available yet.
+  ///
+  /// Always use this instead of `FirebaseMessaging.instance.getToken()`. On iOS
+  /// getToken() *throws* `apns-token-not-set` until APNs registration finishes
+  /// — which never happens on the Simulator, and is a race on a real device for
+  /// the first few seconds after launch. A null token is not an error: the
+  /// onTokenRefresh listener in initialize() saves it once APNs delivers one.
+  static Future<String?> fetchToken() async {
+    try {
+      if (Platform.isIOS && await _fcm.getAPNSToken() == null) {
+        return null;
+      }
+      return await _fcm.getToken();
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('FCM getToken failed: $e');
+      }
+      return null;
+    }
   }
 
   // Navigation Logic

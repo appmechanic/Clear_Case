@@ -60,6 +60,11 @@ class InsightProvider with ChangeNotifier {
   int flaggedDisputesCount = 0;
   int flaggedNonComplianceCount = 0;
 
+  // Raw flaggedEvents docs backing FlaggedEventsScreen. Each entry is the doc's
+  // data with `id` overwritten by `originId` — a flaggedEvents doc's own id is an
+  // auto-id, NOT the origin record's, and the detail screens look records up by id.
+  List<Map<String, dynamic>> flaggedEvents = [];
+
   // Report Variables
   List<CalendarEvent> _allEvents = [];
   List<CalendarEvent> get allEvents => _allEvents;
@@ -256,15 +261,21 @@ class InsightProvider with ChangeNotifier {
 
   void _calculateFlaggedInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
     int tempC = 0; int tempP = 0; int tempD = 0; int tempB = 0;
+    final List<Map<String, dynamic>> tempEvents = [];
     for (var doc in docs) {
-      final String origin = doc.data()['originCollection'] ?? "";
+      final data = doc.data();
+      final String origin = data['originCollection'] ?? "";
       if (origin == "paymentRecords") tempP++;
       else if (origin == "disputeRecords") tempD++;
       else if (origin == "nonComplianceRecords") tempB++;
       else tempC++;
+
+      // originId, not doc.id — see the flaggedEvents field comment above.
+      tempEvents.add({...data, 'id': data['originId'] ?? doc.id});
     }
     flaggedCustodyCount = tempC; flaggedPaymentsCount = tempP;
     flaggedDisputesCount = tempD; flaggedNonComplianceCount = tempB;
+    flaggedEvents = tempEvents;
     notifyListeners();
   }
 
@@ -320,6 +331,7 @@ class InsightProvider with ChangeNotifier {
     totalNonComplianceCount = 0; totalDisputes = 0; communicationCount = 0;
     transferIssuesCount = 0; paymentDisputesCount = 0;
     flaggedCustodyCount = 0; flaggedPaymentsCount = 0; flaggedDisputesCount = 0; flaggedNonComplianceCount = 0;
+    flaggedEvents = [];
     fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
   }
 

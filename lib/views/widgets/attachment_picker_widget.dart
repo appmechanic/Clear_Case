@@ -7,7 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:intl/intl.dart';
 import 'attachment_preview.dart';
 import 'file_type_icon.dart';
@@ -65,7 +65,7 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
               _pickFromGallery();
             }),
             const SizedBox(height: 20),
-            const Text("Supports images, PDF, Word, Excel, PowerPoint and .txt\nfile size < 2 Mb", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
+            const Text("Supports images, PDF, Word, Excel, PowerPoint and .txt", textAlign: TextAlign.center, style: TextStyle(color: Colors.grey, fontSize: 12)),
           ],
         ),
       ),
@@ -105,18 +105,17 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
   }
 
   Future<void> _processAndAddFiles(List<File> files, {bool fromCamera = false}) async {
-    const int maxBytes = 2 * 1024 * 1024;
     List<File> processed = [];
     for (var file in files) {
       final ext = file.path.split('.').last.toLowerCase();
       final isImage = ['jpg', 'jpeg', 'png'].contains(ext);
 
-      // Non-images (pdf, txt) are uploaded as-is — enforce size up front.
+      // Documents can't be compressed by this path — enforce size up front.
       if (!isImage) {
-        if (await file.length() > maxBytes) {
+        if (await file.length() > _maxBytes) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("File exceeds 2MB")));
+                const SnackBar(content: Text("File exceeds 10MB")));
           }
           continue;
         }
@@ -124,41 +123,7 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
         continue;
       }
 
-      // Camera captures use a rectangle crop so the timestamp+location
-      // stamp lands on visible pixels (a circle crop's bottom-right corner
-      // is fully transparent — the stamp would be invisible there). Gallery
-      // picks keep the existing circular profile-style crop.
-      final useCircleCrop = !fromCamera;
-      final cropped = await ImageCropper().cropImage(
-        sourcePath: file.path,
-        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-        maxWidth: 1200,
-        maxHeight: 1200,
-        compressQuality: 90,
-        uiSettings: [
-          AndroidUiSettings(
-            cropStyle: useCircleCrop ? CropStyle.circle : CropStyle.rectangle,
-            toolbarTitle: 'Adjust Image',
-            toolbarColor: Colors.black,
-            toolbarWidgetColor: Colors.white,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-            hideBottomControls: true,
-            showCropGrid: false,
-            cropFrameColor: Colors.transparent,
-            cropFrameStrokeWidth: 0,
-            dimmedLayerColor: Colors.black.withOpacity(0.8),
-          ),
-          IOSUiSettings(
-            cropStyle: useCircleCrop ? CropStyle.circle : CropStyle.rectangle,
-            title: 'Adjust Image',
-            aspectRatioLockEnabled: true,
-          ),
-        ],
-      );
-      if (cropped == null) continue;
-
-      File outFile = File(cropped.path);
+      File outFile = file;
       // Only stamp photos captured in-app — gallery uploads are external
       // and already carry their own EXIF metadata.
       if (fromCamera) {
@@ -166,21 +131,48 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
         if (stamped != null) outFile = stamped;
       }
 
-      // Size check moved here so the user only sees the error after the
-      // image has actually been processed — large source files are fine if
-      // the cropper/stamp output ends up small.
-      if (await outFile.length() > maxBytes) {
+      // Compress after stamping: the stamp re-encodes via dart:ui, which can
+      // only emit PNG, so the compressor is what produces the final JPEG.
+      final compressed = await _compressImage(outFile);
+      if (compressed == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content:
-                  Text("Image exceeds 2MB after processing — try a tighter crop")));
+              content: Text("Couldn't process this image — try another photo")));
         }
         continue;
       }
-      processed.add(outFile);
+      processed.add(compressed);
     }
     setState(() => _selectedFiles.addAll(processed));
     widget.onFilesChanged(_selectedFiles);
+  }
+
+  // Attachment ceiling. Documents are rejected above this; images are
+  // compressed to fit and only rejected if compression somehow can't get
+  // under it. Bounded by AttachmentPreview's 20 MB getData cap, which
+  // throws for files larger than its limit.
+  static const int _maxBytes = 10 * 1024 * 1024;
+
+  // Re-encodes to JPEG, stepping quality down until the result fits under
+  // _maxBytes. Replaces the old crop step, which was doing the compression
+  // implicitly via compressQuality. Returns null if every attempt failed.
+  Future<File?> _compressImage(File source) async {
+    const qualities = [85, 75, 60, 50];
+    for (final quality in qualities) {
+      final target = '${source.path}_c$quality.jpg';
+      final result = await FlutterImageCompress.compressAndGetFile(
+        source.absolute.path,
+        target,
+        quality: quality,
+        minWidth: 1600,
+        minHeight: 1600,
+        format: CompressFormat.jpeg,
+      );
+      if (result == null) continue;
+      final out = File(result.path);
+      if (await out.length() <= _maxBytes) return out;
+    }
+    return null;
   }
 
   // ---- Stamping (timestamp + location overlay) ----
@@ -219,8 +211,9 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
 
   // Decodes the image, draws it onto a Canvas, then renders a subtle dark
   // pill in the bottom-right with timestamp + reverse-geocoded location.
-  // Output is written as PNG alongside the source so the cropped circular
-  // alpha channel is preserved.
+  // dart:ui can only encode PNG, so this writes a PNG intermediate that
+  // _compressImage then re-encodes to JPEG. Never upload this file directly —
+  // a 1600px PNG photo routinely exceeds the size ceiling.
   Future<File?> _stampImage(File source) async {
     final bytes = await source.readAsBytes();
     final codec = await ui.instantiateImageCodec(bytes);
@@ -335,41 +328,77 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
   @override
   Widget build(BuildContext context) {
     return Column(children: [
+      // Wrap, not a shrinkWrap GridView: this widget is hosted inside
+      // AlertDialogs (dispute_log_dialog) whose IntrinsicWidth measures its
+      // subtree, and a viewport can't report intrinsic dimensions — it throws
+      // "RenderShrinkWrappingViewport does not support returning intrinsic
+      // dimensions". Fixed-size tiles in a Wrap have no such problem, and
+      // match the existing-attachment tiles rendered beside them.
       if (_selectedFiles.isNotEmpty)
-        GridView.builder(
-            shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 3, crossAxisSpacing: 8, mainAxisSpacing: 8),
-            itemCount: _selectedFiles.length,
-            itemBuilder: (context, index) {
-              final file = _selectedFiles[index];
-              final ext = file.path.split('.').last.toLowerCase();
-              final isImage = isImageExtension(ext);
-              final typeInfo = fileTypeFromExtension(ext);
-              final thumb = Container(
-                decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey.shade300),
-                    borderRadius: BorderRadius.circular(8)),
-                child: isImage
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: Image.file(file, fit: BoxFit.cover, width: double.infinity),
-                      )
-                    : FileTypeTile(info: typeInfo),
-              );
-              return Stack(
-                fit: StackFit.expand, // fill the full grid cell width/height
-                children: [
-                GestureDetector(
-                  onTap: () => AttachmentPreview.openFile(context, file),
-                  child: thumb,
-                ),
-                Positioned(right: 0, top: 0, child: IconButton(icon: const Icon(Icons.cancel, color: Colors.red), onPressed: () => setState(() { _selectedFiles.removeAt(index); widget.onFilesChanged(_selectedFiles); })))
-              ]);
-            }),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: List.generate(_selectedFiles.length, (index) {
+            final file = _selectedFiles[index];
+            return _buildSelectedFilePreview(file, () {
+              setState(() {
+                _selectedFiles.removeAt(index);
+                widget.onFilesChanged(_selectedFiles);
+              });
+            });
+          }),
+        ),
       const SizedBox(height: 10),
       InkWell(onTap: _showSourceDialog, child: DottedBorder(
           options: RectDottedBorderOptions(dashPattern: [10, 5], strokeWidth: 2, padding: EdgeInsets.all(16), color: Colors.purple),
           child: Container(height: 100, width: double.infinity, alignment: Alignment.center, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [Icon(Icons.upload_file, color: Colors.purple), Text("Upload or Capture images using camera.")])))),
     ]);
+  }
+
+  Widget _buildSelectedFilePreview(File file, VoidCallback onDelete) {
+    final ext = file.path.split('.').last.toLowerCase();
+    final isImage = isImageExtension(ext);
+    final typeInfo = fileTypeFromExtension(ext);
+
+    return Stack(
+      alignment: Alignment.topRight,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 8, right: 8),
+          child: GestureDetector(
+            onTap: () => AttachmentPreview.openFile(context, file),
+            child: Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: isImage
+                  ? ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: Image.file(file, fit: BoxFit.cover),
+                    )
+                  : FileTypeTile(info: typeInfo),
+            ),
+          ),
+        ),
+        GestureDetector(
+          onTap: onDelete,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.red,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+            child: const Padding(
+              padding: EdgeInsets.all(3),
+              child: Icon(Icons.close, size: 12, color: Colors.white),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }

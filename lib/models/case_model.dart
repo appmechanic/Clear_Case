@@ -84,14 +84,26 @@ class ChildModel {
   String id;
   String name;
   DateTime dob;
+  // Nullable: children created before these fields existed have neither. Null
+  // means "never entered" and renders as "—" on the report; don't coerce to ''.
+  String? school;
+  String? address;
 
-  ChildModel({required this.id, required this.name, required this.dob});
+  ChildModel({
+    required this.id,
+    required this.name,
+    required this.dob,
+    this.school,
+    this.address,
+  });
 
   Map<String, dynamic> toMap() {
     return {
       'id': id,
       'name': name,
       'dob': Timestamp.fromDate(dob),
+      'school': school,
+      'address': address,
     };
   }
 
@@ -100,6 +112,8 @@ class ChildModel {
       id: map['id'] ?? '',
       name: map['name'] ?? '',
       dob: (map['dob'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      school: map['school'] as String?,
+      address: map['address'] as String?,
     );
   }
 }

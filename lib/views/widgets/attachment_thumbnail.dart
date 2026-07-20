@@ -10,9 +10,33 @@ import 'file_type_icon.dart';
 /// download URL in the external browser via url_launcher — the whole URL
 /// (including the access token) is passed straight to the browser, so there's
 /// no copy-paste truncation, and it works for any file type / for downloading.
-class AttachmentThumbnail extends StatelessWidget {
+class AttachmentThumbnail extends StatefulWidget {
   final String url;
   const AttachmentThumbnail({super.key, required this.url});
+
+  @override
+  State<AttachmentThumbnail> createState() => _AttachmentThumbnailState();
+}
+
+class _AttachmentThumbnailState extends State<AttachmentThumbnail> {
+  String? _ext;
+
+  String get url => widget.url;
+
+  @override
+  void initState() {
+    super.initState();
+    _ext = extensionFromUrl(url);
+    // Legacy dispute-log uploads were stored without an extension, so the URL
+    // alone can't identify them. Fall back to the object's contentType.
+    if (_ext == null) _resolveFromMetadata();
+  }
+
+  Future<void> _resolveFromMetadata() async {
+    final resolved = await extensionFromStorageMetadata(url);
+    if (!mounted || resolved == null) return;
+    setState(() => _ext = resolved);
+  }
 
   Future<void> _openInBrowser(BuildContext context) async {
     final messenger = ScaffoldMessenger.of(context);
@@ -34,16 +58,51 @@ class AttachmentThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ext = extensionFromUrl(url);
-    final isImage = isImageExtension(ext);
-    final typeInfo = fileTypeFromExtension(ext);
+    final isImage = isImageExtension(_ext);
+    final typeInfo = fileTypeFromExtension(_ext);
     // Decode the remote image down to the thumbnail's physical pixel size
     // instead of holding the full-resolution bitmap in memory per tile.
     final int cacheSize = (80 * MediaQuery.of(context).devicePixelRatio).round();
 
+    // Only caption the tile when there's a real filename to show — the tile
+    // already renders the type, so falling back to it here just prints
+    // "FILE" twice.
+    final label = displayNameFromUrl(url);
+
     return Container(
       width: 80,
       margin: const EdgeInsets.only(right: 10),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildTile(context, isImage, typeInfo, cacheSize),
+          if (label != null) ...[
+            const SizedBox(height: 4),
+            Tooltip(
+              message: label,
+              child: Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTile(
+    BuildContext context,
+    bool isImage,
+    FileTypeInfo typeInfo,
+    int cacheSize,
+  ) {
+    return SizedBox(
+      width: 80,
+      height: 80,
       child: Stack(
         children: [
           // Tap the thumbnail -> in-app preview (existing behaviour).

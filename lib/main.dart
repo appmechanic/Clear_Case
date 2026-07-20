@@ -2,7 +2,6 @@ import 'package:clearcase/provider/auth_provider.dart';
 import 'package:clearcase/provider/non_compliance_provider.dart';
 import 'package:clearcase/provider/non_compliance_provider_insight.dart';
 import 'package:clearcase/provider/calender_provider.dart';
-import 'package:clearcase/provider/case_setup_provider.dart';
 import 'package:clearcase/provider/custody_insight_provider.dart';
 import 'package:clearcase/provider/dispute_insight_provider.dart';
 import 'package:clearcase/provider/dispute_provider.dart';
@@ -49,7 +48,6 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => MainProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CalendarProvider()),
-        ChangeNotifierProvider(create: (_) => CaseSetupProvider()),
         ChangeNotifierProvider(create: (_) => SettingsProvider()..init()),
         ChangeNotifierProvider(create: (_) => NewEntryProvider()),
         ChangeNotifierProvider(create: (_) => ScheduledDatesProvider()),

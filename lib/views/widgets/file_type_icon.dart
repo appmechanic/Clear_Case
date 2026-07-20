@@ -1,3 +1,4 @@
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 /// Visual metadata for an attachment file extension. Shared across the
@@ -80,6 +81,95 @@ String? extensionFromUrl(String url) {
     if (lower.contains('.$ext')) return ext;
   }
   return null;
+}
+
+/// Human-readable original filename recovered from a Storage URL.
+///
+/// Uploads are named `<millis>_<original name>`, so the timestamp prefix is
+/// stripped back off for display. Returns null when nothing useful survives —
+/// legacy dispute-log uploads were named `<millis>_<index>` with no original
+/// name and no extension, and older dispute records `<millis>_<index>.<ext>`,
+/// so there is genuinely no name to show and callers should fall back to the
+/// file-type label.
+String? displayNameFromUrl(String url) {
+  try {
+    final uri = Uri.parse(url);
+    if (uri.pathSegments.isEmpty) return null;
+    final decoded = Uri.decodeComponent(uri.pathSegments.last);
+    final raw = decoded.split('/').last;
+    if (raw.isEmpty) return null;
+
+    // Strip the `<millis>_` upload prefix.
+    final stripped = raw.replaceFirst(RegExp(r'^\d{10,}_'), '');
+    if (stripped.isEmpty) return null;
+
+    // `<millis>_0` / `<millis>_0.pdf` carry no original name — the leftover is
+    // just the loop index, which is noise rather than information.
+    final stem = stripped.contains('.')
+        ? stripped.substring(0, stripped.lastIndexOf('.'))
+        : stripped;
+    if (stem.isEmpty || RegExp(r'^\d+$').hasMatch(stem)) return null;
+
+    return stripped;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Maps a MIME content type to the extension our type table understands.
+String? _extFromContentType(String? contentType) {
+  final type = (contentType ?? '').toLowerCase().split(';').first.trim();
+  switch (type) {
+    case 'application/pdf':
+      return 'pdf';
+    case 'image/jpeg':
+    case 'image/jpg':
+      return 'jpg';
+    case 'image/png':
+      return 'png';
+    case 'text/plain':
+      return 'txt';
+    case 'text/csv':
+      return 'csv';
+    case 'application/msword':
+      return 'doc';
+    case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+      return 'docx';
+    case 'application/vnd.ms-excel':
+      return 'xls';
+    case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      return 'xlsx';
+    case 'application/vnd.ms-powerpoint':
+      return 'ppt';
+    case 'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+      return 'pptx';
+    default:
+      return null;
+  }
+}
+
+/// Resolved-once cache so a thumbnail rebuild doesn't refetch metadata.
+/// Present-with-null means "we asked and Storage had nothing useful".
+final Map<String, String?> _metadataExtCache = {};
+
+/// Last-resort file type for attachments whose URL carries no extension.
+///
+/// Dispute-log uploads were historically named `<millis>_<index>`, discarding
+/// the extension, so those URLs can't be classified by parsing alone. `putFile`
+/// does record a contentType on the Storage object, so for those legacy files
+/// the type is recoverable — at the cost of one network round trip per tile.
+/// Returns null (and caches that) when the object has no usable contentType.
+Future<String?> extensionFromStorageMetadata(String url) async {
+  if (_metadataExtCache.containsKey(url)) return _metadataExtCache[url];
+  String? ext;
+  try {
+    final meta = await FirebaseStorage.instance.refFromURL(url).getMetadata();
+    ext = _extFromContentType(meta.contentType);
+  } catch (_) {
+    ext = null;
+  }
+  _metadataExtCache[url] = ext;
+  return ext;
 }
 
 /// Square icon tile for non-image attachments. Used inside fixed-size

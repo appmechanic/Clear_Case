@@ -168,12 +168,6 @@ class PDFGenerator {
         .where((c) => options.childIds.isEmpty || options.childIds.contains(c.id))
         .toList();
 
-    final String childNames =
-        children.isEmpty ? "—" : children.map((c) => c.name).join(", ");
-    final String dobs = children.isEmpty
-        ? "—"
-        : children.map((c) => DateFormat('dd/MM/yyyy').format(c.dob)).join("\n");
-
     final String legalRep =
         (caseModel?.legalRep ?? "").trim().isEmpty ? "—" : caseModel!.legalRep.trim();
 
@@ -208,11 +202,42 @@ class PDFGenerator {
               pw.Text("CASE INFORMATION",
                   style: pw.TextStyle(font: bold, fontSize: 13, color: primaryColor)),
               pw.SizedBox(height: 14),
-              _coverInfoRow(children.length > 1 ? "Child Names" : "Child Name", childNames, bold),
               _coverInfoRow("Case Number", caseName, bold),
-              _coverInfoRow("Date of Birth", dobs, bold),
               _coverInfoRow("Legal Representative", legalRep, bold),
               _coverInfoRow("Parent / Guardian", guardian, bold),
+            ],
+          ),
+        ),
+        pw.SizedBox(height: 20),
+
+        // Per-child details. One block each so school/address are never
+        // ambiguous across siblings.
+        pw.Container(
+          padding: const pw.EdgeInsets.all(20),
+          decoration: pw.BoxDecoration(
+            color: PdfColor.fromInt(0xFFF7F2FB),
+            borderRadius: pw.BorderRadius.circular(10),
+            border: pw.Border.all(color: primaryColor, width: 0.5),
+          ),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text("CHILDREN",
+                  style: pw.TextStyle(font: bold, fontSize: 13, color: primaryColor)),
+              pw.SizedBox(height: 14),
+              if (children.isEmpty)
+                pw.Text("—", style: const pw.TextStyle(fontSize: 11))
+              else
+                for (int i = 0; i < children.length; i++) ...[
+                  if (i > 0) pw.SizedBox(height: 14),
+                  pw.Text(children[i].name,
+                      style: pw.TextStyle(font: bold, fontSize: 12)),
+                  pw.SizedBox(height: 4),
+                  _coverInfoRow("Date of Birth",
+                      DateFormat('dd/MM/yyyy').format(children[i].dob), bold),
+                  _coverInfoRow("School", _orDash(children[i].school), bold),
+                  _coverInfoRow("Address", _orDash(children[i].address), bold),
+                ],
             ],
           ),
         ),
@@ -268,6 +293,11 @@ class PDFGenerator {
       ),
     );
   }
+
+  // Absent or blank detail renders as an em dash, matching how the cover already
+  // represents missing data.
+  static String _orDash(String? value) =>
+      (value ?? "").trim().isEmpty ? "—" : value!.trim();
 
   // Human-readable description of the time span the report covers.
   static String _reportPeriod(ExportOptions options) {

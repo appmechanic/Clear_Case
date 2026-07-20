@@ -66,9 +66,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
                         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
                         child: Column(
                           children: [
-                            _buildBottomButton("Scheduled Dates", () {
+                            _buildBottomButton("Scheduled", () {
                               // Carry over the case currently selected on the
-                              // calendar so the Scheduled Dates screen opens on
+                              // calendar so the Scheduled screen opens on
                               // the same case (and its children) instead of
                               // defaulting to the first case.
                               Navigator.pushNamed(
@@ -78,7 +78,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                               );
                             }),
                             const SizedBox(height: 12),
-                            _buildBottomButton("Calendar Legend", () {
+                            _buildBottomButton("Legends", () {
                               _showLegendsPopup(context);
                             }),
                           ],
@@ -148,18 +148,58 @@ class _CalenderScreenState extends State<CalenderScreen> {
                             }).toList();
                           },
                           items: [
+                            // Each case row carries its OWN "Add Child" affordance so the
+                            // user can see which case they're adding a child to, instead of
+                            // a single global "Add Child" that silently targets whichever
+                            // case happens to be selected. Cases still occupy indices 0..n-1,
+                            // so selectedItemBuilder's index alignment is preserved.
                             ...provider.allCases.map((caseItem) => DropdownMenuItem<String>(
                               value: caseItem.id, // Value is the ID
-                              child: Text(
-                                provider.getCaseDisplayName(caseItem),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      provider.getCaseDisplayName(caseItem),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  // Tapping this closes the dropdown and opens THIS case in
+                                  // edit mode. The inner tap target claims the gesture, so the
+                                  // row's own selection doesn't also fire.
+                                  InkWell(
+                                    onTap: () {
+                                      Navigator.pop(context); // close the dropdown overlay
+                                      Navigator.pushNamed(
+                                        context,
+                                        CaseSetupScreen.routeName,
+                                        arguments: caseItem,
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(20),
+                                    child: const Padding(
+                                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.person_add, size: 16, color: AppColors.primary),
+                                          SizedBox(width: 4),
+                                          Text(
+                                            "Add Child",
+                                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: AppColors.primary),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             )),
                             const DropdownMenuItem<String>(
                               value: "add_new",
                               child: Text(
                                 "Add New Case",
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.blue),
+                                style: TextStyle(fontWeight: FontWeight.normal, fontSize: 15, color: Colors.grey),
                               ),
                             ),
                           ],
@@ -210,8 +250,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
                       backgroundColor: Colors.transparent,
                       builder: (context) => ExportFilterSheet(
                         children: childrenList,
-                         onApply: (options) {
-                           PDFGenerator.generateReport(
+                         onApply: (options) async {
+                           await PDFGenerator.generateReport(
                              caseName: provider.selectedCase?.caseNumber ?? "Case Report",
                              caseId: provider.selectedCase?.id ?? '',
                              options: options,
@@ -498,7 +538,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Calendar Legend", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                const Text("Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
               ],
             ),

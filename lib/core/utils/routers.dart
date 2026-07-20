@@ -14,8 +14,11 @@ import 'package:clearcase/views/insights/custody_compliance_screen.dart';
 import 'package:clearcase/views/insights/custody_detail_screen.dart';
 import 'package:clearcase/views/insights/dispute_log_details_screen.dart';
 import 'package:clearcase/views/insights/dispute_log_screen.dart';
+import 'package:clearcase/views/insights/dispute_log_viewer_screen.dart';
+import 'package:clearcase/views/insights/flagged_events_screen.dart';
 import 'package:clearcase/views/insights/payment_analytics_screen.dart';
 import 'package:clearcase/views/insights/payment_detail_screen.dart';
+import 'package:clearcase/views/settings/account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:clearcase/views/auth/email_verification_screen.dart';
 import '../../views/auth/forget_password_screen.dart';
@@ -36,7 +39,10 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
       final int index = (arguments is int) ? arguments : 0;
       return MainScreen(index: index);
     },
-    CaseSetupScreen.routeName: (context) => const CaseSetupScreen(),
+    CaseSetupScreen.routeName: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      return CaseSetupScreen(existingCase: args is CaseModel ? args : null);
+    },
     NewEntryScreen.routeName: (context) => const NewEntryScreen(),
     NewCustodyScreen.routeName: (context) => const NewCustodyScreen(),
     NewPaymentScreen.routeName: (context) => const NewPaymentScreen(),
@@ -61,6 +67,9 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     NonComplianceDetailsScreen.routeName: (context) => const NonComplianceDetailsScreen(),
     CustodyDetailsScreen.routeName: (context) => const CustodyDetailsScreen(),
     DisputeDetailsScreen.routeName: (context) => const DisputeDetailsScreen(),
+    DisputeLogViewerScreen.routeName: (context) => const DisputeLogViewerScreen(),
+    AccountScreen.routeName: (context) => const AccountScreen(),
+    FlaggedEventsScreen.routeName: (context) => const FlaggedEventsScreen(),
   };
   return appRoutes;
 }

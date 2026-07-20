@@ -414,7 +414,15 @@ class DisputeInsightsProvider with ChangeNotifier {
 
     if (files != null && files.isNotEmpty) {
       for (var file in files) {
-        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${files.indexOf(file)}";
+        // Keep the original basename (and therefore the extension) in the
+        // object name: the UI recovers both the file type and the display
+        // name by parsing the download URL. Naming these `<millis>_<index>`
+        // stripped the extension, so every dispute-log attachment rendered as
+        // a generic "FILE" tile with no way to tell one from another.
+        // indexOf(file) is also wrong for duplicate picks — it returns the
+        // first match, so two identical files collided on one object name.
+        String fileName =
+            "${DateTime.now().millisecondsSinceEpoch}_${file.path.split('/').last}";
         Reference ref = FirebaseStorage.instance.ref().child('users/$userId/cases/$caseId/disputeLogs/$fileName');
         await ref.putFile(file);
         finalUrls.add(await ref.getDownloadURL());

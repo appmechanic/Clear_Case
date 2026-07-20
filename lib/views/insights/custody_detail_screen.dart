@@ -108,7 +108,7 @@ class CustodyDetailsScreen extends StatelessWidget {
                     const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                     const SizedBox(height: 12),
                     SizedBox(
-                      height: 80,
+                      height: 112,
                       child: ListView.builder(
                         scrollDirection: Axis.horizontal,
                         itemCount: attachmentUrls.length,

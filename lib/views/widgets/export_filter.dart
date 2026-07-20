@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'custom_primary_button.dart';
+
 class ExportFilterSheet extends StatefulWidget {
   final List<dynamic> children;
-  final Function(ExportOptions) onApply;
+
+  /// Awaited by the sheet so the button can show a spinner for the whole
+  /// generation. Must return a Future that completes when the report is done.
+  final Future<void> Function(ExportOptions) onApply;
 
   const ExportFilterSheet({
     super.key,
@@ -20,6 +25,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
   String? selectedTimePeriod;
   DateTime? startDate;
   DateTime? endDate;
+  bool _isGenerating = false;
 
   Map<String, bool> includeInReport = {
     "Custody": true,
@@ -286,39 +292,46 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
     );
   }
 
+  Future<void> _generate() async {
+    // Guard against a second tap slipping through before the first rebuild.
+    if (_isGenerating) return;
+
+    if (selectedChildIds.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Select at least one child")));
+      return;
+    }
+
+    final finalOptions = ExportOptions(
+      childIds: selectedChildIds,
+      timePeriod: selectedTimePeriod,
+      startDate: startDate,
+      endDate: endDate,
+      reportSections: includeInReport,
+    );
+
+    setState(() => _isGenerating = true);
+    try {
+      await widget.onApply(finalOptions);
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Could not generate report: $e")),
+      );
+    }
+  }
+
   Widget _buildApplyButton() {
     return SizedBox(
       width: double.infinity,
       height: 55,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF7B2CBF),
-          shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
-        ),
-        onPressed: () {
-          if (selectedChildIds.isEmpty) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Select at least one child")));
-            return;
-          }
-
-          ExportOptions finalOptions = ExportOptions(
-            childIds: selectedChildIds,
-            timePeriod: selectedTimePeriod,
-            startDate: startDate,
-            endDate: endDate,
-            reportSections: includeInReport,
-          );
-
-          widget.onApply(finalOptions);
-          Navigator.pop(context);
-        },
-        child: const Text("Generate Report",
-            style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 16)),
+      child: CustomPrimaryButton(
+        text: _isGenerating ? "Generating report…" : "Generate Report",
+        backgroundColor: const Color(0xFF7B2CBF),
+        isLoading: _isGenerating,
+        onPressed: _generate,
       ),
     );
   }

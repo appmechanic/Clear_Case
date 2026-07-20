@@ -4,6 +4,9 @@ import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:printing/printing.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'file_type_icon.dart';
 
 /// Centralized tap-to-preview for attachments. Handles both local files
 /// (just-picked) and remote Firebase Storage URLs (existing records being
@@ -39,8 +42,15 @@ class AttachmentPreview {
     }
   }
 
-  static void openUrl(BuildContext context, String url) {
-    final ext = _extFromUrl(url);
+  static Future<void> openUrl(BuildContext context, String url) async {
+    var ext = _extFromUrl(url);
+    // Legacy uploads carry no extension in the URL; the Storage object's
+    // contentType still identifies them, so ask before giving up on an
+    // in-app viewer and punting to the browser.
+    if (ext.isEmpty) {
+      ext = await extensionFromStorageMetadata(url) ?? '';
+      if (!context.mounted) return;
+    }
     final name = _fileNameFromUrl(url);
     if (_isImage(ext)) {
       _showImageDialog(context, NetworkImage(url));
@@ -64,11 +74,33 @@ class AttachmentPreview {
         ),
       );
     } else {
-      _unsupported(context);
+      // Office docs / csv have no in-app viewer, but the picker allows them.
+      // Hand the download URL to the OS so the user's own app opens it
+      // instead of dead-ending on a snackbar.
+      _openExternally(context, url);
     }
   }
 
   // ---- helpers ----
+
+  static Future<void> _openExternally(BuildContext context, String url) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final ok = await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!ok) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text("No app available to open this file")),
+        );
+      }
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text("Could not open this file")),
+      );
+    }
+  }
 
   static bool _isImage(String ext) =>
       ext == 'jpg' || ext == 'jpeg' || ext == 'png';
@@ -97,8 +129,9 @@ class AttachmentPreview {
   }
 
   static Future<Uint8List> _fetchRemoteBytes(String url) async {
-    // 20 MB ceiling — well above the 2 MB attachment limit so we never
-    // truncate a legitimate file.
+    // 20 MB ceiling — above the 10 MB attachment limit so we never truncate a
+    // legitimate file. getData THROWS above its cap, so this must stay strictly
+    // larger than _maxBytes in attachment_picker_widget.dart.
     final bytes = await FirebaseStorage.instance
         .refFromURL(url)
         .getData(20 * 1024 * 1024);

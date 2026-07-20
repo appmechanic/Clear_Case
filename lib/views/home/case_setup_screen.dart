@@ -1,19 +1,88 @@
 import 'package:clearcase/core/theme/app_colors.dart';
 import 'package:clearcase/core/utils/helping_functions.dart';
+import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/services/notification_service.dart';
 import 'package:clearcase/views/auth/login_screen.dart';
 import 'package:clearcase/views/widgets/custom_secondary_button.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:geocoding/geocoding.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../provider/case_setup_provider.dart';
 import '../widgets/custom_text_field.dart';
 import '../widgets/weekday_selector.dart';
 
+// Geocoded current-address auto-fill, matching the Location field on the custody
+// and payment record screens. Throws a user-facing string on failure; returns
+// null if no placemark resolved.
+Future<String?> _fetchCurrentAddress() async {
+  final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+  if (!serviceEnabled) throw 'Location services are disabled.';
+  LocationPermission permission = await Geolocator.checkPermission();
+  if (permission == LocationPermission.denied) {
+    permission = await Geolocator.requestPermission();
+    if (permission == LocationPermission.denied) {
+      throw 'Location permissions are denied.';
+    }
+  }
+  if (permission == LocationPermission.deniedForever) {
+    throw 'Location permissions are permanently denied.';
+  }
+  final position =
+      await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+  final placemarks =
+      await placemarkFromCoordinates(position.latitude, position.longitude);
+  if (placemarks.isEmpty) return null;
+  final place = placemarks.first;
+  final parts = <String>[];
+  if (place.street != null && place.street!.isNotEmpty) parts.add(place.street!);
+  if (place.locality != null && place.locality!.isNotEmpty) parts.add(place.locality!);
+  if (place.country != null && place.country!.isNotEmpty) parts.add(place.country!);
+  if (place.postalCode != null && place.postalCode!.isNotEmpty) parts.add(place.postalCode!);
+  return parts.join(", ");
+}
+
+// Status line under the address field: a spinner while fetching, a tip when
+// empty, or a clear action once filled — same affordance as the record screens.
+Widget _addressAutofillHint({
+  required bool loading,
+  required TextEditingController controller,
+  required VoidCallback onClear,
+}) {
+  return Padding(
+    padding: const EdgeInsets.only(top: 6, left: 4),
+    child: loading
+        ? const Row(children: [
+            SizedBox(
+              height: 12,
+              width: 12,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF4A148C)),
+            ),
+            SizedBox(width: 8),
+            Text("Fetching current location...",
+                style: TextStyle(fontSize: 12, color: Color(0xFF4A148C))),
+          ])
+        : controller.text.isEmpty
+            ? const Text("Tip: Tap field to auto-fill current address",
+                style: TextStyle(fontSize: 11, color: Colors.grey))
+            : GestureDetector(
+                onTap: onClear,
+                child: const Text("Clear address",
+                    style: TextStyle(fontSize: 11, color: Colors.redAccent, fontWeight: FontWeight.bold)),
+              ),
+  );
+}
+
 class CaseSetupScreen extends StatefulWidget {
   static const routeName = '/case-setup';
-  const CaseSetupScreen({super.key});
+
+  /// Non-null opens the wizard in edit mode for an existing case, prefilled with
+  /// its details, children, and scheduled rules. Null creates a new case.
+  final CaseModel? existingCase;
+
+  const CaseSetupScreen({super.key, this.existingCase});
 
   @override
   State<CaseSetupScreen> createState() => _CaseSetupScreenState();
@@ -68,7 +137,18 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
           ]
         : null;
     return ChangeNotifierProvider(
-      create: (_) => CaseSetupProvider(),
+      create: (_) {
+        final provider = CaseSetupProvider();
+        final existing = widget.existingCase;
+        if (existing != null) {
+          provider.loadExistingCase(existing);
+          // Fire-and-forget is safe: loadExistingCase has already set
+          // rulesLoaded false, and _buildCurrentStep gates Step 3 on it, so a
+          // user who outruns this load waits rather than seeding a blank form.
+          provider.loadExistingRules(existing.id);
+        }
+        return provider;
+      },
       child: Consumer<CaseSetupProvider>(
         builder: (context, provider, child) {
           return PopScope(
@@ -80,7 +160,7 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
             child: Scaffold(
               backgroundColor: AppColors.surfaceColor,
               appBar: provider.currentStep>1 ? AppBar(
-                title: const Text("Case Setup", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                title: Text(provider.isEditing ? "Edit Case" : "Case Setup", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 backgroundColor: AppColors.surfaceColor,
                 scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
@@ -97,7 +177,7 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
                 ),
                 actions: appBarActions,
               ): AppBar(
-                title: const Text("Case Setup", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+                title: Text(provider.isEditing ? "Edit Case" : "Case Setup", style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
                 backgroundColor: AppColors.surfaceColor,
                 scrolledUnderElevation: 0,
                 surfaceTintColor: Colors.transparent,
@@ -176,6 +256,30 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
       case 2:
         return _Step2SelectRule(provider: provider);
       case 3:
+        // _Step3ConfigureRule seeds its form once in initState from the case's
+        // existing rule. Building it before an edit-mode rule load finishes
+        // would seed blank, and saving that blank form would fully overwrite the
+        // real rule (submitCase writes rules with batch.set, no merge). Hold the
+        // subtree back — not just its contents — so initState cannot run early.
+        // rulesLoaded is always true for a new case, so the create flow never
+        // sees this spinner.
+        if (!provider.rulesLoaded) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 60),
+            child: Center(child: CircularProgressIndicator()),
+          );
+        }
+        // The load finished but THREW. In edit mode we cannot tell whether this
+        // case has a rule, and _Step3ConfigureRule would seed blank; saving that
+        // blank form would fully overwrite the real rule (submitCase writes rules
+        // with batch.set, no merge). Show the error and offer a retry instead of
+        // the form — there is no Save button to press, so the clobber is
+        // impossible rather than merely discouraged.
+        // rulesLoadFailed is only ever set by an edit-mode load, so the create
+        // flow never reaches this branch.
+        if (provider.isEditing && provider.rulesLoadFailed) {
+          return _RuleLoadErrorState(provider: provider);
+        }
         return _Step3ConfigureRule(provider: provider);
       default:
         return const SizedBox();
@@ -214,6 +318,7 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
                     showSnackBar(context, "Add at least one child");
                     return;
                   }
+                  // Both new-case and edit flows run the full wizard: Step 1 -> 2 -> 3.
                   provider.nextStep();
                   _scrollToTop();
                 } else if (provider.currentStep == 2) {
@@ -267,9 +372,14 @@ class _Step1FormState extends State<_Step1Form> {
   late TextEditingController _caseNumCtrl;
   late TextEditingController _legalRepCtrl;
   final TextEditingController _nameCtrl = TextEditingController();
+  final TextEditingController _schoolCtrl = TextEditingController();
+  final TextEditingController _addressCtrl = TextEditingController();
   FocusNode caseNumNode = FocusNode();
   FocusNode legalRepNode = FocusNode();
   FocusNode nameNode = FocusNode();
+  FocusNode schoolNode = FocusNode();
+  FocusNode addressNode = FocusNode();
+  bool _addressLoading = false;
 
   DateTime? _selectedDate;
   @override
@@ -280,18 +390,49 @@ class _Step1FormState extends State<_Step1Form> {
   }
   @override
   void dispose() {
-    _caseNumCtrl.dispose(); _legalRepCtrl.dispose(); _nameCtrl.dispose(); super.dispose();
+    _caseNumCtrl.dispose();
+    _legalRepCtrl.dispose();
+    _nameCtrl.dispose();
+    _schoolCtrl.dispose();
+    _addressCtrl.dispose();
+    schoolNode.dispose();
+    addressNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _autofillAddress() async {
+    setState(() => _addressLoading = true);
+    try {
+      final addr = await _fetchCurrentAddress();
+      if (!mounted) return;
+      if (addr != null) setState(() => _addressCtrl.text = addr);
+    } catch (e) {
+      if (mounted) showSnackBar(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _addressLoading = false);
+    }
   }
   void _addChild() {
     if (_nameCtrl.text.trim().isEmpty || _selectedDate == null) {
       showSnackBar(context, "Enter Child Name and DOB");
       return;
     }
-    widget.provider.addChild(_nameCtrl.text, _selectedDate!);
+    widget.provider.addChild(
+      _nameCtrl.text,
+      _selectedDate!,
+      school: _emptyToNull(_schoolCtrl.text),
+      address: _emptyToNull(_addressCtrl.text),
+    );
     _nameCtrl.clear();
+    _schoolCtrl.clear();
+    _addressCtrl.clear();
     setState(() => _selectedDate = null);
     FocusScope.of(context).unfocus();
   }
+
+  // Blank input means "not provided" — keep it null so the report shows "—"
+  // rather than an empty row.
+  static String? _emptyToNull(String v) => v.trim().isEmpty ? null : v.trim();
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -306,19 +447,43 @@ class _Step1FormState extends State<_Step1Form> {
         if (widget.provider.caseData.children.isNotEmpty) ...[
         const Text("Children", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 10),
-        ...widget.provider.caseData.children.map((c) => 
-        Card(elevation: 0, 
-        color: Colors.white, 
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), 
-        side: BorderSide(color: Colors.grey.shade200)), 
-        child: ListTile(visualDensity: VisualDensity.compact,contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6), leading: CircleAvatar(backgroundColor: Colors.purple.shade50, 
-        child: const Icon(Icons.person, color: Colors.purple)), 
-        title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)), 
-        subtitle: Text(DateFormat('d MMM yyyy').format(c.dob)),
-         trailing: IconButton(icon: const Icon(Icons.delete, color: Colors.red), 
-         onPressed: () => widget.provider.removeChild(c.id)),),)),
+        ...widget.provider.caseData.children.map((c) => Card(
+              elevation: 0,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Colors.grey.shade200),
+              ),
+              child: ListTile(
+                visualDensity: VisualDensity.compact,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                onTap: () => _showEditChildDialog(c),
+                leading: CircleAvatar(
+                  backgroundColor: Colors.purple.shade50,
+                  child: const Icon(Icons.person, color: Colors.purple),
+                ),
+                title: Text(c.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(_childSubtitle(c)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Visible affordance for the tile's existing onTap edit.
+                    IconButton(
+                      icon: Icon(Icons.edit, color: AppColors.primary),
+                      tooltip: "Edit child",
+                      onPressed: () => _showEditChildDialog(c),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete, color: Colors.red),
+                      tooltip: "Remove child",
+                      onPressed: () => widget.provider.removeChild(c.id),
+                    ),
+                  ],
+                ),
+              ),
+            )),
         const Divider(height: 30),],
-        CustomTextField(labelText: "Child Name", hintText: "Enter name", controller: _nameCtrl, node: nameNode),
+        CustomTextField(labelText: "Child Name", hintText: "Enter name", controller: _nameCtrl, node: nameNode, nextNode: schoolNode),
         const SizedBox(height: 10),
         Text("Date of Birth", style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 14)),
             const SizedBox(height: 5),
@@ -331,8 +496,193 @@ class _Step1FormState extends State<_Step1Form> {
             Text(_selectedDate == null ? "Select Date of Birth" : DateFormat('d MMM yyyy').format(_selectedDate!),
             style: TextStyle(color: _selectedDate == null ? AppColors.greyColor : Colors.black)), const Spacer(),
              const Icon(Icons.calendar_today, color: AppColors.greyColor)]),),),
+        const SizedBox(height: 15),
+        CustomTextField(labelText: "School", hintText: "eg. Springfield Primary", controller: _schoolCtrl, node: schoolNode, nextNode: addressNode),
+        const SizedBox(height: 15),
+        CustomTextField(
+          labelText: "Address",
+          hintText: "Tap to auto-fill or type manually",
+          controller: _addressCtrl,
+          node: addressNode,
+          onTap: () {
+            if (_addressCtrl.text.isEmpty && !_addressLoading) _autofillAddress();
+          },
+        ),
+        _addressAutofillHint(
+          loading: _addressLoading,
+          controller: _addressCtrl,
+          onClear: () => setState(() => _addressCtrl.clear()),
+        ),
         const SizedBox(height: 16),
         CustomSecondaryButton(text: 'Add New Child', onPressed: _addChild ),
+      ],
+    );
+  }
+
+  // DOB, plus school and address when present. A child with neither reads
+  // exactly as it did before these fields existed.
+  String _childSubtitle(ChildModel c) {
+    final parts = <String>[DateFormat('d MMM yyyy').format(c.dob)];
+    if (c.school != null && c.school!.trim().isNotEmpty) parts.add(c.school!.trim());
+    if (c.address != null && c.address!.trim().isNotEmpty) parts.add(c.address!.trim());
+    return parts.join(' · ');
+  }
+
+  // Editing must preserve the child's id — see CaseSetupProvider.updateChild.
+  void _showEditChildDialog(ChildModel child) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _EditChildDialog(
+        child: child,
+        onSave: (name, dob, school, address) {
+          widget.provider.updateChild(
+            child.id,
+            name: name,
+            dob: dob,
+            school: school,
+            address: address,
+          );
+        },
+      ),
+    );
+  }
+}
+
+// Owns its own controllers and focus nodes so they're disposed when the dialog
+// closes — CustomTextField does not take ownership of externally-supplied nodes.
+class _EditChildDialog extends StatefulWidget {
+  final ChildModel child;
+  final void Function(String name, DateTime dob, String? school, String? address) onSave;
+  const _EditChildDialog({required this.child, required this.onSave});
+
+  @override
+  State<_EditChildDialog> createState() => _EditChildDialogState();
+}
+
+class _EditChildDialogState extends State<_EditChildDialog> {
+  late final TextEditingController _nameC;
+  late final TextEditingController _schoolC;
+  late final TextEditingController _addressC;
+  final FocusNode _nameNode = FocusNode();
+  final FocusNode _schoolNode = FocusNode();
+  final FocusNode _addressNode = FocusNode();
+  late DateTime _dob;
+  bool _addressLoading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameC = TextEditingController(text: widget.child.name);
+    _schoolC = TextEditingController(text: widget.child.school ?? '');
+    _addressC = TextEditingController(text: widget.child.address ?? '');
+    _dob = widget.child.dob;
+  }
+
+  Future<void> _autofillAddress() async {
+    setState(() => _addressLoading = true);
+    try {
+      final addr = await _fetchCurrentAddress();
+      if (!mounted) return;
+      if (addr != null) setState(() => _addressC.text = addr);
+    } catch (e) {
+      if (mounted) showSnackBar(context, e.toString());
+    } finally {
+      if (mounted) setState(() => _addressLoading = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _nameC.dispose();
+    _schoolC.dispose();
+    _addressC.dispose();
+    _nameNode.dispose();
+    _schoolNode.dispose();
+    _addressNode.dispose();
+    super.dispose();
+  }
+
+  static String? _emptyToNull(String v) => v.trim().isEmpty ? null : v.trim();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: const Text("Edit Child", style: TextStyle(fontWeight: FontWeight.bold)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CustomTextField(labelText: "Child Name", controller: _nameC, node: _nameNode),
+            const SizedBox(height: 12),
+            Text("Date of Birth",
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w500, fontSize: 14)),
+            const SizedBox(height: 5),
+            InkWell(
+              onTap: () async {
+                final d = await showDatePicker(
+                  context: context,
+                  initialDate: _dob,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime.now(),
+                );
+                if (d != null) setState(() => _dob = d);
+              },
+              child: Container(
+                height: 54,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+                decoration: BoxDecoration(color: AppColors.textFieldBackgroundColor),
+                child: Row(children: [
+                  Text(DateFormat('d MMM yyyy').format(_dob)),
+                  const Spacer(),
+                  const Icon(Icons.calendar_today, color: AppColors.greyColor),
+                ]),
+              ),
+            ),
+            const SizedBox(height: 12),
+            CustomTextField(labelText: "School", controller: _schoolC, node: _schoolNode),
+            const SizedBox(height: 12),
+            CustomTextField(
+              labelText: "Address",
+              hintText: "Tap to auto-fill or type manually",
+              controller: _addressC,
+              node: _addressNode,
+              onTap: () {
+                if (_addressC.text.isEmpty && !_addressLoading) _autofillAddress();
+              },
+            ),
+            _addressAutofillHint(
+              loading: _addressLoading,
+              controller: _addressC,
+              onClear: () => setState(() => _addressC.clear()),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text("Cancel", style: TextStyle(color: Colors.black)),
+        ),
+        TextButton(
+          onPressed: () {
+            if (_nameC.text.trim().isEmpty) {
+              showSnackBar(context, "Enter Child Name");
+              return;
+            }
+            widget.onSave(
+              _nameC.text.trim(),
+              _dob,
+              _emptyToNull(_schoolC.text),
+              _emptyToNull(_addressC.text),
+            );
+            Navigator.pop(context);
+          },
+          child: const Text("Save", style: TextStyle(color: Color(0xFF4A148C))),
+        ),
       ],
     );
   }
@@ -372,6 +722,63 @@ class _Step2SelectRule extends StatelessWidget {
   }
 }
 
+/// Shown in place of Step 3 when an edit-mode rule load failed. Deliberately has
+/// no Save affordance: with the case's existing rule unknown, any save would
+/// write a blank rule over it.
+class _RuleLoadErrorState extends StatelessWidget {
+  final CaseSetupProvider provider;
+  const _RuleLoadErrorState({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 40),
+      child: Column(
+        children: [
+          Icon(Icons.cloud_off, size: 48, color: Colors.red.shade300),
+          const SizedBox(height: 16),
+          const Text(
+            "Couldn't load this case's schedule",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "We couldn't reach the server, so this case's existing rule can't be "
+            "shown. Saving now could overwrite it, so editing is disabled until "
+            "the schedule loads. Check your connection and try again.",
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 13, color: Colors.grey[700]),
+          ),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF7B1FA2),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25)),
+              ),
+              onPressed: () => provider.retryLoadExistingRules(),
+              child: const Text("Retry",
+                  style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          CustomSecondaryButton(
+            text: "Back",
+            onPressed: () => provider.previousStep(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Step3ConfigureRule extends StatefulWidget {
   final CaseSetupProvider provider;
   const _Step3ConfigureRule({required this.provider});
@@ -407,6 +814,88 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
     super.initState();
     selectedChildIds = widget.provider.caseData.children.map((e) => e.id).toSet();
 
+    // In edit mode, seed the form from the case's existing rule for this category
+    // so a wizard re-run edits the current config instead of overwriting it from
+    // blank. Null (no rule for this category yet) falls through to the defaults.
+    final existingRule = widget.provider.isEditing
+        ? widget.provider.existingRuleFor(widget.provider.selectedRuleType ?? '')
+        : null;
+    if (existingRule != null) {
+      _seedFromExistingRule(existingRule);
+    }
+  }
+
+  /// Inverts the `ruleData` map built by [_onSaveRule] back into form state.
+  /// Every key read here is one written there — keep the two in sync.
+  void _seedFromExistingRule(Map<String, dynamic> rule) {
+    // "startDate" / "endDate" are written as ISO-8601 strings.
+    startDate = _parseDate(rule['startDate']);
+    endDate = _parseDate(rule['endDate']);
+
+    // "startTime" / "endTime" are written as "HH:mm" (null when not applicable).
+    startTime = _parseTime(rule['startTime']);
+    endTime = _parseTime(rule['endTime']);
+
+    // "notificationPref" feeds a DropdownButton whose value must match exactly
+    // one item, so an unrecognised stored value has to fall back to the default.
+    final pref = rule['notificationPref'];
+    if (pref is String && notifOptions.contains(pref)) {
+      notificationPref = pref;
+    }
+
+    // "repeatFrequency" is null exactly when the rule was saved non-recurring,
+    // which is what the isRepeat toggle encodes.
+    final freq = rule['repeatFrequency'];
+    isRepeat = freq != null;
+    if (freq is String && frequencyOptions.contains(freq)) {
+      selectedFrequency = freq;
+    }
+
+    // "customDays" is only written for a recurring "Custom" rule; it round-trips
+    // as a List of weekday ints (Mon=1..Sun=7).
+    final days = rule['customDays'];
+    if (days is List) {
+      selectedDays = days.whereType<num>().map((d) => d.toInt()).toSet();
+    }
+
+    // A recurring rule only carries an endDate when the "Add End Date" toggle
+    // was on, so the presence of one reconstructs the toggle.
+    hasEndDate = isRepeat && endDate != null;
+
+    // "notes" is written from the controller's raw text.
+    final notes = rule['notes'];
+    if (notes is String) _notesController.text = notes;
+
+    // "appliedChildren" holds full ChildModel.toMap() entries; we only need the
+    // ids back. Children deleted from the case since the rule was saved are
+    // dropped, and an empty result keeps the default (all children) rather than
+    // leaving a selection that _onSaveRule would reject.
+    final applied = rule['appliedChildren'];
+    if (applied is List) {
+      final currentIds =
+          widget.provider.caseData.children.map((e) => e.id).toSet();
+      final appliedIds = applied
+          .whereType<Map>()
+          .map((m) => m['id'])
+          .whereType<String>()
+          .where(currentIds.contains)
+          .toSet();
+      if (appliedIds.isNotEmpty) selectedChildIds = appliedIds;
+    }
+  }
+
+  DateTime? _parseDate(dynamic value) =>
+      value is String ? DateTime.tryParse(value) : null;
+
+  TimeOfDay? _parseTime(dynamic value) {
+    if (value is! String) return null;
+    final parts = value.split(':');
+    if (parts.length != 2) return null;
+    final hour = int.tryParse(parts[0]);
+    final minute = int.tryParse(parts[1]);
+    if (hour == null || minute == null) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+    return TimeOfDay(hour: hour, minute: minute);
   }
 
   void _onSaveRule() async {

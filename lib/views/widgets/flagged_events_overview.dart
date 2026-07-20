@@ -6,6 +6,7 @@ class FlaggedEventsOverview extends StatelessWidget {
   final int disputesCount;
   final int nonComplianceCount;
   final int totalCount;
+  final VoidCallback? onTap;
 
   const FlaggedEventsOverview({
     super.key,
@@ -14,11 +15,17 @@ class FlaggedEventsOverview extends StatelessWidget {
     required this.disputesCount,
     required this.nonComplianceCount,
     required this.totalCount,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -86,6 +93,8 @@ class FlaggedEventsOverview extends StatelessWidget {
             ],
           )
         ],
+      ),
+        ),
       ),
     );
   }

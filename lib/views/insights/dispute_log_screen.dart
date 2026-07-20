@@ -9,7 +9,7 @@ import '../../provider/insight_provider.dart';
  import '../../models/case_model.dart';
 import '../widgets/custom_search_box.dart';
 import '../widgets/filter_ui.dart';
-import 'dispute_log_details_screen.dart';
+import 'dispute_log_viewer_screen.dart';
 
 class DisputesLogScreen extends StatefulWidget {
   static const routeName = '/disputes-log';
@@ -243,7 +243,18 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
     final int logCount = data['logCount'] ?? 0;
 
     return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, DisputeDetailsScreen.routeName, arguments: data),
+      // Open the full-screen reader directly instead of a condensed card list.
+      onTap: () => Navigator.pushNamed(
+        context,
+        DisputeLogViewerScreen.routeName,
+        arguments: {
+          'caseId': data['caseId'],
+          'disputeId': data['id'],
+          'initialIndex': 0,
+          'party': data['party'] ?? '',
+          'isClosed': data['disputeStatus'] == 'Resolved',
+        },
+      ),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),

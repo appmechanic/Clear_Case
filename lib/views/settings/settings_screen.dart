@@ -2,12 +2,11 @@
 import 'package:clearcase/models/case_model.dart';
 import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
+import 'package:clearcase/views/settings/account_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../home/scheduled_dates_screen.dart';
-import '../widgets/custom_dialog.dart';
 
 class SettingsScreen extends StatelessWidget {
   static const routeName = '/settings';
@@ -88,37 +87,8 @@ class SettingsScreen extends StatelessWidget {
                             "https://docs.google.com/document/d/1M0pHs1VBdUwnaNqog1H_HpkRE5mqAfxcn_F3_Sd0laA/edit?usp=sharing"
                         ),
 
-                        const SizedBox(height: 25),
-
-                        // 6. Delete Account Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: OutlinedButton(
-                            style: OutlinedButton.styleFrom(
-                              backgroundColor: Colors.blue.shade50,
-                              side: const BorderSide(color: Colors.red),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                            ),
-                            onPressed: () => _showDeleteAccountConfirmation(context, provider),
-                            child: const Text("Delete Account", style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold, fontSize: 16)),
-                          ),
-                        ),
-                        const SizedBox(height: 15),
-
-                        // 7. Logout Button
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF4A148C),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                            ),
-                            onPressed: () => provider.logout(context),
-                            child: const Text("Logout", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                          ),
-                        ),
+                        // Logout / Delete Account live on the Account screen
+                        // (tap the profile card above) — not duplicated here.
                         const SizedBox(height: 20),
                       ],
                     ),
@@ -130,26 +100,35 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Widget _buildProfileCard(SettingsProvider provider) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-      child: Row(
-        children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: Colors.purple.shade50,
-            child: const Icon(Icons.person, color: Colors.purple),
-          ),
-          const SizedBox(width: 15),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Builder(
+      builder: (context) => InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.pushNamed(context, AccountScreen.routeName),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+          child: Row(
             children: [
-              Text("${provider.userProfile?.firstName ?? ''} ${provider.userProfile?.lastName ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 4),
-              Text(provider.userProfile?.email ?? "No Email", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              CircleAvatar(
+                radius: 24,
+                backgroundColor: Colors.purple.shade50,
+                child: const Icon(Icons.person, color: Colors.purple),
+              ),
+              const SizedBox(width: 15),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text("${provider.userProfile?.firstName ?? ''} ${provider.userProfile?.lastName ?? ''}", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 4),
+                    Text(provider.userProfile?.email ?? "No Email", style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
             ],
-          )
-        ],
+          ),
+        ),
       ),
     );
   }
@@ -166,7 +145,7 @@ class SettingsScreen extends StatelessWidget {
 
           // 1. Scheduled Dates Toggle
           _buildToggleItem(
-            title: "Scheduled Dates",
+            title: "Scheduled",
             subtitle: "Get alerts for your custody/payments schedule",
             value: provider.isScheduledDatesEnabled,
             onChanged: provider.toggleScheduledDates,
@@ -285,7 +264,9 @@ class SettingsScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.edit, size: 20, color: Colors.blue),
                 onPressed: () {
-                  Navigator.pushNamed(context, ScheduledDatesScreen.routeName,arguments: caseItem.id,);
+                  // Open the case wizard in edit mode from Step 1 (full 1->2->3 flow),
+                  // not the scheduled-dates screen.
+                  Navigator.pushNamed(context, CaseSetupScreen.routeName, arguments: caseItem);
                 },
               ),
               const SizedBox(width: 15),
@@ -351,53 +332,6 @@ class SettingsScreen extends StatelessWidget {
           }
         },
         child: Text(title, style: const TextStyle(fontWeight: FontWeight.normal, fontSize: 15)),
-      ),
-    );
-  }
-  void _showDeleteAccountConfirmation(BuildContext context, SettingsProvider provider) {
-    TopPopupDialog.show(
-      context: context,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 50),
-          const SizedBox(height: 16),
-          const Text(
-            "Delete Account?",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-          ),
-          const SizedBox(height: 12),
-          const Text(
-            "This will permanently remove your profile, all cases, records, and uploaded files. This action cannot be undone.",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text("Cancel", style: TextStyle(color: Colors.grey)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    provider.deleteUserAccount(context);
-                  },
-                  child: const Text("Delete All", style: TextStyle(color: Colors.white)),
-                ),
-              ),
-            ],
-          )
-        ],
       ),
     );
   }

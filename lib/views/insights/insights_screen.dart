@@ -8,6 +8,7 @@ import '../widgets/dispute_overview.dart';
 import '../widgets/export_button.dart';
 import '../widgets/export_filter.dart';
 import '../widgets/flagged_events_overview.dart';
+import 'flagged_events_screen.dart';
 import '../widgets/non_compliance_overview.dart';
 import '../widgets/payment_overview_card.dart';
 import '../widgets/pdf_generator.dart';
@@ -83,8 +84,8 @@ class InsightsScreen extends StatelessWidget {
                               backgroundColor: Colors.transparent,
                               builder: (context) => ExportFilterSheet(
                                   children: childrenList,
-                                  onApply: (options) {
-                                    PDFGenerator.generateReport(
+                                  onApply: (options) async {
+                                    await PDFGenerator.generateReport(
                                       caseName: insightProvider.selectedCase?.caseNumber ?? "Case Report",
                                       caseId: insightProvider.selectedCase?.id ?? '',
                                       options: options,
@@ -186,6 +187,14 @@ class InsightsScreen extends StatelessWidget {
                     disputesCount: insightProvider.flaggedDisputesCount,
                     nonComplianceCount: insightProvider.flaggedNonComplianceCount,
                     totalCount: insightProvider.totalFlaggedCount,
+                    onTap: () {
+                      if (insightProvider.selectedCase != null) {
+                        Navigator.pushNamed(
+                          context,
+                          FlaggedEventsScreen.routeName,
+                        );
+                      }
+                    },
                   ),
 
                 ],

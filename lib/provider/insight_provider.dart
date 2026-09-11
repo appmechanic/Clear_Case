@@ -1,24 +1,14 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
+import '../core/utils/custody_span.dart';
+import '../core/utils/timeframe.dart';
 import '../models/calender_event_model.dart';
 import '../models/case_model.dart';
 import '../services/case_selection_service.dart';
-
-
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
-
-import 'dart:async';
-import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart';
 
 class InsightProvider with ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(
@@ -35,11 +25,24 @@ class InsightProvider with ChangeNotifier {
   CaseModel? _selectedCase;
   bool _isLoading = false;
 
-  // Custody Variables
-  int fulfilledDays = 0;
-  int justifiedDays = 0;
-  int missedDays = 0;
-  double complianceRate = 0.0;
+  // Reporting period for every stat below. Defaults to the Australian
+  // financial year; the Insights screen's dropdown changes it.
+  String _timeframe = Timeframe.defaultOption;
+  String get timeframe => _timeframe;
+  TimeWindow get timeWindow => Timeframe.windowFor(_timeframe);
+
+  // Latest raw docs per collection, kept so a timeframe change can recompute
+  // without waiting for Firestore to emit again.
+  List<Map<String, dynamic>> _paymentDocs = [];
+  List<Map<String, dynamic>> _custodyDocs = [];
+  List<Map<String, dynamic>> _nonComplianceDocs = [];
+  List<Map<String, dynamic>> _disputeDocs = [];
+  List<Map<String, dynamic>> _flaggedDocs = [];
+
+  // Custody: what actually happened in the period, not measured against
+  // scheduled rules.
+  int totalCustodyNights = 0;
+  int totalCustodyEntries = 0;
 
   // Payment Variables
   double totalPaid = 0.0;
@@ -117,6 +120,8 @@ class InsightProvider with ChangeNotifier {
     _selectedCase = null;
     _allEvents = [];
     _isLoading = false;
+    _timeframe = Timeframe.defaultOption;
+    _clearCachedDocs();
     _resetStats();
   }
 
@@ -169,8 +174,17 @@ class InsightProvider with ChangeNotifier {
     _selectedCase = caseModel as CaseModel?;
     // Broadcast to the rest of the app (no-op when unchanged, so it can't loop).
     CaseSelectionService.instance.select(_selectedCase?.id);
+    _clearCachedDocs();
     _resetStats();
     _startListeningToCaseDetails();
+    notifyListeners();
+  }
+
+  /// Changes the reporting period and recomputes every stat from cached docs.
+  void setTimeframe(String option) {
+    if (option == _timeframe) return;
+    _timeframe = option;
+    _recomputeAll();
     notifyListeners();
   }
 
@@ -185,146 +199,156 @@ class InsightProvider with ChangeNotifier {
     final caseId = _selectedCase!.id;
     final caseDoc = _firestore.collection('users').doc(userId).collection('cases').doc(caseId);
 
-    // Payments Listener
+    List<Map<String, dynamic>> dataOf(QuerySnapshot<Map<String, dynamic>> snap) =>
+        snap.docs.map((d) => d.data()).toList();
+
     _caseDetailSubscriptions.add(
         caseDoc.collection('paymentRecords').snapshots().listen((snap) {
-          _calculatePaymentInsightsSync(snap.docs);
-        })
-    );
-
-    // Custody Listeners (Rules + Records)
-    _caseDetailSubscriptions.add(
-        caseDoc.collection('scheduledRules').snapshots().listen((_) => calculateCustodyCompliance())
-    );
-    _caseDetailSubscriptions.add(
-        caseDoc.collection('custodyRecords').snapshots().listen((_) => calculateCustodyCompliance())
-    );
-
-    // Non-compliances Listener
-    _caseDetailSubscriptions.add(
-        caseDoc.collection('nonComplianceRecords').snapshots().listen((snap) {
-          totalNonComplianceCount = snap.docs.length;
+          _paymentDocs = dataOf(snap);
+          _calculatePaymentInsights();
           notifyListeners();
         })
     );
 
-    // Disputes Listener
+    // Custody insights come from recorded entries only — scheduled rules are
+    // reminders and don't feed any calculation.
     _caseDetailSubscriptions.add(
-        caseDoc.collection('disputeRecords').snapshots().listen((snap) {
-          _calculateDisputeInsightsSync(snap.docs);
+        caseDoc.collection('custodyRecords').snapshots().listen((snap) {
+          _custodyDocs = dataOf(snap);
+          _calculateCustodyInsights();
+          notifyListeners();
         })
     );
 
-    // Flagged Listener
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('nonComplianceRecords').snapshots().listen((snap) {
+          _nonComplianceDocs = dataOf(snap);
+          _calculateNonComplianceInsights();
+          notifyListeners();
+        })
+    );
+
+    _caseDetailSubscriptions.add(
+        caseDoc.collection('disputeRecords').snapshots().listen((snap) {
+          _disputeDocs = dataOf(snap);
+          _calculateDisputeInsights();
+          notifyListeners();
+        })
+    );
+
     _caseDetailSubscriptions.add(
         caseDoc.collection('flaggedEvents').snapshots().listen((snap) {
-          _calculateFlaggedInsightsSync(snap.docs);
+          // originId, not doc.id — see the flaggedEvents field comment above.
+          _flaggedDocs = snap.docs
+              .map((doc) => {...doc.data(), 'id': doc.data()['originId'] ?? doc.id})
+              .toList();
+          _calculateFlaggedInsights();
+          notifyListeners();
         })
     );
   }
 
-  // --- SYNC CALCULATORS FOR STREAM DATA ---
+  // --- CALCULATORS (all scoped to the selected timeframe) ---
 
-  void _calculatePaymentInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  void _recomputeAll() {
+    _calculatePaymentInsights();
+    _calculateCustodyInsights();
+    _calculateNonComplianceInsights();
+    _calculateDisputeInsights();
+    _calculateFlaggedInsights();
+  }
+
+  bool _inWindow(Map<String, dynamic> data) =>
+      timeWindow.contains((data['date'] as Timestamp?)?.toDate());
+
+  void _calculatePaymentInsights() {
     double tempPaid = 0.0; double tempReceived = 0.0;
     double tempCompulsory = 0.0; double tempAdditional = 0.0;
 
-    for (var doc in docs) {
-      final data = doc.data();
+    for (final data in _paymentDocs.where(_inWindow)) {
       final double amount = (data['amount'] ?? 0).toDouble();
       final bool isReceived = data['isReceived'] ?? false;
       final String category = data['paymentCategory'] ?? "";
 
-      if (isReceived) tempReceived += amount;
-      else tempPaid += amount;
+      if (isReceived) {
+        tempReceived += amount;
+      } else {
+        tempPaid += amount;
+      }
 
-      if (category == "Compulsory") tempCompulsory += amount;
-      else if (category == "Additional") tempAdditional += amount;
+      if (category == "Compulsory") {
+        tempCompulsory += amount;
+      } else if (category == "Additional") {
+        tempAdditional += amount;
+      }
     }
     totalPaid = tempPaid; totalReceived = tempReceived;
     totalCompulsory = tempCompulsory; totalAdditional = tempAdditional;
-    notifyListeners();
   }
 
-  void _calculateDisputeInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  void _calculateCustodyInsights() {
+    final spans = _custodyDocs.map(CustodySpan.fromMap).whereType<CustodySpan>();
+    final totals = CustodyTotals.from(spans, timeWindow);
+    totalCustodyEntries = totals.entries;
+    totalCustodyNights = totals.nights;
+  }
+
+  void _calculateNonComplianceInsights() {
+    totalNonComplianceCount = _nonComplianceDocs.where(_inWindow).length;
+  }
+
+  void _calculateDisputeInsights() {
     int tempComm = 0; int tempTransfer = 0; int tempPayment = 0;
-    for (var doc in docs) {
-      final category = doc.data()['category'] ?? "";
-      if (category == "Communication") tempComm++;
-      else if (category == "Transfer Issues") tempTransfer++;
-      else if (category == "Payment Disputes") tempPayment++;
+    final inRange = _disputeDocs.where(_inWindow).toList();
+    for (final data in inRange) {
+      final category = data['category'] ?? "";
+      if (category == "Communication") {
+        tempComm++;
+      } else if (category == "Transfer Issues") {
+        tempTransfer++;
+      } else if (category == "Payment Disputes") {
+        tempPayment++;
+      }
     }
     communicationCount = tempComm; transferIssuesCount = tempTransfer;
-    paymentDisputesCount = tempPayment; totalDisputes = docs.length;
-    notifyListeners();
+    paymentDisputesCount = tempPayment; totalDisputes = inRange.length;
   }
 
-  void _calculateFlaggedInsightsSync(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+  void _calculateFlaggedInsights() {
     int tempC = 0; int tempP = 0; int tempD = 0; int tempB = 0;
     final List<Map<String, dynamic>> tempEvents = [];
-    for (var doc in docs) {
-      final data = doc.data();
+    for (final data in _flaggedDocs) {
       final String origin = data['originCollection'] ?? "";
-      if (origin == "paymentRecords") tempP++;
-      else if (origin == "disputeRecords") tempD++;
-      else if (origin == "nonComplianceRecords") tempB++;
-      else tempC++;
+      // Custody copies carry startDate/endDate; the rest carry `date`.
+      final span = origin == "custodyRecords" ? CustodySpan.fromMap(data) : null;
+      final inRange = span != null ? timeWindow.overlaps(span.start, span.end) : _inWindow(data);
+      if (!inRange) continue;
 
-      // originId, not doc.id — see the flaggedEvents field comment above.
-      tempEvents.add({...data, 'id': data['originId'] ?? doc.id});
+      if (origin == "paymentRecords") {
+        tempP++;
+      } else if (origin == "disputeRecords") {
+        tempD++;
+      } else if (origin == "nonComplianceRecords") {
+        tempB++;
+      } else {
+        tempC++;
+      }
+      tempEvents.add(data);
     }
     flaggedCustodyCount = tempC; flaggedPaymentsCount = tempP;
     flaggedDisputesCount = tempD; flaggedNonComplianceCount = tempB;
     flaggedEvents = tempEvents;
-    notifyListeners();
-  }
-
-  /// 4. CUSTODY LOGIC: Remains Future-based as it aggregates multiple steps
-  Future<void> calculateCustodyCompliance() async {
-    if (_selectedCase == null) return;
-    final userId = _auth.currentUser!.uid;
-    final caseId = _selectedCase!.id;
-    final today = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
-
-    try {
-      final rulesSnap = await _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('scheduledRules').get();
-      if (rulesSnap.docs.isEmpty) { _resetCustodyStats(); return; }
-
-      Set<String> scheduledDates = {};
-      for (var doc in rulesSnap.docs) {
-        final data = doc.data();
-        // Skip rules with a missing/malformed startDate instead of letting one
-        // bad row throw and silently zero out the entire compliance result.
-        final DateTime? start = DateTime.tryParse(data['startDate']?.toString() ?? '');
-        if (start == null) continue;
-        final DateTime? end = DateTime.tryParse(data['endDate']?.toString() ?? '');
-        DateTime calcEnd = (end != null && end.isBefore(today)) ? end : today;
-
-        for (DateTime date = DateTime(start.year, start.month, start.day); !date.isAfter(calcEnd); date = date.add(const Duration(days: 1))) {
-          scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
-        }
-      }
-
-      final recordsSnap = await _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get();
-      int tempF = 0; int tempJ = 0;
-
-      for (var doc in recordsSnap.docs) {
-        final data = doc.data();
-        if (!(data['isScheduled'] ?? false)) continue;
-        String dateKey = DateFormat('yyyy-MM-dd').format((data['startDate'] as Timestamp).toDate());
-        if (scheduledDates.contains(dateKey)) {
-          if (data['isFulfilled'] ?? false) tempF++; else tempJ++;
-        }
-      }
-
-      fulfilledDays = tempF; justifiedDays = tempJ;
-      missedDays = (scheduledDates.length - (tempF + tempJ)).clamp(0, 999999);
-      complianceRate = scheduledDates.isNotEmpty ? ((tempF + tempJ) / scheduledDates.length) * 100 : 0.0;
-      notifyListeners();
-    } catch (e) { debugPrint("Custody Insight Error: $e"); }
   }
 
   // --- UTILS & CLEANUP ---
+
+  void _clearCachedDocs() {
+    _paymentDocs = [];
+    _custodyDocs = [];
+    _nonComplianceDocs = [];
+    _disputeDocs = [];
+    _flaggedDocs = [];
+  }
 
   void _resetStats() {
     totalPaid = 0.0; totalReceived = 0.0; totalCompulsory = 0.0; totalAdditional = 0.0;
@@ -332,12 +356,7 @@ class InsightProvider with ChangeNotifier {
     transferIssuesCount = 0; paymentDisputesCount = 0;
     flaggedCustodyCount = 0; flaggedPaymentsCount = 0; flaggedDisputesCount = 0; flaggedNonComplianceCount = 0;
     flaggedEvents = [];
-    fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
-  }
-
-  void _resetCustodyStats() {
-    fulfilledDays = 0; justifiedDays = 0; missedDays = 0; complianceRate = 0.0;
-    notifyListeners();
+    totalCustodyNights = 0; totalCustodyEntries = 0;
   }
 
   String getCaseDisplayName(dynamic caseItem) {
@@ -345,7 +364,7 @@ class InsightProvider with ChangeNotifier {
     // Show the child name(s); fall back to the case number only when a case
     // has no children attached.
     if (caseItem.children.isEmpty) {
-      return caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
+      return caseItem.caseNumber.isEmpty ? "No Case Reference Number" : caseItem.caseNumber;
     }
     return caseItem.children.map((child) => child.name.trim()).join(' & ');
   }
@@ -356,13 +375,17 @@ class InsightProvider with ChangeNotifier {
       _isLoading = true; notifyListeners();
       final userId = _auth.currentUser!.uid;
       final caseId = _selectedCase!.id;
-      final snaps = await Future.wait([
-        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('paymentRecords').get(),
-        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('custodyRecords').get(),
-        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('disputeRecords').get(),
-        _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection('nonComplianceRecords').get(),
-      ]);
-      _allEvents = snaps.expand((s) => s.docs.map((d) => CalendarEvent.fromMap(d.data(), docId: d.id))).toList();
+      const collections = ['paymentRecords', 'custodyRecords', 'disputeRecords', 'nonComplianceRecords'];
+      final snaps = await Future.wait(collections.map((c) =>
+          _firestore.collection('users').doc(userId).collection('cases').doc(caseId).collection(c).get()));
+      // Tag each doc with its collection: record docs don't store their type,
+      // and newer custody docs no longer carry the 'isFulfilled' key that
+      // CalendarEvent.fromMap used to sniff them out by.
+      _allEvents = [
+        for (var i = 0; i < collections.length; i++)
+          ...snaps[i].docs.map((d) => CalendarEvent.fromMap(
+              {...d.data(), 'originCollection': collections[i]}, docId: d.id)),
+      ];
       _allEvents.sort((a, b) => b.date.compareTo(a.date));
     } finally { _isLoading = false; notifyListeners(); }
   }

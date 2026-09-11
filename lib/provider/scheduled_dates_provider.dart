@@ -197,7 +197,7 @@ class ScheduledDatesProvider extends ChangeNotifier {
     // Show the child name(s); fall back to the case number only when a case
     // has no children attached.
     if (caseItem.children.isEmpty) {
-      return caseItem.caseNumber.isEmpty ? "No Case #" : caseItem.caseNumber;
+      return caseItem.caseNumber.isEmpty ? "No Case Reference Number" : caseItem.caseNumber;
     }
     return caseItem.children.map((child) => child.name.trim()).join(' & ');
   }

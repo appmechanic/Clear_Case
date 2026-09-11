@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'attachment_preview.dart';
 import 'file_type_icon.dart';
+import 'evidence_source_badge.dart';
 
 /// Attachment thumbnail used on the record detail screens.
 ///
@@ -136,6 +137,13 @@ class _AttachmentThumbnailState extends State<AttachmentThumbnail> {
               ),
             ),
           ),
+          // Where the photo came from (library photos can't prove time/place).
+          if (isImage)
+            Positioned(
+              left: 4,
+              bottom: 4,
+              child: EvidenceSourceBadge.forPath(url),
+            ),
           // Corner badge -> open / download in the external browser.
           Positioned(
             top: 4,

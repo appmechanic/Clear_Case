@@ -206,16 +206,16 @@ class _CaseSetupScreenState extends State<CaseSetupScreen> {
   }
 
   Widget _buildProgressHeader(int step) {
-    String stepTitle = "Professional case configuration for compliance tracking.";
+    String stepTitle = "Set up your case, children and schedule.";
     String headerTitle = "Step $step of 3";
     String subHeader = "";
 
     if (step == 2) {
-      stepTitle = "Choose the type of scheduled rule you want to create.\nThis selection is required for accurate compliance calculation and legal documentation.";
+      stepTitle = "Choose the type of scheduled rule you want to create.\nScheduled rules add planned dates to your calendar and send reminders.";
       subHeader = "Select Rule Type";
     }
     if (step == 3) {
-      stepTitle = "Professional case configuration for compliance tracking.";
+      stepTitle = "Set up the dates and reminders for this rule.";
       subHeader = "Schedule Configuration";
     }
 
@@ -440,7 +440,7 @@ class _Step1FormState extends State<_Step1Form> {
       children: [
         const Text("Case Information", style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
         const SizedBox(height: 15),
-        CustomTextField(labelText: "Case Number *", hintText: "eg. FAMS-5856", controller: _caseNumCtrl, node: caseNumNode, nextNode: legalRepNode, onChange: (v) => widget.provider.updateCaseInfo(v, _legalRepCtrl.text)),
+        CustomTextField(labelText: "Case Reference Number *", hintText: "eg. FAMS-5856", controller: _caseNumCtrl, node: caseNumNode, nextNode: legalRepNode, onChange: (v) => widget.provider.updateCaseInfo(v, _legalRepCtrl.text)),
         const SizedBox(height: 15),
         CustomTextField(labelText: "Legal Representative *", hintText: "eg. Sam Mark", controller: _legalRepCtrl, node: legalRepNode, nextNode: nameNode, onChange: (v) => widget.provider.updateCaseInfo(_caseNumCtrl.text, v)),
         const SizedBox(height: 25),
@@ -695,11 +695,11 @@ class _Step2SelectRule extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
          const SizedBox(height: 8),
-        _buildSelectionCard("Scheduled Custody", "Set up recurring custody schedules, handover times, and parenting arrangements as defined in court orders.", ["Court-ordered", "Time-sensitive", "Compliance Tracking"], "Custody", provider),
+        _buildSelectionCard("Scheduled Custody", "Set up recurring custody schedules, handover times, and parenting arrangements as defined in court orders.", ["Court-ordered", "Time-sensitive", "Reminders"], "Custody", provider),
         _buildSelectionCard("Scheduled Payments", "Configure recurring child support payments, medical expenses, education costs, and other financial obligations.", ["Financial", "Recurring", "Payment tracking"], "Payment", provider, tagColor: Colors.blue.shade100, tagTextColor: Colors.blue.shade900),
         _buildSelectionCard("Custom Order", "Create custom rules for communication schedules, special events, medical appointments, or other specific requirements.", ["Flexible", "Customizable", "Multi-purpose"], "Custom", provider, tagColor: Colors.green.shade100, tagTextColor: Colors.green.shade900),
         const SizedBox(height: 20),
-        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(12)), child: Column(children: const [Text("Rule Type Required", style: TextStyle(fontWeight: FontWeight.bold)), SizedBox(height: 5), Text("Selecting a rule type is mandatory for compliance calculation. This ensures accurate tracking and proper categorization for legal documentation purposes.", textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black87))]))
+        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(12)), child: Column(children: const [Text("Rule Type Required", style: TextStyle(fontWeight: FontWeight.bold)), SizedBox(height: 5), Text("Pick the rule type that matches your court order. Rules are used for reminders and planned dates only — insights and reports are based on the entries you record.", textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.black87))]))
     ]);
   }
   Widget _buildSelectionCard(String title, String desc, List<String> tags, String type, CaseSetupProvider provider, {Color? tagColor, Color? tagTextColor}) {
@@ -1254,10 +1254,10 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
           ),
           child: Column(
             children: const [
-              Text("Compliance Calculation", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+              Text("Reminders & Planned Dates", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               SizedBox(height: 5),
               Text(
-                "Compliance is calculated per child. Select which children this rule applies to for accurate tracking and legal documentation.",
+                "Select which children this rule applies to. The rule adds planned dates to your calendar and sends reminders; it isn't used to calculate compliance.",
                 textAlign: TextAlign.center,
                 style: TextStyle(fontSize: 11, color: Colors.black87)
               ),
@@ -1358,21 +1358,27 @@ class _Step3ConfigureRuleState extends State<_Step3ConfigureRule> {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: Colors.transparent), // Flat white card
       ),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: subtitle == null 
-           ? null // No avatar for Select All
-           : CircleAvatar(
-               backgroundColor: const Color(0xFFFFCDD2), // Pink bg
-               child: const Icon(Icons.person, color: Color(0xFF7B1FA2)), // Purple user
-             ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)) : null,
-        // Using Icon instead of Radio to control visual state manually without groupValue mess for "Select All"
-        trailing: isSelected 
-            ? const Icon(Icons.radio_button_checked, color: Color(0xFF7B1FA2)) 
-            : const Icon(Icons.radio_button_off, color: Color(0xFF7B1FA2)),
+      child: Material(
+        // Gives the tile its own ink surface: the container's colour
+        // would otherwise hide the tap ripple.
+        type: MaterialType.transparency,
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          onTap: onTap,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: subtitle == null 
+             ? null // No avatar for Select All
+             : CircleAvatar(
+                 backgroundColor: const Color(0xFFFFCDD2), // Pink bg
+                 child: const Icon(Icons.person, color: Color(0xFF7B1FA2)), // Purple user
+               ),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(fontSize: 12, color: Colors.grey)) : null,
+          // Using Icon instead of Radio to control visual state manually without groupValue mess for "Select All"
+          trailing: isSelected 
+              ? const Icon(Icons.radio_button_checked, color: Color(0xFF7B1FA2)) 
+              : const Icon(Icons.radio_button_off, color: Color(0xFF7B1FA2)),
+        ),
       ),
     );
   }

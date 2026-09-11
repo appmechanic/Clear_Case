@@ -8,6 +8,7 @@ import 'attachment_picker_widget.dart';
 import 'attachment_preview.dart';
 import 'file_type_icon.dart';
 import 'custom_text_field.dart';
+import 'evidence_source_badge.dart';
 
 /// Add/edit dialog for a dispute log. Shared by DisputeDetailsScreen (list rows
 /// and "Add New Log") and DisputeLogViewerScreen (full-screen reader).
@@ -207,6 +208,12 @@ class _DisputeLogDialogState extends State<_DisputeLogDialog> {
             ),
           ),
         ),
+        if (isImage)
+          Positioned(
+            left: 3,
+            bottom: 3,
+            child: EvidenceSourceBadge.forPath(url, size: 10),
+          ),
         GestureDetector(
           onTap: onDelete,
           child: Container(

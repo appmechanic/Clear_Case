@@ -7,6 +7,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
 import '../core/utils/storage_cleanup.dart';
+import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart';
 
 // class DisputeInsightsProvider with ChangeNotifier {
@@ -220,9 +221,9 @@ class DisputeInsightsProvider with ChangeNotifier {
   bool _isLoading = false;
   String _currentSearchQuery = "";
 
-  // Default filters: "All Time" and "All Disputes(Combined)"
+  // Default filters: the Australian financial year and "All Disputes(Combined)"
   FilterOptions _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: Timeframe.defaultOption,
       selectedCategory: "All Disputes(Combined)"
   );
 
@@ -236,7 +237,7 @@ class DisputeInsightsProvider with ChangeNotifier {
   List<dynamic> get disputes => _filteredDisputes;
   bool get isLoading => _isLoading;
 
-  Future<void> fetchDisputes(String caseId) async {
+  Future<void> fetchDisputes(String caseId, {String timePeriod = Timeframe.defaultOption}) async {
     final String? userId = _auth.currentUser?.uid;
     if (userId == null) return;
 
@@ -245,7 +246,7 @@ class DisputeInsightsProvider with ChangeNotifier {
     // --- RESET FILTERS ON EVERY FETCH ---
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: timePeriod,
       selectedCategory: "All Disputes(Combined)",
       selectedChildIds: [], // Empty means "All Children"
     );
@@ -279,7 +280,7 @@ class DisputeInsightsProvider with ChangeNotifier {
 
       _allDisputes = tempDisputes;
 
-      // Apply the fresh "All Time" filters to the new data
+      // Apply the freshly reset filters to the new data
       _runCombinedFilters();
     } catch (e) {
       debugPrint("Error fetching disputes: $e");
@@ -305,7 +306,7 @@ class DisputeInsightsProvider with ChangeNotifier {
 
       // Time Filter (Using the 'date' field from your Firestore data)
       final DateTime? disputeDate = (dispute['date'] as Timestamp?)?.toDate();
-      bool matchesTime = _checkTimePeriod(disputeDate, _currentFilters.selectedTimePeriod);
+      bool matchesTime = Timeframe.contains(_currentFilters.selectedTimePeriod, disputeDate);
 
       return matchesStatus && matchesTime;
     }).toList();
@@ -325,28 +326,6 @@ class DisputeInsightsProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  bool _checkTimePeriod(DateTime? date, String period) {
-    if (date == null || period == "All Time") return true;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (period) {
-      case "Last month":
-        return date.isAfter(today.subtract(const Duration(days: 30)));
-      case "Quarter":
-        return date.isAfter(today.subtract(const Duration(days: 90)));
-      case "Bi-annual":
-        return date.isAfter(today.subtract(const Duration(days: 182)));
-      case "Yearly":
-        return date.isAfter(today.subtract(const Duration(days: 365)));
-      case "Current Financial year":
-        int startYear = now.month >= 4 ? now.year : now.year - 1;
-        DateTime fyStart = DateTime(startYear, 4, 1);
-        return date.isAfter(fyStart) || date.isAtSameMomentAs(fyStart);
-      default:
-        return true;
-    }
-  }
 
   // --- Filter Control Methods ---
   void filterBySearch(String query) {
@@ -362,7 +341,7 @@ class DisputeInsightsProvider with ChangeNotifier {
   void clearAll() {
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-        selectedTimePeriod: "All Time",
+        selectedTimePeriod: Timeframe.defaultOption,
         selectedCategory: "All Disputes(Combined)"
     );
     _runCombinedFilters();

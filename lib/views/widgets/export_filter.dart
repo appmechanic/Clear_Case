@@ -1,19 +1,32 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/timeframe.dart';
+import 'custom_dropdown.dart';
 import 'custom_primary_button.dart';
+
+/// Report generation progress: [progress] is 0.0–1.0, [message] the current
+/// stage ("Adding photos (3 of 12)…").
+typedef ReportProgressCallback = void Function(double progress, String message);
 
 class ExportFilterSheet extends StatefulWidget {
   final List<dynamic> children;
 
-  /// Awaited by the sheet so the button can show a spinner for the whole
-  /// generation. Must return a Future that completes when the report is done.
-  final Future<void> Function(ExportOptions) onApply;
+  /// Awaited by the sheet, which shows a percentage progress panel for the
+  /// whole generation. Must return a Future that completes when the report is
+  /// done, and should forward the callback to PDFGenerator.generateReport.
+  final Future<void> Function(ExportOptions options, ReportProgressCallback onProgress) onApply;
+
+  /// Pre-selected period — the Insights screen passes its own timeframe.
+  /// Defaults to the Australian financial year.
+  final String initialTimePeriod;
 
   const ExportFilterSheet({
     super.key,
     required this.children,
     required this.onApply,
+    this.initialTimePeriod = Timeframe.defaultOption,
   });
 
   @override
@@ -26,6 +39,8 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
   DateTime? startDate;
   DateTime? endDate;
   bool _isGenerating = false;
+  double _progress = 0;
+  String _progressMessage = "";
 
   Map<String, bool> includeInReport = {
     "Custody": true,
@@ -39,11 +54,22 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
   void initState() {
     super.initState();
     selectedChildIds = widget.children.map((e) => e.id as String).toList();
-     selectedTimePeriod = "All Time";
+    selectedTimePeriod = widget.initialTimePeriod;
   }
+
+  bool get _isCustomRange => selectedTimePeriod == ExportOptions.customRange;
 
   @override
   Widget build(BuildContext context) {
+    // No closing the sheet mid-generation — the progress panel is the only
+    // sign the work is still running.
+    return PopScope(
+      canPop: !_isGenerating,
+      child: _buildSheet(context),
+    );
+  }
+
+  Widget _buildSheet(BuildContext context) {
     return DraggableScrollableSheet(
       initialChildSize: 0.90,
       minChildSize: 0.5,
@@ -79,10 +105,11 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
                     _buildChildSelector(),
                     const SizedBox(height: 20),
                     _sectionTitle("Time Period"),
-                    _buildTimePeriodChips(),
-                    const SizedBox(height: 20),
-                    _sectionTitle("Manual Entry"),
-                    _buildManualDateRange(),
+                    _buildTimePeriodDropdown(),
+                    if (_isCustomRange) ...[
+                      const SizedBox(height: 15),
+                      _buildManualDateRange(),
+                    ],
                     const SizedBox(height: 20),
                     _sectionTitle("Include in Report"),
                     _buildIncludeCheckboxes(),
@@ -90,7 +117,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
                   ],
                 ),
               ),
-              _buildApplyButton(),
+              _isGenerating ? _buildProgressPanel() : _buildApplyButton(),
             ],
           ),
         );
@@ -116,7 +143,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
           const Text("Export Report",
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
           IconButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: _isGenerating ? null : () => Navigator.pop(context),
               icon: const Icon(Icons.close)),
         ],
       ),
@@ -182,30 +209,37 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
   }
 
   // --- 2. Time Period ---
-  Widget _buildTimePeriodChips() {
-    List<String> options = [
-      "Last month",
-      "Quarter",
-      "Bi-annual",
-      "Yearly",
-      "Current FY",
-      "All Time"
-    ];
-    return Wrap(
-      spacing: 8,
-      children: options.map((option) {
-        bool isSelected = selectedTimePeriod == option;
-        return ChoiceChip(
-          label: Text(option),
-          selected: isSelected,
-          onSelected: (val) => setState(() {
-            selectedTimePeriod = val ? option : null;
-          }),
-          selectedColor: const Color(0xFFE3F2FD),
-          labelStyle: TextStyle(
-              color: isSelected ? const Color(0xFF6200EE) : Colors.black87),
-        );
-      }).toList(),
+  // Preset periods (Australian financial year by default) plus "Custom range",
+  // which reveals start/end pickers.
+  Widget _buildTimePeriodDropdown() {
+    const options = [...Timeframe.options, ExportOptions.customRange];
+    final value = options.contains(selectedTimePeriod) ? selectedTimePeriod : Timeframe.defaultOption;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        CustomDropDown<String>(
+          hint: "Select time period",
+          value: value,
+          items: options.map((option) => DropdownMenuItem<String>(
+            value: option,
+            child: Text(Timeframe.label(option), style: const TextStyle(fontSize: 14)),
+          )).toList(),
+          onChanged: (val) {
+            if (val == null) return;
+            setState(() {
+              selectedTimePeriod = val;
+              if (!_isCustomRange) {
+                startDate = null;
+                endDate = null;
+              }
+            });
+          },
+        ),
+        if (!_isCustomRange) ...[
+          const SizedBox(height: 6),
+          Text(Timeframe.describe(value), style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        ],
+      ],
     );
   }
 
@@ -302,18 +336,37 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
       return;
     }
 
+    if (_isCustomRange && startDate == null && endDate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Pick a start and/or end date for the custom range")));
+      return;
+    }
+
     final finalOptions = ExportOptions(
       childIds: selectedChildIds,
       timePeriod: selectedTimePeriod,
-      startDate: startDate,
-      endDate: endDate,
+      startDate: _isCustomRange ? startDate : null,
+      endDate: _isCustomRange ? endDate : null,
       reportSections: includeInReport,
     );
 
-    setState(() => _isGenerating = true);
+    setState(() {
+      _isGenerating = true;
+      _progress = 0;
+      _progressMessage = "Preparing report…";
+    });
     try {
-      await widget.onApply(finalOptions);
-      if (mounted) Navigator.pop(context);
+      await widget.onApply(finalOptions, (progress, message) {
+        if (!mounted) return;
+        setState(() {
+          // Never let the bar move backwards.
+          if (progress > _progress) _progress = progress.clamp(0.0, 1.0);
+          _progressMessage = message;
+        });
+      });
+      if (!mounted) return;
+      setState(() => _isGenerating = false);
+      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isGenerating = false);
@@ -323,14 +376,59 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
     }
   }
 
+  // Replaces the Generate button while the report builds: a percentage and
+  // the current stage, so a long photo download never looks like a freeze.
+  Widget _buildProgressPanel() {
+    final percent = (_progress * 100).round();
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text("Generating report",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+              Text("$percent%",
+                  style: const TextStyle(
+                      fontWeight: FontWeight.bold, fontSize: 18, color: AppColors.primary)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              value: _progress,
+              minHeight: 8,
+              color: AppColors.primary,
+              backgroundColor: AppColors.primary.withValues(alpha: 0.15),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(_progressMessage, style: TextStyle(fontSize: 12, color: Colors.grey[700])),
+          const SizedBox(height: 2),
+          Text("Please keep the app open until the report is ready.",
+              style: TextStyle(fontSize: 11, color: Colors.grey[500])),
+        ],
+      ),
+    );
+  }
+
   Widget _buildApplyButton() {
     return SizedBox(
       width: double.infinity,
       height: 55,
       child: CustomPrimaryButton(
-        text: _isGenerating ? "Generating report…" : "Generate Report",
+        text: "Generate Report",
         backgroundColor: const Color(0xFF7B2CBF),
-        isLoading: _isGenerating,
         onPressed: _generate,
       ),
     );
@@ -338,6 +436,8 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
 }
 
 class ExportOptions {
+  static const String customRange = "Custom range";
+
   final List<String> childIds;
   final String? timePeriod;
   final DateTime? startDate;
@@ -351,4 +451,21 @@ class ExportOptions {
     this.endDate,
     required this.reportSections,
   });
+
+  /// The days the report covers: the manual range when one was picked,
+  /// otherwise the selected preset period.
+  TimeWindow get window {
+    if (startDate != null || endDate != null) {
+      return TimeWindow(start: startDate, end: endDate);
+    }
+    return Timeframe.windowFor(timePeriod);
+  }
+
+  /// "Current FY (FY 2026–27): 01/07/2026 - 30/06/2027" for the report cover.
+  String get periodDescription {
+    final dates = Timeframe.describeWindow(window, pattern: 'dd/MM/yyyy');
+    if (startDate != null || endDate != null) return dates;
+    final name = Timeframe.label(timePeriod ?? Timeframe.allTime);
+    return window.isUnbounded ? name : "$name: $dates";
+  }
 }

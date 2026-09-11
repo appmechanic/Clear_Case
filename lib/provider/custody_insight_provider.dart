@@ -1,9 +1,11 @@
 import 'dart:async';
 
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../core/utils/custody_span.dart';
+import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart'; // Ensure this matches your project structure
 
 class CustodyInsightProvider with ChangeNotifier {
@@ -19,16 +21,11 @@ class CustodyInsightProvider with ChangeNotifier {
 
   // Filter State
   String _currentSearchQuery = "";
-  FilterOptions _currentFilters = FilterOptions(
-    selectedTimePeriod: "All Time",
-    selectedCategory: "All Records", // Categories: "Fulfilled", "Unfulfilled", "All Records"
-  );
+  FilterOptions _currentFilters = FilterOptions();
 
-  // Stats for Header Card
-  int fulfilledCount = 0;
-  int unfulfilledCount = 0;
-  int justifiedCount = 0; // If you have a 'justified' field in DB later
-  double complianceRate = 0.0;
+  // Stats for Header Card — what the filtered entries actually cover.
+  int totalNights = 0;
+  int totalEntries = 0;
 
   StreamSubscription<User?>? _authSubscription;
   String? _currentUid;
@@ -46,14 +43,9 @@ class CustodyInsightProvider with ChangeNotifier {
     _allRecords = [];
     _filteredRecords = [];
     _currentSearchQuery = "";
-    _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
-      selectedCategory: "All Records",
-    );
-    fulfilledCount = 0;
-    unfulfilledCount = 0;
-    justifiedCount = 0;
-    complianceRate = 0.0;
+    _currentFilters = FilterOptions();
+    totalNights = 0;
+    totalEntries = 0;
     _isLoading = false;
     notifyListeners();
   }
@@ -66,8 +58,11 @@ class CustodyInsightProvider with ChangeNotifier {
 
   List<Map<String, dynamic>> get records => _filteredRecords;
   bool get isLoading => _isLoading;
+  FilterOptions get currentFilters => _currentFilters;
 
-  Future<void> fetchCustodyRecords(String caseId) async {
+  /// Loads a case's custody entries. Filters reset on every fetch (case
+  /// switch / screen open) to [timePeriod] — the Insights screen's timeframe.
+  Future<void> fetchCustodyRecords(String caseId, {String timePeriod = Timeframe.defaultOption}) async {
     final String? userId = _auth.currentUser?.uid;
     if (userId == null) return;
 
@@ -75,11 +70,7 @@ class CustodyInsightProvider with ChangeNotifier {
 
     // RESET filters on every fetch (Case switch/App start)
     _currentSearchQuery = "";
-    _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
-      selectedCategory: "All Records",
-      selectedChildIds: [],
-    );
+    _currentFilters = FilterOptions(selectedTimePeriod: timePeriod);
 
     notifyListeners();
 
@@ -107,6 +98,7 @@ class CustodyInsightProvider with ChangeNotifier {
   }
 
   void _runCombinedFilters() {
+    final window = Timeframe.windowFor(_currentFilters.selectedTimePeriod);
     List<Map<String, dynamic>> results = List.from(_allRecords);
 
     // 1. Apply Sidebar/Advanced Filters First
@@ -116,71 +108,32 @@ class CustodyInsightProvider with ChangeNotifier {
       bool matchesChild = _currentFilters.selectedChildIds.isEmpty ||
           childIds.any((id) => _currentFilters.selectedChildIds.contains(id.toString()));
 
-      // Advanced Category Filter (Scheduled/Non-Scheduled)
-      bool matchesType = true;
-      final bool isScheduled = record['isScheduled'] ?? false;
-      if (_currentFilters.selectedCategory == "Scheduled") {
-        matchesType = isScheduled == true;
-      } else if (_currentFilters.selectedCategory == "Non-Scheduled") {
-        matchesType = isScheduled == false;
-      }
+      // Time Filter — a multi-day entry counts when any of its days fall in
+      // the period.
+      final span = CustodySpan.fromMap(record);
+      bool matchesTime = span == null || window.overlaps(span.start, span.end);
 
-      // Time Filter
-      final DateTime? date = (record['startDate'] as Timestamp?)?.toDate();
-      bool matchesTime = _checkTimePeriod(date, _currentFilters.selectedTimePeriod);
-
-      return matchesChild && matchesType && matchesTime;
+      return matchesChild && matchesTime;
     }).toList();
 
-    // 2. Smart Search Query (Notes + Status Keywords)
+    // 2. Search Query (Notes + Location)
     if (_currentSearchQuery.isNotEmpty) {
       final q = _currentSearchQuery.toLowerCase().trim();
-
       results = results.where((r) {
         final String notes = (r['notes'] ?? "").toString().toLowerCase();
-        final bool isFulfilled = r['isFulfilled'] ?? false;
-
-        // Check if user is searching for status keywords
-        bool matchesStatusKeyword = false;
-        if (q == "fulfilled") {
-          matchesStatusKeyword = isFulfilled == true;
-        } else if (q == "unfulfilled" || q == "missed") {
-          matchesStatusKeyword = isFulfilled == false;
-        }
-
-        // Return true if it matches the status keyword OR the notes text
-        return matchesStatusKeyword || notes.contains(q);
+        final String location = (r['location'] ?? "").toString().toLowerCase();
+        return notes.contains(q) || location.contains(q);
       }).toList();
     }
 
     _filteredRecords = results;
-    _calculateStats(_filteredRecords);
+    final totals = CustodyTotals.from(
+      _filteredRecords.map(CustodySpan.fromMap).whereType<CustodySpan>(),
+      window,
+    );
+    totalNights = totals.nights;
+    totalEntries = totals.entries;
     notifyListeners();
-  }
-
-    void _calculateStats(List<Map<String, dynamic>> list) {
-    fulfilledCount = list.where((r) => r['isFulfilled'] == true).length;
-    unfulfilledCount = list.where((r) => r['isFulfilled'] == false).length;
-
-    if (list.isNotEmpty) {
-      complianceRate = (fulfilledCount / list.length) * 100;
-    } else {
-      complianceRate = 0.0;
-    }
-  }
-
-  bool _checkTimePeriod(DateTime? date, String period) {
-    if (date == null || period == "All Time") return true;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (period) {
-      case "Last month": return date.isAfter(today.subtract(const Duration(days: 30)));
-      case "Quarter": return date.isAfter(today.subtract(const Duration(days: 90)));
-      case "Bi-annual": return date.isAfter(today.subtract(const Duration(days: 182)));
-      case "Yearly": return date.isAfter(today.subtract(const Duration(days: 365)));
-      default: return true;
-    }
   }
 
   void filterBySearch(String query) {

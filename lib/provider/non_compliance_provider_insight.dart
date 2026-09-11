@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import '../models/non_compliance_model.dart';
+import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart'; // Ensure this path is correct
 
 // class NonComplianceProviderInsight with ChangeNotifier {
@@ -138,7 +139,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
 
   // DEFAULT FILTERS: Resets on every fetch
   FilterOptions _currentFilters = FilterOptions(
-    selectedTimePeriod: "All Time",
+    selectedTimePeriod: Timeframe.defaultOption,
     selectedCategory: "All Severities(Combined)",
   );
 
@@ -163,7 +164,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
     _filteredNonCompliances = [];
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: Timeframe.defaultOption,
       selectedCategory: "All Severities(Combined)",
     );
     _isLoading = false;
@@ -183,7 +184,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
 
   /// Fetch all non-compliance records for a specific case
   /// Fetch all non-compliance records for a specific case
-  Future<void> fetchNonCompliances(String caseId) async {
+  Future<void> fetchNonCompliances(String caseId, {String timePeriod = Timeframe.defaultOption}) async {
     final String? userId = _auth.currentUser?.uid;
     if (userId == null) return;
 
@@ -192,7 +193,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
     // --- FIXED: Use the exact string "All Severities(Combined)" ---
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: timePeriod,
       selectedCategory: "All Severities(Combined)", // Match this everywhere
     );
 
@@ -235,7 +236,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
       }
 
       // 2. Time Filter
-      bool matchesTime = _checkTimePeriod(nonCompliance.date, _currentFilters.selectedTimePeriod);
+      bool matchesTime = Timeframe.contains(_currentFilters.selectedTimePeriod, nonCompliance.date);
 
       return matchesSeverity && matchesTime;
     }).toList();
@@ -255,29 +256,6 @@ class NonComplianceProviderInsight with ChangeNotifier {
     notifyListeners();
   }
 
-  bool _checkTimePeriod(DateTime? date, String period) {
-    if (date == null || period == "All Time") return true;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (period) {
-      case "Last month":
-        return date.isAfter(today.subtract(const Duration(days: 30)));
-      case "Quarter":
-        return date.isAfter(today.subtract(const Duration(days: 90)));
-      case "Bi-annual":
-        return date.isAfter(today.subtract(const Duration(days: 182)));
-      case "Yearly":
-        return date.isAfter(today.subtract(const Duration(days: 365)));
-      case "Current Financial year":
-      // FY starts April 1st
-        int startYear = now.month >= 4 ? now.year : now.year - 1;
-        DateTime fyStart = DateTime(startYear, 4, 1);
-        return date.isAfter(fyStart) || date.isAtSameMomentAs(fyStart);
-      default:
-        return true;
-    }
-  }
 
   void filterBySearch(String query) {
     _currentSearchQuery = query;
@@ -292,7 +270,7 @@ class NonComplianceProviderInsight with ChangeNotifier {
   void clearAll() {
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-        selectedTimePeriod: "All Time",
+        selectedTimePeriod: Timeframe.defaultOption,
         selectedCategory: "All Severities(Combined)"
     );
     _runCombinedFilters();

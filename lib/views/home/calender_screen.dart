@@ -14,6 +14,7 @@ import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/custody_span.dart';
 import '../../core/utils/helping_functions.dart';
 import '../widgets/delete_entries_confirmation.dart';
 import '../widgets/export_button.dart';
@@ -30,6 +31,13 @@ class CalenderScreen extends StatefulWidget {
 }
 
 class _CalenderScreenState extends State<CalenderScreen> {
+  // Undecorated day cell, rounded like the selected / range-end cells so
+  // TableCalendar's state-change animation can interpolate between them.
+  static const BoxDecoration _plainCellDecoration = BoxDecoration(
+    color: Colors.transparent,
+    borderRadius: BorderRadius.all(Radius.circular(10)),
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -61,9 +69,11 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     children: [
                       _buildHeader(context),
                       _buildCalendar(context, provider),
-                       const SizedBox(height: 20),
+                      if (!provider.isLoading) _buildRangeBar(context, provider),
+                      // The bottom padding lets the page scroll the buttons
+                      // clear of the + button on six-week months.
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+                        padding: const EdgeInsets.fromLTRB(20, 12, 20, 88),
                         child: Column(
                           children: [
                             _buildBottomButton("Scheduled", () {
@@ -250,13 +260,14 @@ class _CalenderScreenState extends State<CalenderScreen> {
                       backgroundColor: Colors.transparent,
                       builder: (context) => ExportFilterSheet(
                         children: childrenList,
-                         onApply: (options) async {
+                         onApply: (options, onProgress) async {
                            await PDFGenerator.generateReport(
                              caseName: provider.selectedCase?.caseNumber ?? "Case Report",
                              caseId: provider.selectedCase?.id ?? '',
                              options: options,
                              allEvents: provider.allEvents,
                              caseModel: provider.selectedCase,
+                             onProgress: onProgress,
                            );
                          }
                     ));
@@ -283,29 +294,45 @@ class _CalenderScreenState extends State<CalenderScreen> {
   }
 
   Widget _buildCalendar(BuildContext context, CalendarProvider provider) {
-    // We use a fixed height or a Stack to ensure the loader appears
-    // in the same space the calendar occupies.
+    // The calendar sizes itself to the month (5 or 6 week rows), so there's
+    // no dead band under short months and the Scheduled / Legends buttons
+    // stay on screen. Only the loader gets a fixed, roughly matching height.
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10),
-      height: 420, // Matches your existing calendar height
       child: provider.isLoading
-          ? const Center(
-        child: CircularProgressIndicator(
-          color: AppColors.primary,
+          ? const SizedBox(
+        height: 360,
+        child: Center(
+          child: CircularProgressIndicator(
+            color: AppColors.primary,
+          ),
         ),
       )
           : TableCalendar<CalendarEvent>(
-        daysOfWeekHeight: 40,
-        sixWeekMonthsEnforced: true,
+        daysOfWeekHeight: 32,
+        sixWeekMonthsEnforced: false,
         firstDay: DateTime.utc(2020, 10, 16),
         lastDay: DateTime.utc(2030, 3, 14),
         focusedDay: provider.focusedDay,
-        selectedDayPredicate: (day) => provider.isSameDay(provider.selectedDay, day),
+        // Months change only via the header arrows — no swipe — so a range
+        // can be picked across months without accidental page flips.
+        availableGestures: AvailableGestures.none,
+        // Range state lives in CalendarProvider; TableCalendar only paints it.
+        rangeSelectionMode: RangeSelectionMode.disabled,
+        rangeStartDay: provider.rangeStart,
+        rangeEndDay: provider.rangeEnd,
+        selectedDayPredicate: (day) =>
+            !provider.isRangeMode && provider.isSameDay(provider.selectedDay, day),
         eventLoader: provider.getEventsForDay,
         onDaySelected: (selectedDay, focusedDay) {
+          if (provider.isRangeMode) {
+            provider.selectRangeDay(selectedDay, focusedDay);
+            return;
+          }
           provider.onDaySelected(selectedDay, focusedDay);
           _showDayDetailsSheet(context, provider, selectedDay);
         },
+        onDayLongPressed: (day, focusedDay) => provider.startRangeSelection(day),
         onPageChanged: provider.onPageChanged,
         daysOfWeekStyle: const DaysOfWeekStyle(
           weekdayStyle: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
@@ -317,7 +344,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
           defaultTextStyle: const TextStyle(fontWeight: FontWeight.w600),
           // No separate highlight for "today" — only the currently
           // selected day shows a box.
-          todayDecoration: const BoxDecoration(color: Colors.transparent),
+          todayDecoration: _plainCellDecoration,
           todayTextStyle: const TextStyle(
             color: Colors.black,
             fontWeight: FontWeight.w600,
@@ -327,12 +354,38 @@ class _CalenderScreenState extends State<CalenderScreen> {
             shape: BoxShape.rectangle,
             borderRadius: BorderRadius.circular(10),
           ),
+          // Every cell state uses the same rounded-rectangle shape.
+          // TableCalendar animates a cell's decoration when its state changes
+          // (e.g. plain -> range start), and its defaults are circles: lerping
+          // a circle into a rounded rectangle yields "circle with a border
+          // radius", which trips BoxDecoration's assertion.
+          defaultDecoration: _plainCellDecoration,
+          weekendDecoration: _plainCellDecoration,
+          withinRangeDecoration: _plainCellDecoration,
+          outsideDecoration: _plainCellDecoration,
+          disabledDecoration: _plainCellDecoration,
+          holidayDecoration: _plainCellDecoration,
+          // Selected range: solid ends joined by a continuous band.
+          rangeStartDecoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          rangeEndDecoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(10),
+          ),
+          rangeHighlightColor: AppColors.primary.withValues(alpha: 0.15),
+          withinRangeTextStyle: const TextStyle(
+            color: AppColors.primary,
+            fontWeight: FontWeight.w700,
+          ),
           markerSize: 6,
           cellMargin: const EdgeInsets.symmetric(horizontal: 2, vertical:1),
         ),
         headerStyle: const HeaderStyle(
           formatButtonVisible: false,
           titleCentered: true,
+          headerPadding: EdgeInsets.symmetric(vertical: 2),
           titleTextStyle: TextStyle(
               color: AppColors.primary,
               fontWeight: FontWeight.bold,
@@ -369,21 +422,31 @@ class _CalenderScreenState extends State<CalenderScreen> {
             );
           },
           markerBuilder: (context, date, events) {
-            // Only manual entries should appear as icon emblems.
             // Scheduled-rule occurrences are represented by the cell
-            // background instead.
-            final manualEntries =
-                events.where((e) => !e.id.startsWith("rule_")).toList();
-            if (manualEntries.isEmpty) return null;
+            // background instead. Custody entries draw as a bar along the
+            // bottom of every day they cover; other entries are icons.
+            final custodyEntries = events
+                .where((e) => !e.isScheduledRule && e.type == EventType.custody)
+                .toList();
+            final manualEntries = events
+                .where((e) => !e.isScheduledRule && e.type != EventType.custody)
+                .toList();
+            if (custodyEntries.isEmpty && manualEntries.isEmpty) return null;
 
+            final isSelected = provider.isSameDay(provider.selectedDay, date) &&
+                !provider.isRangeMode;
             double screenWidth = MediaQuery.of(context).size.width;
-            // Lower the icons slightly by increasing bottom value
-            double bottomPadding = screenWidth < 350 ? 2 : 4;
+            // Lower the icons slightly by increasing bottom value; lift them
+            // above the custody bar when one is drawn.
+            double bottomPadding = custodyEntries.isNotEmpty ? 8 : (screenWidth < 350 ? 2 : 4);
             double iconSize = screenWidth > 600 ? 11 : 10; // Slightly smaller to prevent clipping
 
             return Stack(
               alignment: Alignment.bottomCenter, // Anchor to the bottom
               children: [
+                if (custodyEntries.isNotEmpty)
+                  _buildCustodyBar(date, custodyEntries, isSelected: isSelected),
+                if (manualEntries.isNotEmpty)
                 Positioned(
                   bottom: bottomPadding,
                   child: Row(
@@ -395,7 +458,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                           child: Icon(
                             _getIconForType(e.type),
                             size: iconSize,
-                            color: provider.isSameDay(provider.selectedDay, date)
+                            color: isSelected
                                 ? Colors.white.withOpacity(0.9)
                                 : _getColorForType(e.type),
                           ),
@@ -408,7 +471,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                             style: TextStyle(
                               fontSize: iconSize - 2,
                               fontWeight: FontWeight.bold,
-                              color: provider.isSameDay(provider.selectedDay, date)
+                              color: isSelected
                                   ? Colors.white
                                   : Colors.grey.shade700,
                             ),
@@ -423,6 +486,137 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
 
+
+  // Draws a custody entry as a bar along the bottom of each day it covers.
+  // Ends are rounded where an entry starts or finishes and flush where it
+  // carries on, so a 29 Sep – 5 Oct entry reads as one span — across week
+  // rows and on into the next month.
+  Widget _buildCustodyBar(DateTime date, List<CalendarEvent> entries, {required bool isSelected}) {
+    final day = DateTime(date.year, date.month, date.day);
+    final continuesFromPrev = entries.any((e) => e.span.start.isBefore(day));
+    final continuesToNext = entries.any((e) => e.span.end.isAfter(day));
+    const radius = Radius.circular(3);
+    return Positioned(
+      left: continuesFromPrev ? 0 : 4,
+      right: continuesToNext ? 0 : 4,
+      bottom: 2,
+      height: 5,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : _getColorForType(EventType.custody),
+          borderRadius: BorderRadius.horizontal(
+            left: continuesFromPrev ? Radius.zero : radius,
+            right: continuesToNext ? Radius.zero : radius,
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Sits under the calendar. Idle: an entry point into range selection.
+  // Active: what's been picked so far, and — once both ends are chosen —
+  // the button that turns the range into a single custody entry.
+  Widget _buildRangeBar(BuildContext context, CalendarProvider provider) {
+    if (!provider.isRangeMode) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 4, 20, 0),
+        child: Row(
+          children: [
+            TextButton.icon(
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              onPressed: () => provider.startRangeSelection(),
+              icon: const Icon(Icons.date_range, size: 18, color: AppColors.primary),
+              label: const Text(
+                "Select date range",
+                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold),
+              ),
+            ),
+            const Spacer(),
+            const Text("or long-press a date", style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+      );
+    }
+
+    final start = provider.rangeStart;
+    final end = provider.rangeEnd;
+    final span = (start != null && end != null) ? CustodySpan(start, end) : null;
+
+    final String title = span?.label ?? "Select date range";
+    final String subtitle;
+    if (start == null) {
+      subtitle = "Tap the first day of the custody period.";
+    } else if (span == null) {
+      subtitle = "Starts ${DateFormat('d MMM yyyy').format(start)}. Now tap the last day — "
+          "use the arrows to move to another month.";
+    } else {
+      subtitle = "${daysLabel(span.nights + 1)} · ${nightsLabel(span.nights)}";
+    }
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.date_range, color: AppColors.primary, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+              ),
+              IconButton(
+                tooltip: "Cancel range selection",
+                icon: const Icon(Icons.close, size: 20),
+                onPressed: provider.cancelRangeSelection,
+              ),
+            ],
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(subtitle, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+          ),
+          if (span != null) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: SizedBox(
+                width: double.infinity,
+                height: 46,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  ),
+                  icon: const Icon(Icons.child_care),
+                  label: const Text("Add Custody Entry", style: TextStyle(fontWeight: FontWeight.bold)),
+                  onPressed: () async {
+                    await Navigator.pushNamed(
+                      context,
+                      NewCustodyScreen.routeName,
+                      arguments: DateTimeRange(start: span.start, end: span.end),
+                    );
+                    provider.cancelRangeSelection();
+                  },
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
   Widget _buildBottomButton(String label, VoidCallback onTap) {
     return SizedBox(
@@ -564,11 +758,11 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Text(
-                        "Entries (icons)",
+                        "Entries",
                         style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13),
                       ),
                     ),
-                    _buildLegendItem("Custody", Icons.person, Colors.purple),
+                    _buildCustodyLegendItem(),
                     _buildLegendItem("Payments", Icons.payment, Colors.green),
                     _buildLegendItem("Non-Compliance", Icons.cancel_presentation, Colors.red),
                     _buildLegendItem("Flagged Events", Icons.flag, Colors.orange),
@@ -598,6 +792,29 @@ class _CalenderScreenState extends State<CalenderScreen> {
   }
 
 
+  Widget _buildCustodyLegendItem() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          const Expanded(
+            child: Text("Custody (spans all its dates)",
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          ),
+          Container(
+            width: 36,
+            height: 5,
+            decoration: BoxDecoration(
+              color: _getColorForType(EventType.custody),
+              borderRadius: BorderRadius.circular(3),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScheduledLegendItem(String title, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -624,6 +841,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
     Color lightColor = typeColor.withOpacity(0.1);
 
     String formattedDate = DateFormat('dd MMM yyyy').format(event.date);
+    // Custody entries can cover several days: show the whole span.
+    if (event.type == EventType.custody && !event.isScheduledRule && event.span.isMultiDay) {
+      formattedDate = "${event.span.label} · ${nightsLabel(event.span.nights)}";
+    }
     String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1);
 
     return Container(
@@ -733,7 +954,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
                   color: typeColor
               ),
               const SizedBox(width: 5),
-              Text(formattedDate, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+              Flexible(
+                child: Text(formattedDate, style: TextStyle(color: Colors.grey[800], fontSize: 13)),
+              ),
               const SizedBox(width: 10),
               if (!event.id.startsWith("rule_"))
               Container(
@@ -763,31 +986,31 @@ class _CalenderScreenState extends State<CalenderScreen> {
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
             ),
+          ],
 
-            // Inside _buildEventCard:
-            if (event.childNames.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,         // Space between chips horizontally
-                runSpacing: 6,      // Space between rows if they wrap
-                children: event.childNames.map((name) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.purple.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
+          // Which child(ren) the entry is for — shown even without notes.
+          if (event.childNames.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,         // Space between chips horizontally
+              runSpacing: 6,      // Space between rows if they wrap
+              children: event.childNames.map((name) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.purple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  name,
+                  style: const TextStyle(
+                      color: Colors.purple,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold
                   ),
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                        color: Colors.purple,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold
-                    ),
-                  ),
-                )).toList(),
-              ),
-            ],
-           ]
+                ),
+              )).toList(),
+            ),
+          ],
         ],
       ),
     );

@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 
 import '../core/utils/attachments.dart';
 import '../core/utils/storage_cleanup.dart';
+import '../core/utils/evidence_source.dart';
 
 class DisputeProvider extends ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -40,7 +41,9 @@ class DisputeProvider extends ChangeNotifier {
 
       for (var file in attachments) {
         String extension = file.path.split('.').last;
-        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${attachments.indexOf(file)}.$extension";
+        // Keeps the photo-source tag (camera / library) from the local name.
+        String fileName = taggedStorageName(
+            "${DateTime.now().millisecondsSinceEpoch}_${attachments.indexOf(file)}", file.path, extension);
 
         Reference ref = FirebaseStorage.instance
             .ref()
@@ -126,7 +129,9 @@ class DisputeProvider extends ChangeNotifier {
 
       for (var file in newAttachments) {
         String extension = file.path.split('.').last;
-        String fileName = "${DateTime.now().millisecondsSinceEpoch}_${newAttachments.indexOf(file)}.$extension";
+        // Keeps the photo-source tag (camera / library) from the local name.
+        String fileName = taggedStorageName(
+            "${DateTime.now().millisecondsSinceEpoch}_${newAttachments.indexOf(file)}", file.path, extension);
 
         Reference ref = FirebaseStorage.instance
             .ref()

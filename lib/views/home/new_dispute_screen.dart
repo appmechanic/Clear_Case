@@ -14,6 +14,7 @@ import '../widgets/attachment_picker_widget.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/file_type_icon.dart';
 import '../widgets/custom_dropdown.dart';
+import '../widgets/evidence_source_badge.dart';
 
 
 class NewDisputeScreen extends StatefulWidget {
@@ -264,7 +265,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        calProvider.getCaseDisplayName(c), // Displays "Case Number (Child Names)"
+                        calProvider.getCaseDisplayName(c), // Shows the child name(s), else the Case Reference Number
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -328,6 +329,12 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
               child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
           ),
+          if (isImage)
+            Positioned(
+              left: 3,
+              bottom: 3,
+              child: EvidenceSourceBadge.forPath(url, size: 10),
+            ),
           Positioned(
             right: -8, top: -8,
             child: GestureDetector(

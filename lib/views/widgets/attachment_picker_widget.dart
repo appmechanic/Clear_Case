@@ -9,7 +9,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:intl/intl.dart';
+import '../../core/utils/evidence_source.dart';
 import 'attachment_preview.dart';
+import 'evidence_source_badge.dart';
 import 'file_type_icon.dart';
 
 class AttachmentPickerWidget extends StatefulWidget {
@@ -23,7 +25,7 @@ class AttachmentPickerWidget extends StatefulWidget {
 class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
   final List<File> _selectedFiles = [];
 
-  Widget _buildDottedOption(IconData icon, String text, VoidCallback onTap) => InkWell(
+  Widget _buildDottedOption(IconData icon, String text, VoidCallback onTap, {String? subtitle, Color? subtitleColor}) => InkWell(
     onTap: onTap,
     child: DottedBorder(
       options: RectDottedBorderOptions(
@@ -35,7 +37,18 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
       child: Row(children: [
         Icon(icon, color: Colors.purple),
         const SizedBox(width: 10),
-        Expanded(child: Text(text))
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
+              if (subtitle != null) ...[
+                const SizedBox(height: 2),
+                Text(subtitle, style: TextStyle(fontSize: 11, color: subtitleColor ?? Colors.grey.shade600)),
+              ],
+            ],
+          ),
+        ),
       ]),
     ),
   );
@@ -55,12 +68,19 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
             ]),
             const Align(alignment: Alignment.centerLeft, child: Text("Select how you want to add your attachments")),
             const SizedBox(height: 20),
-            _buildDottedOption(Icons.camera_alt, "Capture image using camera.", () {
+            _buildDottedOption(Icons.camera_alt, "Take a photo", () {
               Navigator.pop(context);
               _pickFromSource(ImageSource.camera);
-            }),
+            }, subtitle: "Stamped with the date, time and your location."),
             const SizedBox(height: 15),
-            _buildDottedOption(Icons.upload_file, "Upload Images or docs related to the Non Compliance", () {
+            _buildDottedOption(Icons.photo_library_outlined, "Choose from photo library", () {
+              Navigator.pop(context);
+              _pickFromPhotoLibrary();
+            },
+                subtitle: "Location and original time can't be verified for existing photos.",
+                subtitleColor: Colors.orange.shade800),
+            const SizedBox(height: 15),
+            _buildDottedOption(Icons.upload_file, "Upload documents or files", () {
               Navigator.pop(context);
               _pickFromGallery();
             }),
@@ -86,6 +106,23 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
         [File(photo.path)],
         fromCamera: source == ImageSource.camera,
       );
+    }
+  }
+
+  // Existing photos from the device's photo library (multi-select). Same
+  // down-sampling as camera captures; these are tagged as library uploads so
+  // the app and the report can say their location/time isn't verified.
+  Future<void> _pickFromPhotoLibrary() async {
+    final List<XFile> photos = await ImagePicker().pickMultiImage(
+      imageQuality: 85,
+      maxWidth: 1600,
+      maxHeight: 1600,
+    );
+    if (photos.isEmpty) return;
+    await _processAndAddFiles(photos.map((p) => File(p.path)).toList());
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(libraryPhotoNotice)));
     }
   }
 
@@ -141,10 +178,37 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
         }
         continue;
       }
-      processed.add(compressed);
+      // Record where the photo came from in its name; the name survives into
+      // the Storage URL, which is how the app and the report read it back.
+      processed.add(await _tagWithSource(
+        compressed,
+        stem: _originalStem(file),
+        source: fromCamera ? EvidenceSource.camera : EvidenceSource.library,
+      ));
     }
     setState(() => _selectedFiles.addAll(processed));
     widget.onFilesChanged(_selectedFiles);
+  }
+
+  // Readable base name for the uploaded photo: camera shots are named by
+  // capture time; picked photos keep their own name where it means something.
+  String _originalStem(File file) {
+    final name = file.path.split('/').last;
+    final dot = name.lastIndexOf('.');
+    final stem = dot > 0 ? name.substring(0, dot) : name;
+    return stem.startsWith('image_picker') || stem.startsWith('scaled_') ? '' : stem;
+  }
+
+  Future<File> _tagWithSource(File file, {required String stem, required EvidenceSource source}) async {
+    final base = source == EvidenceSource.camera || stem.isEmpty
+        ? "${source == EvidenceSource.camera ? 'Camera' : 'Photo'}_${DateFormat('yyyyMMdd_HHmmss_SSS').format(DateTime.now())}"
+        : stem;
+    final target = "${file.parent.path}/${base}_${evidenceFileTag(source)}.jpg";
+    try {
+      return await file.rename(target);
+    } catch (_) {
+      return file; // Untagged is still a valid upload.
+    }
   }
 
   // Attachment ceiling. Documents are rejected above this; images are
@@ -348,10 +412,15 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
             });
           }),
         ),
+      // Library photos can't prove where/when they were taken — say so.
+      if (_selectedFiles.any((f) => evidenceSourceOf(f.path) == EvidenceSource.library)) ...[
+        const SizedBox(height: 10),
+        const LibraryPhotoNotice(),
+      ],
       const SizedBox(height: 10),
       InkWell(onTap: _showSourceDialog, child: DottedBorder(
           options: RectDottedBorderOptions(dashPattern: [10, 5], strokeWidth: 2, padding: EdgeInsets.all(16), color: Colors.purple),
-          child: Container(height: 100, width: double.infinity, alignment: Alignment.center, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [Icon(Icons.upload_file, color: Colors.purple), Text("Upload or Capture images using camera.")])))),
+          child: Container(height: 100, width: double.infinity, alignment: Alignment.center, child: Column(mainAxisAlignment: MainAxisAlignment.center, children: const [Icon(Icons.upload_file, color: Colors.purple), Text("Take a photo, choose from your library, or upload a file")])))),
     ]);
   }
 
@@ -384,6 +453,12 @@ class _AttachmentPickerWidgetState extends State<AttachmentPickerWidget> {
             ),
           ),
         ),
+        if (isImage)
+          Positioned(
+            left: 3,
+            bottom: 3,
+            child: EvidenceSourceBadge.forPath(file.path, size: 10),
+          ),
         GestureDetector(
           onTap: onDelete,
           child: Container(

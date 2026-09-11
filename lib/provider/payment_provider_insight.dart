@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import '../models/case_model.dart';
+import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart';
 import '../models/payment_model.dart';
 
@@ -25,7 +26,7 @@ class PaymentProvider with ChangeNotifier {
   bool _isLoading = false;
   String _currentSearchQuery = "";
   FilterOptions _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: Timeframe.defaultOption,
       selectedCategory: "All Payments(Combined)"
   );
 
@@ -46,7 +47,7 @@ class PaymentProvider with ChangeNotifier {
     _filteredPayments = [];
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-      selectedTimePeriod: "All Time",
+      selectedTimePeriod: Timeframe.defaultOption,
       selectedCategory: "All Payments(Combined)",
     );
     _isLoading = false;
@@ -63,7 +64,7 @@ class PaymentProvider with ChangeNotifier {
   List<PaymentRecordModel> get payments => _filteredPayments;
   bool get isLoading => _isLoading;
 
-  Future<void> fetchPaymentsByCase(String caseId) async {
+  Future<void> fetchPaymentsByCase(String caseId, {String timePeriod = Timeframe.defaultOption}) async {
     final String? userId = _auth.currentUser?.uid;
     if (userId == null) return;
 
@@ -72,7 +73,7 @@ class PaymentProvider with ChangeNotifier {
     // RESET state for the new session/case
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-        selectedTimePeriod: "All Time",
+        selectedTimePeriod: timePeriod,
         selectedCategory: "All Payments(Combined)",
         selectedChildIds: [] // Ensures "Select All" behavior
     );
@@ -119,7 +120,7 @@ class PaymentProvider with ChangeNotifier {
       }
 
       // Time Filter
-      bool matchesTime = _checkTimePeriod(payment.date, _currentFilters.selectedTimePeriod);
+      bool matchesTime = Timeframe.contains(_currentFilters.selectedTimePeriod, payment.date);
 
       return matchesChild && matchesCategory && matchesTime;
     }).toList();
@@ -138,29 +139,6 @@ class PaymentProvider with ChangeNotifier {
     notifyListeners();
   }
 
-  bool _checkTimePeriod(DateTime? date, String period) {
-    if (date == null || period == "All Time") return true;
-
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    switch (period) {
-      case "Last month":
-        return date.isAfter(today.subtract(const Duration(days: 30)));
-      case "Quarter":
-        return date.isAfter(today.subtract(const Duration(days: 90)));
-      case "Bi-annual":
-        return date.isAfter(today.subtract(const Duration(days: 182)));
-      case "Yearly":
-        return date.isAfter(today.subtract(const Duration(days: 365)));
-      case "Current Financial year":
-        int startYear = now.month >= 4 ? now.year : now.year - 1;
-        DateTime fyStart = DateTime(startYear, 4, 1);
-        return date.isAfter(fyStart) || date.isAtSameMomentAs(fyStart);
-      default:
-        return true;
-    }
-  }
 
   void filterBySearch(String query) {
     _currentSearchQuery = query;
@@ -175,7 +153,7 @@ class PaymentProvider with ChangeNotifier {
   void clearAll() {
     _currentSearchQuery = "";
     _currentFilters = FilterOptions(
-        selectedTimePeriod: "All Time",
+        selectedTimePeriod: Timeframe.defaultOption,
         selectedCategory: "All Payments(Combined)"
     );
     _runCombinedFilters();

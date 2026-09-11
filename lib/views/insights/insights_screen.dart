@@ -1,6 +1,8 @@
 import 'package:clearcase/views/insights/payment_analytics_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/timeframe.dart';
 import '../../provider/insight_provider.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 
@@ -15,6 +17,8 @@ import '../widgets/pdf_generator.dart';
 import 'non_compliance_history_screen.dart';
 import 'custody_compliance_screen.dart';
 import 'dispute_log_screen.dart';
+import '../home/new_entry_screen.dart';
+import '../widgets/quick_add_button.dart';
 
 class InsightsScreen extends StatelessWidget {
   static const routeName = '/insights';
@@ -24,6 +28,10 @@ class InsightsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      // Quick Add: pick any entry type from here instead of the Calendar.
+      floatingActionButton: const QuickAddButton(
+        routeName: NewEntryScreen.routeName,
+      ),
       appBar: AppBar(
           backgroundColor: Colors.transparent,
           elevation: 0,
@@ -33,7 +41,17 @@ class InsightsScreen extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   fontSize: 24)),
           centerTitle: false,
-          automaticallyImplyLeading: false),
+          automaticallyImplyLeading: false,
+          // Reporting period for every card below, and the default for the
+          // Export sheet. Sits directly above the Export button.
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 20),
+              child: Consumer<InsightProvider>(
+                builder: (context, provider, _) => _buildTimeframeDropdown(provider),
+              ),
+            ),
+          ]),
       body: RefreshIndicator(
         onRefresh: () async {
           context.read<InsightProvider>().listenToUserCases();
@@ -53,7 +71,7 @@ class InsightsScreen extends StatelessWidget {
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics(),
               ),
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of Quick Add
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -84,13 +102,15 @@ class InsightsScreen extends StatelessWidget {
                               backgroundColor: Colors.transparent,
                               builder: (context) => ExportFilterSheet(
                                   children: childrenList,
-                                  onApply: (options) async {
+                                  initialTimePeriod: insightProvider.timeframe,
+                                  onApply: (options, onProgress) async {
                                     await PDFGenerator.generateReport(
                                       caseName: insightProvider.selectedCase?.caseNumber ?? "Case Report",
                                       caseId: insightProvider.selectedCase?.id ?? '',
                                       options: options,
                                       allEvents: insightProvider.allEvents,
                                       caseModel: insightProvider.selectedCase,
+                                      onProgress: onProgress,
                                     );
                                   }
                               ),
@@ -102,9 +122,11 @@ class InsightsScreen extends StatelessWidget {
                   const SizedBox(height: 25),
 
 
+                  // What actually happened in the period: nights covered by
+                  // custody entries and how many entries were recorded.
                   _buildCard(
                     title: "Custody Compliance",
-                    subtitle: "Current Period",
+                    subtitle: Timeframe.describe(insightProvider.timeframe),
                     icon: Icons.person,
                     iconColor: Colors.purple,
                     onTap: () {
@@ -118,22 +140,10 @@ class InsightsScreen extends StatelessWidget {
                         const SizedBox(height: 15),
                         Row(
                           children: [
-                            _buildStatItem("${insightProvider.fulfilledDays}", "Custody Days\n(fulfilled)"),
-                            _buildStatItem("${insightProvider.justifiedDays}", "With\nJustification"),
-                            _buildStatItem("${insightProvider.missedDays}", "Missed Days\n(No Just.)", color: Colors.red),
+                            _buildStatItem("${insightProvider.totalCustodyNights}", "Total\nNights"),
+                            _buildStatItem("${insightProvider.totalCustodyEntries}", "Total\nEntries"),
                           ],
                         ),
-                        const SizedBox(height: 15),
-                        const Divider(),
-                        const SizedBox(height: 10),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
-                            Text("${insightProvider.complianceRate.toStringAsFixed(1)}%",
-                                style: const TextStyle(color: Color(0xFF00C853), fontWeight: FontWeight.bold, fontSize: 18)),
-                          ],
-                        )
                       ],
                     ),
                   ),
@@ -277,6 +287,47 @@ class InsightsScreen extends StatelessWidget {
     );
   }
 
+
+  Widget _buildTimeframeDropdown(InsightProvider provider) {
+    return DropdownButtonHideUnderline(
+      child: DropdownButton2<String>(
+        value: provider.timeframe,
+        items: Timeframe.options.map((option) => DropdownMenuItem<String>(
+          value: option,
+          child: Text(Timeframe.label(option), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+        )).toList(),
+        selectedItemBuilder: (context) => Timeframe.options.map((option) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.date_range, size: 16, color: AppColors.primary),
+            const SizedBox(width: 6),
+            Text(Timeframe.label(option),
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.primary)),
+          ],
+        )).toList(),
+        onChanged: (value) {
+          if (value != null) provider.setTimeframe(value);
+        },
+        buttonStyleData: ButtonStyleData(
+          height: 36,
+          padding: const EdgeInsets.only(left: 12, right: 4),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
+          ),
+        ),
+        iconStyleData: const IconStyleData(
+          icon: Icon(Icons.keyboard_arrow_down, color: AppColors.primary, size: 20),
+        ),
+        dropdownStyleData: DropdownStyleData(
+          width: 240,
+          offset: const Offset(-60, -4),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: Colors.white),
+        ),
+      ),
+    );
+  }
 
   Widget _buildDropdownSection(InsightProvider provider) {
     return DropdownButtonHideUnderline(

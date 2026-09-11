@@ -10,6 +10,8 @@ import '../../provider/payment_provider_insight.dart';
 import '../widgets/custom_search_box.dart';
 import '../widgets/filter_ui.dart';
 import '../widgets/payment_overview_card.dart';
+import '../home/new_payment_screen.dart';
+import '../widgets/quick_add_button.dart';
 
 
 class PaymentAnalyticsScreen extends StatefulWidget {
@@ -28,7 +30,6 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
 
   // In your Screen State
   FilterOptions _currentFilters = FilterOptions(
-    selectedTimePeriod: "All Time",
     selectedCategory: "All Payments(Combined)",
     selectedChildIds: [], // Empty means "Select All" in your logic
   );
@@ -58,12 +59,15 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
     if (_isInit) {
       final selectedCase = ModalRoute.of(context)!.settings.arguments as dynamic;
       if (selectedCase != null) {
+        // Start on the period the Insights screen is showing.
+        _currentFilters.selectedTimePeriod =
+            Provider.of<InsightProvider>(context, listen: false).timeframe;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           // Set the case in InsightProvider and fetch initial payments
           final insightProv = Provider.of<InsightProvider>(context, listen: false);
           insightProv.setSelectedCase(selectedCase);
           Provider.of<PaymentProvider>(context, listen: false)
-              .fetchPaymentsByCase(selectedCase.id);
+              .fetchPaymentsByCase(selectedCase.id, timePeriod: _currentFilters.selectedTimePeriod);
         });
       }
       _isInit = false;
@@ -77,10 +81,28 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
     super.dispose();
   }
 
+  // After a Quick Add: reload, then re-apply the filters and search the
+  // screen is on.
+  Future<void> _reloadAfterQuickAdd() async {
+    if (!mounted) return;
+    final selected = Provider.of<InsightProvider>(context, listen: false).selectedCase;
+    if (selected == null) return;
+    final provider = Provider.of<PaymentProvider>(context, listen: false);
+    await provider.fetchPaymentsByCase(selected.id, timePeriod: _currentFilters.selectedTimePeriod);
+    provider.applyAdvancedFilters(_currentFilters);
+    provider.filterBySearch(_searchController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      // Add an entry here without going back to the Calendar.
+      floatingActionButton: QuickAddButton(
+        label: "Add Payment",
+        routeName: NewPaymentScreen.routeName,
+        onReturn: _reloadAfterQuickAdd,
+      ),
       appBar: AppBar(
           title: const Text("Payment Analytics", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
           backgroundColor: Colors.transparent,
@@ -93,12 +115,12 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
           return RefreshIndicator(
             onRefresh: () async {
               if (insightProv.selectedCase != null) {
-                await paymentProv.fetchPaymentsByCase(insightProv.selectedCase!.id);
+                await paymentProv.fetchPaymentsByCase(insightProv.selectedCase!.id, timePeriod: _currentFilters.selectedTimePeriod);
               }
             },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of the Quick Add button
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -234,7 +256,7 @@ class _PaymentAnalyticsScreenState extends State<PaymentAnalyticsScreen> {
         onChanged: (value) {
           insightProv.setSelectedCase(value);
           if (value != null) {
-            paymentProv.fetchPaymentsByCase((value as CaseModel).id);
+            paymentProv.fetchPaymentsByCase((value as CaseModel).id, timePeriod: _currentFilters.selectedTimePeriod);
           }
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),

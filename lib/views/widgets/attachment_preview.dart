@@ -7,6 +7,8 @@ import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'file_type_icon.dart';
+import '../../core/utils/evidence_source.dart';
+import 'evidence_source_badge.dart';
 
 /// Centralized tap-to-preview for attachments. Handles both local files
 /// (just-picked) and remote Firebase Storage URLs (existing records being
@@ -20,7 +22,7 @@ class AttachmentPreview {
   static void openFile(BuildContext context, File file) {
     final ext = file.path.split('.').last.toLowerCase();
     if (_isImage(ext)) {
-      _showImageDialog(context, FileImage(file));
+      _showImageDialog(context, FileImage(file), source: evidenceSourceOf(file.path));
     } else if (ext == 'pdf') {
       _pushRoute(
         context,
@@ -53,7 +55,7 @@ class AttachmentPreview {
     }
     final name = _fileNameFromUrl(url);
     if (_isImage(ext)) {
-      _showImageDialog(context, NetworkImage(url));
+      _showImageDialog(context, NetworkImage(url), source: evidenceSourceOf(url));
     } else if (ext == 'pdf') {
       _pushRoute(
         context,
@@ -141,11 +143,12 @@ class AttachmentPreview {
     return bytes;
   }
 
-  static void _showImageDialog(BuildContext context, ImageProvider provider) {
+  static void _showImageDialog(BuildContext context, ImageProvider provider,
+      {EvidenceSource source = EvidenceSource.unknown}) {
     showDialog(
       context: context,
       barrierColor: Colors.black,
-      builder: (_) => _ImageDialog(provider: provider),
+      builder: (_) => _ImageDialog(provider: provider, source: source),
     );
   }
 
@@ -162,7 +165,8 @@ class AttachmentPreview {
 
 class _ImageDialog extends StatelessWidget {
   final ImageProvider provider;
-  const _ImageDialog({required this.provider});
+  final EvidenceSource source;
+  const _ImageDialog({required this.provider, this.source = EvidenceSource.unknown});
 
   @override
   Widget build(BuildContext context) {
@@ -205,6 +209,30 @@ class _ImageDialog extends StatelessWidget {
                 ),
               ),
             ),
+            // Provenance strip along the bottom.
+            if (source == EvidenceSource.library)
+              const Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: LibraryPhotoNotice(onDark: true),
+              ),
+            if (source == EvidenceSource.camera)
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 12,
+                child: Row(
+                  children: [
+                    Icon(Icons.verified_outlined, size: 16, color: Colors.green.shade300),
+                    const SizedBox(width: 6),
+                    const Expanded(
+                      child: Text(cameraPhotoNotice,
+                          style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    ),
+                  ],
+                ),
+              ),
           ],
         ),
       ),

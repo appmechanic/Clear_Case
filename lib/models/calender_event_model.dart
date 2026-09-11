@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/utils/attachments.dart';
+import '../core/utils/custody_span.dart';
 
 enum EventType { custody, payment, dispute, nonCompliance, reminder }
 
@@ -24,9 +25,12 @@ class CalendarEvent {
   final String? transactionType;
   final String? proof;
   final String? severity;
-  final bool isFulfilled;
-  final bool isScheduled;
   final bool isReceived;
+  // Custody only: last day the entry covers (null = single day), and the
+  // handover times on the first and last day.
+  final DateTime? endDate;
+  final DateTime? startTime;
+  final DateTime? endTime;
 
   CalendarEvent({
     required this.id,
@@ -48,15 +52,23 @@ class CalendarEvent {
     this.transactionType,
     this.proof,
     this.severity,
-    this.isFulfilled = false,
-    this.isScheduled = false,
     this.isReceived = false,
+    this.endDate,
+    this.startTime,
+    this.endTime,
   });
+
+  /// Days covered by a custody entry; a single day for every other type.
+  CustodySpan get span => CustodySpan(date, endDate ?? date);
+
+  bool get isScheduledRule => id.startsWith("rule_");
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
     String origin = map['originCollection'] ?? '';
 
     EventType detectedType;
+    // 'isFulfilled' only identifies custody docs written before the toggle was
+    // removed; newer ones rely on originCollection.
     if (origin.contains('custody') || map.containsKey('isFulfilled')) {
       detectedType = EventType.custody;
     } else if (origin.contains('payment') || map.containsKey('paymentCategory')) {
@@ -91,11 +103,14 @@ class CalendarEvent {
       transactionType: map['transactionType'],
       proof: map['proof'],
       severity: map['severity'],
-       isFulfilled: (map['isFulfilled'] == true),
-      isScheduled: (map['isScheduled'] == true),
       isReceived: (map['isReceived'] == true),
+      endDate: detectedType == EventType.custody ? _timestamp(map['endDate']) : null,
+      startTime: _timestamp(map['startTime']),
+      endTime: _timestamp(map['endTime']),
     );
   }
+
+  static DateTime? _timestamp(dynamic value) => value is Timestamp ? value.toDate() : null;
 
   static EventType _parseEventType(dynamic type) {
     String typeStr = type.toString().toLowerCase();

@@ -9,11 +9,15 @@ import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart'; 
 import 'package:provider/provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/custody_span.dart';
+import '../../core/utils/timeframe.dart';
 import '../../provider/calender_provider.dart';
 import '../widgets/attachment_picker_widget.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/file_type_icon.dart';
 import '../widgets/custom_dropdown.dart';
+import '../widgets/evidence_source_badge.dart';
 
 
 class NewCustodyScreen extends StatefulWidget {
@@ -34,11 +38,12 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
   bool _isFetching = false;
   bool isDateSetFromArgs = false;
 
-  DateTime selectedDate = DateTime.now();
+  // First and last day the entry covers. Equal for a single-day entry; a
+  // range picked on the calendar pre-fills both.
+  DateTime startDate = dateOnly(DateTime.now());
+  DateTime endDate = dateOnly(DateTime.now());
   TimeOfDay startTime = const TimeOfDay(hour: 9, minute: 0);
   TimeOfDay endTime = const TimeOfDay(hour: 17, minute: 0);
-  bool isScheduled = false;
-  bool isFulfilled = true;
   bool flagEntry = false;
 
   List<File> _selectedFiles = [];
@@ -106,20 +111,40 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
         // Handle Edit Mode
         editRecordId = args;
         _loadExistingData();
+      } else if (args is DateTimeRange && !isDateSetFromArgs) {
+        // Add Mode from a date range selected on the calendar.
+        startDate = dateOnly(args.start);
+        endDate = dateOnly(args.end);
+        isDateSetFromArgs = true;
       } else if (args is DateTime && !isDateSetFromArgs) {
         // Handle Add Mode with passed date
         // Use Future.microtask or check isDateSetFromArgs to prevent
         // overwriting manual selection on rebuilds.
-        selectedDate = args;
+        // TableCalendar hands over UTC-midnight days; keep the calendar date.
+        startDate = dateOnly(args);
+        endDate = startDate;
         isDateSetFromArgs = true;
       }
       isInitialized = true;
     }
   }
-    Future<void> _pickDate() async {
+
+  Future<void> _pickDate({required bool isStart}) async {
     final DateTime? picked = await showDatePicker(
-        context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
-    if (picked != null) setState(() => selectedDate = picked);
+        context: context,
+        initialDate: isStart ? startDate : endDate,
+        // The end can't precede the start.
+        firstDate: isStart ? DateTime(2000) : startDate,
+        lastDate: DateTime(2100));
+    if (picked == null) return;
+    setState(() {
+      if (isStart) {
+        startDate = dateOnly(picked);
+        if (endDate.isBefore(startDate)) endDate = startDate;
+      } else {
+        endDate = dateOnly(picked);
+      }
+    });
   }
 
   Future<void> _pickTime(bool isStart) async {
@@ -140,11 +165,12 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
 
       if (mounted && record != null) {
         setState(() {
-          selectedDate = record.startDate ?? DateTime.now();
+          startDate = dateOnly(record.startDate ?? DateTime.now());
+          // Entries saved before multi-day custody have no endDate.
+          endDate = dateOnly(record.endDate ?? startDate);
+          if (endDate.isBefore(startDate)) endDate = startDate;
           startTime = TimeOfDay.fromDateTime(record.startTime ?? DateTime.now());
           endTime = TimeOfDay.fromDateTime(record.endTime ?? DateTime.now());
-          isScheduled = record.isScheduled ?? false;
-          isFulfilled = record.isFulfilled ?? true;
           flagEntry = record.flagEntry ?? false;
           _locationController.text = record.location ?? "";
           _notesController.text = record.notes ?? "";
@@ -169,8 +195,9 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please select at least one child")));
       return;
     }
-    final startDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, startTime.hour, startTime.minute);
-    final endDateTime = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, endTime.hour, endTime.minute);
+    // Start time is on the first day, end time on the last day.
+    final startDateTime = DateTime(startDate.year, startDate.month, startDate.day, startTime.hour, startTime.minute);
+    final endDateTime = DateTime(endDate.year, endDate.month, endDate.day, endTime.hour, endTime.minute);
 
 
     if (startDateTime.isAtSameMomentAs(endDateTime)) {
@@ -187,12 +214,11 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
       id: editRecordId,
       caseId: caseId,
       childIds: selectedChildIds.toList(),
-      startDate: selectedDate,
+      startDate: startDate,
+      endDate: endDate,
       startTime: startDateTime,
       endTime: endDateTime,
-      isScheduled: isScheduled,
       location: _locationController.text.trim(),
-      isFulfilled: isFulfilled,
       notes: _notesController.text.trim(),
       flagEntry: flagEntry,
       createdAt: editRecordId == null ? DateTime.now() : null,
@@ -226,16 +252,20 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
               children: [
                 _buildChildSelector(selectedCase),
                 const SizedBox(height: 20),
-                _buildClickableField("Start Date", DateFormat('dd MMM yyyy').format(selectedDate), Icons.calendar_today, _pickDate),
+                Row(children: [
+                  Expanded(child: _buildClickableField("Start Date", DateFormat('dd MMM yyyy').format(startDate), Icons.calendar_today, () => _pickDate(isStart: true))),
+                  const SizedBox(width: 15),
+                  Expanded(child: _buildClickableField("End Date", DateFormat('dd MMM yyyy').format(endDate), Icons.calendar_today, () => _pickDate(isStart: false))),
+                ]),
                 const SizedBox(height: 15),
                 Row(children: [
                   Expanded(child: _buildClickableField("Start Time", startTime.format(context), Icons.access_time, () => _pickTime(true))),
                   const SizedBox(width: 15),
                   Expanded(child: _buildClickableField("End Time", endTime.format(context), Icons.access_time, () => _pickTime(false))),
                 ]),
+                const SizedBox(height: 8),
+                _buildSpanSummary(),
                 const SizedBox(height: 20),
-                _buildSwitchTile("It is a scheduled custody date", isScheduled, (v) => setState(() => isScheduled = v)),
-                const SizedBox(height: 15),
                 CustomTextField(
                   labelText: "Location",
                   hintText: "Tap to auto-fill or type manually",
@@ -276,8 +306,6 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
                     ),
                   ),
                 ),
-                 const SizedBox(height: 15),
-                _buildSwitchTile("Custody Fulfilled", isFulfilled, (v) => setState(() => isFulfilled = v)),
                 const SizedBox(height: 15),
                 CustomTextField(labelText: "Notes", hintText: "Enter Additional Details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
                 const SizedBox(height: 20),
@@ -354,7 +382,7 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        calProvider.getCaseDisplayName(c), // Shows "Case Number (Child Name)"
+                        calProvider.getCaseDisplayName(c), // Shows the child name(s), else the Case Reference Number
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -388,11 +416,17 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
     => Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
-            title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            trailing: Icon(selectedChildIds.contains(child.id) ?  Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
-            onTap: () => setState(() => selectedChildIds.contains(child.id) ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+          child: Material(
+            // Gives the tile its own ink surface: the container's colour
+            // would otherwise hide the tap ripple.
+            type: MaterialType.transparency,
+            child: ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
+              title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: Icon(selectedChildIds.contains(child.id) ?  Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
+              onTap: () => setState(() => selectedChildIds.contains(child.id) ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+            ),
           ),
         )
       ).toList(),
@@ -425,6 +459,12 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
               child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
           ),
+          if (isImage)
+            Positioned(
+              left: 3,
+              bottom: 3,
+              child: EvidenceSourceBadge.forPath(url, size: 10),
+            ),
           Positioned(
             right: -8, // Adjusted to sit nicely on the corner
             top: -8,
@@ -438,6 +478,18 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // "Covers 7 days · 6 nights" under the date/time pickers.
+  Widget _buildSpanSummary() {
+    final span = CustodySpan(startDate, endDate);
+    return Padding(
+      padding: const EdgeInsets.only(left: 4),
+      child: Text(
+        "Covers ${daysLabel(span.nights + 1)} · ${nightsLabel(span.nights)}",
+        style: const TextStyle(fontSize: 12, color: AppColors.primary, fontWeight: FontWeight.w600),
       ),
     );
   }

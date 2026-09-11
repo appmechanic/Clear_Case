@@ -99,8 +99,10 @@ String? displayNameFromUrl(String url) {
     final raw = decoded.split('/').last;
     if (raw.isEmpty) return null;
 
-    // Strip the `<millis>_` upload prefix.
-    final stripped = raw.replaceFirst(RegExp(r'^\d{10,}_'), '');
+    // Strip the `<millis>_` upload prefix and the internal photo-source tag.
+    final stripped = raw
+        .replaceFirst(RegExp(r'^\d{10,}_'), '')
+        .replaceFirst(RegExp(r'_cc-(camera|library)(?=\.|$)'), '');
     if (stripped.isEmpty) return null;
 
     // `<millis>_0` / `<millis>_0.pdf` carry no original name — the leftover is

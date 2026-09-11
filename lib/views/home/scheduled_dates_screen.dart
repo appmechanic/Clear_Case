@@ -59,8 +59,8 @@ class ScheduledDatesScreen extends StatelessWidget {
                   _buildRuleCard(
                     context,
                     title: "Scheduled Custody",
-                    desc: "Set up recurring custody schedules, handover times, and parenting arrangements...",
-                    tags: ["Court-ordered", "Time-sensitive", "Compliance Tracking"],
+                    desc: "Set up recurring custody schedules and handover reminders...",
+                    tags: ["Court-ordered", "Time-sensitive", "Reminders"],
                     color: Colors.green,
                     isSet: provider.hasCustody,
                     recordId: provider.custodyRecordId,

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/attachments.dart';
+import '../../core/utils/custody_span.dart';
 import '../../provider/insight_provider.dart';
 import '../widgets/attachment_thumbnail.dart';
 
@@ -25,13 +28,11 @@ class CustodyDetailsScreen extends StatelessWidget {
     }
 
     // Parsing Dates/Times
-    final DateTime? startDate = (record['startDate'] as Timestamp?)?.toDate();
+    final CustodySpan? span = CustodySpan.fromMap(record);
     final DateTime? startTime = (record['startTime'] as Timestamp?)?.toDate();
     final DateTime? endTime = (record['endTime'] as Timestamp?)?.toDate();
 
-    final bool isScheduled = record['isScheduled'] ?? false;
-    final bool isFulfilled = record['isFulfilled'] ?? false;
-    final List<dynamic> attachmentUrls = record['attachmentUrls'] ?? [];
+    final List<String> attachmentUrls = readAttachmentUrls(record);
     final List<dynamic> childIds = record['childIds'] ?? [];
 
     return Scaffold(
@@ -53,24 +54,23 @@ class CustodyDetailsScreen extends StatelessWidget {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        startDate != null ? DateFormat('MMM dd, yyyy').format(startDate) : "N/A",
-                        style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        isScheduled ? "Scheduled Custody" : "Non-Scheduled",
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                      ),
-                    ],
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          span?.label ?? "N/A",
+                          style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          "Custody Entry",
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        ),
+                      ],
+                    ),
                   ),
-                  _buildTag(
-                    isFulfilled ? "Fulfilled" : "Unfulfilled",
-                    isFulfilled ? Colors.green : Colors.red,
-                  ),
+                  _buildTag(nightsLabel(span?.nights ?? 0), AppColors.primary),
                 ],
               ),
             ),
@@ -86,9 +86,11 @@ class CustodyDetailsScreen extends StatelessWidget {
                 children: [
                   const Text("Custody Log Info", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
                   const SizedBox(height: 20),
-                  _buildDetailRow("Start Time", startTime != null ? DateFormat('hh:mm a').format(startTime) : "N/A"),
+                  _buildDetailRow("Start", _dateTime(span?.start, startTime)),
                   const SizedBox(height: 12),
-                  _buildDetailRow("End Time", endTime != null ? DateFormat('hh:mm a').format(endTime) : "N/A"),
+                  _buildDetailRow("End", _dateTime(span?.end, endTime)),
+                  const SizedBox(height: 12),
+                  _buildDetailRow("Nights", "${span?.nights ?? 0}"),
                   const SizedBox(height: 12),
                   _buildDetailRow("Location", record['location'] ?? "Not Specified"),
 
@@ -123,10 +125,11 @@ class CustodyDetailsScreen extends StatelessWidget {
 
                   // Mapping Child IDs to UI Tiles
                   ...childIds.map((id) {
-                    final child = insightProv.selectedCase?.children.firstWhere(
+                    final matches = (insightProv.selectedCase?.children ?? const []).where(
                           (c) => c.id.toString() == id.toString(),
                     );
-                    if (child == null) return const SizedBox.shrink();
+                    if (matches.isEmpty) return const SizedBox.shrink();
+                    final child = matches.first;
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12),
                       child: _buildChildTile(child.name, DateFormat('dd MMM yyyy').format(child.dob)),
@@ -142,6 +145,14 @@ class CustodyDetailsScreen extends StatelessWidget {
   }
 
   // --- HELPERS ---
+
+  // "29 Sep 2026, 09:00 AM" — the day from the entry's span, the time from the
+  // handover time field.
+  String _dateTime(DateTime? day, DateTime? time) {
+    if (day == null) return "N/A";
+    final date = DateFormat('dd MMM yyyy').format(day);
+    return time == null ? date : "$date, ${DateFormat('hh:mm a').format(time)}";
+  }
 
   Widget _buildDetailRow(String label, String value) {
     return Row(

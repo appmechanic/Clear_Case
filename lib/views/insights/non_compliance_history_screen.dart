@@ -12,6 +12,8 @@ import 'package:dropdown_button2/dropdown_button2.dart';
 
 import '../widgets/filter_ui.dart';
 import 'non_compliance_detail_screen.dart';
+import '../home/new_non_compliance_screen.dart';
+import '../widgets/quick_add_button.dart';
 
 class NonComplianceHistoryScreen extends StatefulWidget {
   static const routeName = '/non-compliance-history';
@@ -27,7 +29,6 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
 
   // In your Screen State
   FilterOptions _currentFilters = FilterOptions(
-    selectedTimePeriod: "All Time",
     selectedCategory: "All",
     selectedChildIds: [],
   );
@@ -58,13 +59,16 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
     if (_isInit) {
       final selectedCase = ModalRoute.of(context)!.settings.arguments as dynamic;
       if (selectedCase != null) {
+        // Start on the period the Insights screen is showing.
+        _currentFilters.selectedTimePeriod =
+            Provider.of<InsightProvider>(context, listen: false).timeframe;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           // Sync global case selection and fetch initial non-compliances
           final insightProv = Provider.of<InsightProvider>(context, listen: false);
           insightProv.setSelectedCase(selectedCase);
 
           Provider.of<NonComplianceProviderInsight>(context, listen: false)
-              .fetchNonCompliances(selectedCase.id);
+              .fetchNonCompliances(selectedCase.id, timePeriod: _currentFilters.selectedTimePeriod);
         });
       }
       _isInit = false;
@@ -78,10 +82,28 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
     super.dispose();
   }
 
+  // After a Quick Add: reload, then re-apply the filters and search the
+  // screen is on.
+  Future<void> _reloadAfterQuickAdd() async {
+    if (!mounted) return;
+    final selected = Provider.of<InsightProvider>(context, listen: false).selectedCase;
+    if (selected == null) return;
+    final provider = Provider.of<NonComplianceProviderInsight>(context, listen: false);
+    await provider.fetchNonCompliances(selected.id, timePeriod: _currentFilters.selectedTimePeriod);
+    provider.applyAdvancedFilters(_currentFilters);
+    provider.filterBySearch(_searchController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      // Add an entry here without going back to the Calendar.
+      floatingActionButton: QuickAddButton(
+        label: "Add Non-Compliance",
+        routeName: NewNonComplianceScreen.routeName,
+        onReturn: _reloadAfterQuickAdd,
+      ),
       appBar: AppBar(
         title: const Text("Non Compliance", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
@@ -94,11 +116,11 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
           return RefreshIndicator(
             onRefresh: () async {
               if (insightProv.selectedCase != null) {
-                await nonComplianceProv.fetchNonCompliances(insightProv.selectedCase!.id);
+                await nonComplianceProv.fetchNonCompliances(insightProv.selectedCase!.id, timePeriod: _currentFilters.selectedTimePeriod);
               }
             },
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of the Quick Add button
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               child: Column(
                 children: [
@@ -225,7 +247,7 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
         onChanged: (value) {
           insightProv.setSelectedCase(value);
           if (value != null) {
-            nonComplianceProv.fetchNonCompliances((value as CaseModel).id);
+            nonComplianceProv.fetchNonCompliances((value as CaseModel).id, timePeriod: _currentFilters.selectedTimePeriod);
           }
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),

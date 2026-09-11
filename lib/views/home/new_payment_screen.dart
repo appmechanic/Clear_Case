@@ -13,6 +13,7 @@ import '../widgets/attachment_picker_widget.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/file_type_icon.dart';
 import '../widgets/custom_dropdown.dart';
+import '../widgets/evidence_source_badge.dart';
 
 class NewPaymentScreen extends StatefulWidget {
   static const routeName = '/new-payment';
@@ -386,6 +387,12 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
               child: isImage ? null : FileTypeTile(info: typeInfo),
             ),
           ),
+          if (isImage)
+            Positioned(
+              left: 3,
+              bottom: 3,
+              child: EvidenceSourceBadge.forPath(url, size: 10),
+            ),
           Positioned(
             right: -8, // Adjusted to sit nicely on the corner
             top: -8,
@@ -440,7 +447,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Text(
-                        calProvider.getCaseDisplayName(c), // Displays "Case # (Child Names)"
+                        calProvider.getCaseDisplayName(c), // Shows the child name(s), else the Case Reference Number
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 14,
@@ -598,11 +605,17 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-          child: ListTile(
-            leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
-            title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-            trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
-            onTap: () => setState(() => isSelected ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+          child: Material(
+            // Gives the tile its own ink surface: the container's colour
+            // would otherwise hide the tap ripple.
+            type: MaterialType.transparency,
+            child: ListTile(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              leading: CircleAvatar(backgroundColor: Colors.purple[50], child: const Icon(Icons.person, color: Colors.purple)),
+              title: Text(child.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+              trailing: Icon(isSelected ? Icons.radio_button_checked : Icons.radio_button_off, color: const Color(0xFF4A148C)),
+              onTap: () => setState(() => isSelected ? selectedChildIds.remove(child.id) : selectedChildIds.add(child.id)),
+            ),
           ),
         );
       }).toList(),

@@ -4,10 +4,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import '../../core/utils/custody_span.dart';
+import '../../core/utils/evidence_source.dart';
+import '../../core/utils/timeframe.dart';
 import '../../models/calender_event_model.dart';
 import '../../models/case_model.dart';
 import 'export_filter.dart';
@@ -16,25 +21,48 @@ import 'file_type_icon.dart';
 class PDFGenerator {
   static final PdfColor primaryColor = PdfColor.fromInt(0xFF4A148C);
 
+  /// Builds the report and opens the system print/share sheet.
+  ///
+  /// [onProgress] receives 0.0–1.0 plus a short stage description so the
+  /// export sheet can show a percentage — photo downloads and page layout can
+  /// take long enough to look like a freeze otherwise.
   static Future<void> generateReport({
     required String caseName,
     required String caseId,
     required ExportOptions options,
     required List<CalendarEvent> allEvents,
     CaseModel? caseModel,
+    ReportProgressCallback? onProgress,
   }) async {
+    // Reports a stage, then lets a frame paint before the next (possibly
+    // synchronous) chunk of work. Capped so a backgrounded app — which
+    // produces no frames — can't stall generation.
+    Future<void> stage(double progress, String message) async {
+      onProgress?.call(progress, message);
+      await Future.any([
+        SchedulerBinding.instance.endOfFrame,
+        Future<void>.delayed(const Duration(milliseconds: 100)),
+      ]);
+    }
+
+    await stage(0.02, "Preparing report…");
     final pdf = pw.Document();
     final font = await PdfGoogleFonts.jostRegular();
     final fontBold = await PdfGoogleFonts.jostBold();
 
+    await stage(0.08, "Loading case details…");
     // Parent / guardian = the logged-in account holder.
     final parent = await _fetchParentDetails();
 
+    // The selected period (Australian financial year by default) or the manual
+    // custom range. A multi-day custody entry is included when any of its days
+    // fall inside the period.
+    final window = options.window;
     bool matchesDate(CalendarEvent event) {
-      final eventDay = DateTime(event.date.year, event.date.month, event.date.day);
-      if (options.startDate != null && eventDay.isBefore(options.startDate!)) return false;
-      if (options.endDate != null && eventDay.isAfter(options.endDate!)) return false;
-      return true;
+      if (event.type == EventType.custody) {
+        return window.overlaps(event.span.start, event.span.end);
+      }
+      return window.contains(event.date);
     }
 
     // A record matches the child filter when it belongs to one of the selected
@@ -74,19 +102,36 @@ class PDFGenerator {
 
     final stats = _ReportStats.fromEvents(statsEvents);
 
-    // Custody compliance mirrors the in-app Insights screen exactly, so it is
-    // computed from the scheduled-rule calendar + custody records (the same
-    // inputs InsightProvider uses) rather than from the report's event list.
+    // Only the children actually included in this report (per the export filter).
+    final reportChildren = (caseModel?.children ?? const <ChildModel>[])
+        .where((c) => options.childIds.isEmpty || options.childIds.contains(c.id))
+        .toList();
+
+    // Custody is summarised from what was recorded — nights covered and
+    // entries logged in the period — overall and per child. Scheduled rules
+    // play no part.
     final custody = options.reportSections["Custody"] == true
-        ? await _calcCustodyCompliance(caseId)
+        ? _CustodySummary.from(statsEvents, reportChildren, window)
         : null;
 
     // Pre-fetch image attachments before building pages — MultiPage.build is
     // synchronous, so image bytes must be resolved up front. Attachments are
-    // rendered inline beneath each record (keyed by record id).
-    final attachments = await _collectAttachments(tableEvents);
+    // rendered inline beneath each record (keyed by record id). This is
+    // usually the slowest step, so it owns most of the progress bar (10–75%).
+    await stage(0.10, "Collecting attachments…");
+    final attachments = await _collectAttachments(
+      tableEvents,
+      onImage: (done, total) => onProgress?.call(
+        0.10 + 0.65 * (done / total),
+        "Adding photos ($done of $total)…",
+      ),
+    );
 
     final summaryWidgets = _buildSummary(stats, custody, options, fontBold);
+    final allChildren = caseModel?.children ?? const <ChildModel>[];
+
+    // addPage lays the whole document out synchronously.
+    await stage(0.78, "Laying out pages…");
 
     // Page 1: cover sheet with all the key case information.
     pdf.addPage(
@@ -120,14 +165,27 @@ class PDFGenerator {
           if (summaryWidgets.isNotEmpty) pw.NewPage(),
           pw.Text("DETAILED RECORDS", style: pw.TextStyle(font: fontBold, fontSize: 14, color: primaryColor)),
           pw.SizedBox(height: 8),
-          _buildTable(tableEvents, fontBold, attachments),
+          _buildTable(tableEvents, fontBold, attachments, allChildren),
         ],
       ),
     );
 
+    // Save once, up front, so the progress bar covers it. Event-loop
+    // balancing keeps the UI responsive while pages are painted; the byte
+    // serialisation itself runs in a background isolate.
+    await stage(0.88, "Finalising PDF…");
+    final bytes = await pdf.save(enableEventLoopBalancing: true);
+
+    await stage(1.0, "Opening report…");
     await Printing.layoutPdf(
       name: 'ClearCase_Court_Report',
-      onLayout: (format) async => pdf.save(),
+      onLayout: (format) async => bytes,
+      // The report is fixed A4 and already rendered. With dynamic layout the
+      // iOS plugin (printing 5.14.x) asks Flutter for the document from
+      // UIKit's page-count callback, which runs off the main thread —
+      // "net.nfet.printing sent a message ... on a non-platform thread".
+      // Non-dynamic asks once, from the platform thread.
+      dynamicLayout: false,
     );
   }
 
@@ -140,7 +198,7 @@ class PDFGenerator {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text("Case No: $caseName", style: pw.TextStyle(font: bold, fontSize: 12)),
+            pw.Text("Case Reference Number: $caseName", style: pw.TextStyle(font: bold, fontSize: 12)),
             pw.Text("Generated: ${DateFormat('dd/MM/yyyy').format(DateTime.now())}", style: const pw.TextStyle(fontSize: 10)),
           ],
         ),
@@ -202,7 +260,7 @@ class PDFGenerator {
               pw.Text("CASE INFORMATION",
                   style: pw.TextStyle(font: bold, fontSize: 13, color: primaryColor)),
               pw.SizedBox(height: 14),
-              _coverInfoRow("Case Number", caseName, bold),
+              _coverInfoRow("Case Reference Number", caseName, bold),
               _coverInfoRow("Legal Representative", legalRep, bold),
               _coverInfoRow("Parent / Guardian", guardian, bold),
             ],
@@ -300,14 +358,21 @@ class PDFGenerator {
       (value ?? "").trim().isEmpty ? "—" : value!.trim();
 
   // Human-readable description of the time span the report covers.
-  static String _reportPeriod(ExportOptions options) {
-    final start = options.startDate;
-    final end = options.endDate;
-    final fmt = DateFormat('dd/MM/yyyy');
-    if (start != null && end != null) return "${fmt.format(start)} - ${fmt.format(end)}";
-    if (start != null) return "From ${fmt.format(start)}";
-    if (end != null) return "Up to ${fmt.format(end)}";
-    return options.timePeriod ?? "All Time";
+  static String _reportPeriod(ExportOptions options) => options.periodDescription;
+
+  // Which child(ren) a record belongs to, by name. Disputes and
+  // non-compliance are case-level records with no child ids, so they apply to
+  // every child in the case.
+  static String _childNamesFor(CalendarEvent e, List<ChildModel> children) {
+    final names = <String>[];
+    for (final id in e.childIds) {
+      final match = children.where((c) => c.id == id);
+      if (match.isNotEmpty) names.add(match.first.name.trim());
+    }
+    if (names.isNotEmpty) return names.join(", ");
+    if (e.childNames.isNotEmpty) return e.childNames.join(", ");
+    if (e.type == EventType.dispute || e.type == EventType.nonCompliance) return "All children";
+    return "Not specified";
   }
 
   // Parent / guardian = the signed-in account holder. Prefers the Auth
@@ -343,7 +408,7 @@ class PDFGenerator {
   // --- Insights summary (mirrors the in-app Insights screen) ---
   static List<pw.Widget> _buildSummary(
     _ReportStats s,
-    _CustodyCompliance? custody,
+    _CustodySummary? custody,
     ExportOptions options,
     pw.Font bold,
   ) {
@@ -359,12 +424,17 @@ class PDFGenerator {
         "Custody Compliance",
         bold,
         stats: [
-          _Stat("${custody.fulfilled}", "Custody Days (fulfilled)"),
-          _Stat("${custody.justified}", "With Justification"),
-          _Stat("${custody.missed}", "Missed Days (No Just.)"),
+          _Stat("${custody.overall.nights}", "Total Nights"),
+          _Stat("${custody.overall.entries}", "Total Entries"),
         ],
-        totalLabel: "Overall Compliance",
-        totalValue: "${custody.rate.toStringAsFixed(1)}%",
+        // Per-child figures so it's clear whose custody time is whose.
+        breakdown: [
+          for (final row in custody.perChild)
+            _Stat(
+              "${nightsLabel(row.totals.nights)} · ${row.totals.entries == 1 ? '1 entry' : '${row.totals.entries} entries'}",
+              row.childName,
+            ),
+        ],
       ));
     }
 
@@ -437,6 +507,7 @@ class PDFGenerator {
     required List<_Stat> stats,
     String? totalLabel,
     String? totalValue,
+    List<_Stat> breakdown = const [],
   }) {
     return pw.Container(
       width: double.infinity,
@@ -466,6 +537,20 @@ class PDFGenerator {
               ),
             )).toList(),
           ),
+          // Label/value rows under the headline stats (e.g. one per child).
+          if (breakdown.isNotEmpty) ...[
+            pw.Divider(height: 18, color: PdfColors.grey400),
+            ...breakdown.map((row) => pw.Padding(
+              padding: const pw.EdgeInsets.symmetric(vertical: 2),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Text(row.label, style: pw.TextStyle(font: bold, fontSize: 10)),
+                  pw.Text(row.value, style: const pw.TextStyle(fontSize: 10)),
+                ],
+              ),
+            )),
+          ],
           if (totalLabel != null && totalValue != null) ...[
             pw.Divider(height: 18, color: PdfColors.grey400),
             pw.Row(
@@ -485,6 +570,7 @@ class PDFGenerator {
     List<CalendarEvent> events,
     pw.Font bold,
     Map<String, List<_Attachment>> attachments,
+    List<ChildModel> children,
   ) {
     if (events.isEmpty) {
       return pw.Container(
@@ -497,9 +583,10 @@ class PDFGenerator {
     return pw.Table(
       border: pw.TableBorder.all(color: PdfColors.grey400, width: 0.5),
       columnWidths: {
-        0: const pw.FixedColumnWidth(85), // தேதிக்காக போதுமான இடம்
-        1: const pw.FixedColumnWidth(95),
-        2: const pw.FlexColumnWidth(),
+        0: const pw.FixedColumnWidth(78), // Room for a full date
+        1: const pw.FixedColumnWidth(82),
+        2: const pw.FixedColumnWidth(80),
+        3: const pw.FlexColumnWidth(),
       },
       children: [
         pw.TableRow(
@@ -507,23 +594,27 @@ class PDFGenerator {
           children: [
             _cell("Date", bold, textColor: PdfColors.white),
             _cell("Record Type", bold, textColor: PdfColors.white),
+            _cell("Child", bold, textColor: PdfColors.white),
             _cell("Detailed & Information", bold, textColor: PdfColors.white),
           ],
         ),
         ...events.map((e) => pw.TableRow(
           children: [
-            // Date cell - Alignment சேர்க்கப்பட்டுள்ளது
+            // Date cell — a multi-day custody entry shows first and last day.
             pw.Container(
               padding: const pw.EdgeInsets.all(8),
-              alignment: pw.Alignment.centerLeft, // செங்குத்தாக நடுவில் வர உதவும்
+              alignment: pw.Alignment.centerLeft,
               child: pw.Text(
-                DateFormat('dd/MM/yyyy').format(e.date),
+                e.type == EventType.custody && e.span.isMultiDay
+                    ? "${DateFormat('dd/MM/yyyy').format(e.span.start)} –\n${DateFormat('dd/MM/yyyy').format(e.span.end)}"
+                    : DateFormat('dd/MM/yyyy').format(e.date),
                 style: const pw.TextStyle(fontSize: 10),
-                softWrap: false,
               ),
             ),
             // Type cell
             _cell(e.type == EventType.nonCompliance ? "NON-COMPLIANCE" : e.type.name.toUpperCase(), bold),
+            // Child cell — whose record this is.
+            _cell(_childNamesFor(e, children), null),
             // Details cell
             _buildDetailedRow(e, bold, attachments[e.id] ?? const []),
           ],
@@ -584,11 +675,11 @@ class PDFGenerator {
           ],
 
           if (e.type == EventType.custody) ...[
-            pw.Text("Custody Event: ${e.title}", style: pw.TextStyle(font: bold, fontSize: 11)),
-            pw.Text("Schedule: ${e.isScheduled ? "Scheduled" : "Manual"}", style: const pw.TextStyle(fontSize: 10)),
-            pw.Text("Fulfillment: ${e.isFulfilled ? "Completed" : "Not Completed"}", style: pw.TextStyle(fontSize: 10, font: bold)),
-            if (e.location != null) pw.Text("Location: ${e.location}", style: const pw.TextStyle(fontSize: 10)),
-            if (e.description != null) pw.Text("Notes: ${e.description}", style: const pw.TextStyle(fontSize: 10)),
+            pw.Text("Custody Entry", style: pw.TextStyle(font: bold, fontSize: 11)),
+            pw.Text("Period: ${_custodyPeriod(e)}", style: const pw.TextStyle(fontSize: 10)),
+            pw.Text("Nights: ${e.span.nights}", style: pw.TextStyle(fontSize: 10, font: bold)),
+            if ((e.location ?? "").trim().isNotEmpty) pw.Text("Location: ${e.location}", style: const pw.TextStyle(fontSize: 10)),
+            if ((e.description ?? "").trim().isNotEmpty) pw.Text("Notes: ${e.description}", style: const pw.TextStyle(fontSize: 10)),
           ],
 
           // Attachments rendered inline: image thumbnails for photos, a file
@@ -607,6 +698,16 @@ class PDFGenerator {
         ],
       ),
     );
+  }
+
+  // "29/09/2026 09:00 AM – 05/10/2026 05:00 PM"; dates only when the entry
+  // has no handover times.
+  static String _custodyPeriod(CalendarEvent e) {
+    final date = DateFormat('dd/MM/yyyy');
+    final time = DateFormat('hh:mm a');
+    final start = "${date.format(e.span.start)}${e.startTime != null ? ' ${time.format(e.startTime!)}' : ''}";
+    final end = "${date.format(e.span.end)}${e.endTime != null ? ' ${time.format(e.endTime!)}' : ''}";
+    return "$start – $end";
   }
 
   static pw.Widget _attachmentEntry(_Attachment a, pw.Font bold) {
@@ -655,6 +756,20 @@ class PDFGenerator {
             ),
           ),
         ),
+        // Provenance, so the reader knows how far the photo's time/place can
+        // be relied on.
+        if (a.isImage && a.source == EvidenceSource.library)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 2),
+            child: pw.Text(libraryPhotoNotice,
+                style: pw.TextStyle(font: bold, fontSize: 7.5, color: PdfColors.orange800)),
+          ),
+        if (a.isImage && a.source == EvidenceSource.camera)
+          pw.Padding(
+            padding: const pw.EdgeInsets.only(top: 2),
+            child: pw.Text(cameraPhotoNotice,
+                style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.green800)),
+          ),
       ],
     );
   }
@@ -668,34 +783,54 @@ class PDFGenerator {
   // that fail to load, render as a tappable link chip instead.
   static const int _maxEmbeddedImages = 50;
   static const int _imageMaxWidth = 1280;
+  // Photos downloaded in parallel — enough to hide per-request latency
+  // without flooding a mobile connection.
+  static const int _downloadConcurrency = 4;
 
-  static Future<Map<String, List<_Attachment>>> _collectAttachments(List<CalendarEvent> events) async {
+  /// [onImage] is called as each embedded photo finishes (done, total).
+  static Future<Map<String, List<_Attachment>>> _collectAttachments(
+    List<CalendarEvent> events, {
+    void Function(int done, int total)? onImage,
+  }) async {
+    // Pass 1: decide which images get embedded (first _maxEmbeddedImages, in
+    // report order) so downloads can then run in parallel.
     final map = <String, List<_Attachment>>{};
-    int embedded = 0;
+    final toEmbed = <_Attachment>[];
     int skippedForCap = 0;
     for (final e in events) {
       if (e.attachmentUrls.isEmpty) continue;
       final list = <_Attachment>[];
       for (final url in e.attachmentUrls) {
-        final ext = extensionFromUrl(url);
-        final fileName = _fileNameFromUrl(url);
-        if (isImageExtension(ext)) {
-          pw.ImageProvider? image;
-          if (embedded < _maxEmbeddedImages) {
-            // Downscale on load: caps the decoded pixel buffer regardless of
-            // the original photo resolution. null -> link-chip fallback below.
-            image = await _downscaledNetworkImage(url, maxWidth: _imageMaxWidth);
-            if (image != null) embedded++;
+        final attachment = _Attachment(
+          url: url,
+          fileName: _fileNameFromUrl(url),
+          isImage: isImageExtension(extensionFromUrl(url)),
+          source: evidenceSourceOf(url),
+        );
+        if (attachment.isImage) {
+          if (toEmbed.length < _maxEmbeddedImages) {
+            toEmbed.add(attachment);
           } else {
             skippedForCap++;
           }
-          list.add(_Attachment(url: url, fileName: fileName, isImage: true, image: image));
-        } else {
-          list.add(_Attachment(url: url, fileName: fileName, isImage: false));
         }
+        list.add(attachment);
       }
       map[e.id] = list;
     }
+
+    // Pass 2: download + downscale. null image -> link-chip fallback.
+    int next = 0;
+    int done = 0;
+    Future<void> worker() async {
+      while (next < toEmbed.length) {
+        final attachment = toEmbed[next++];
+        attachment.image = await _downscaledNetworkImage(attachment.url, maxWidth: _imageMaxWidth);
+        onImage?.call(++done, toEmbed.length);
+      }
+    }
+    await Future.wait(List.generate(_downloadConcurrency, (_) => worker()));
+
     if (skippedForCap > 0) {
       debugPrint(
           'PDF export: embedded $_maxEmbeddedImages image(s); $skippedForCap more shown as links to bound memory/file size.');
@@ -704,9 +839,13 @@ class PDFGenerator {
   }
 
   /// Downloads [url] and returns a PDF image downscaled to at most [maxWidth]
-  /// pixels wide. Resizing via the platform codec bounds the decoded buffer —
-  /// the real driver of out-of-memory crashes when many large photos are
-  /// embedded. Returns null on any failure so the caller renders a link chip.
+  /// pixels wide. Resizing bounds the decoded buffer — the real driver of
+  /// out-of-memory crashes when many large photos are embedded. Returns null
+  /// on any failure so the caller renders a link chip.
+  ///
+  /// Re-encodes to JPEG on a native thread: the pdf package embeds JPEG bytes
+  /// as-is, whereas PNG is fully decoded in Dart on the UI isolate while the
+  /// document is painted — the main cause of the report appearing to freeze.
   static Future<pw.ImageProvider?> _downscaledNetworkImage(String url, {required int maxWidth}) async {
     HttpClient? client;
     try {
@@ -715,6 +854,19 @@ class PDFGenerator {
       final response = await request.close();
       if (response.statusCode != 200) return null;
       final bytes = await consolidateHttpClientResponseBytes(response);
+
+      try {
+        final jpeg = await FlutterImageCompress.compressWithList(
+          bytes,
+          minWidth: maxWidth,
+          minHeight: maxWidth,
+          quality: 80,
+          format: CompressFormat.jpeg,
+        );
+        if (jpeg.isNotEmpty) return pw.MemoryImage(jpeg);
+      } catch (_) {
+        // Fall through to the engine codec below.
+      }
 
       final codec = await ui.instantiateImageCodec(bytes, targetWidth: maxWidth);
       final frame = await codec.getNextFrame();
@@ -727,77 +879,6 @@ class PDFGenerator {
       return null;
     } finally {
       client?.close(force: true);
-    }
-  }
-
-  // --- Custody compliance (identical to InsightProvider.calculateCustodyCompliance) ---
-  //
-  // Builds the set of scheduled custody days from every scheduled rule
-  // (start -> end, or start -> today when the rule has no end date), then walks
-  // the scheduled custody records: a record on a scheduled day counts as
-  // "fulfilled" when isFulfilled is true and "justified" otherwise. Days with
-  // no matching record are "missed". Compliance % = (fulfilled + justified) /
-  // total scheduled days. Kept byte-for-byte with the Insights screen so the
-  // report and the app always show the same numbers.
-  static Future<_CustodyCompliance> _calcCustodyCompliance(String caseId) async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user == null || caseId.isEmpty) return const _CustodyCompliance(0, 0, 0, 0);
-
-    final firestore = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-
-    try {
-      final caseRef = firestore.collection('users').doc(user.uid).collection('cases').doc(caseId);
-
-      final rulesSnap = await caseRef.collection('scheduledRules').get();
-      if (rulesSnap.docs.isEmpty) return const _CustodyCompliance(0, 0, 0, 0);
-
-      final Set<String> scheduledDates = {};
-      for (final doc in rulesSnap.docs) {
-        final data = doc.data();
-        // Skip rules with a missing/malformed startDate rather than throwing —
-        // the outer catch would otherwise zero out the whole court report.
-        final start = DateTime.tryParse(data['startDate']?.toString() ?? '');
-        if (start == null) continue;
-        final end = DateTime.tryParse(data['endDate']?.toString() ?? '');
-        final calcEnd = (end != null && end.isBefore(today)) ? end : today;
-
-        for (var date = DateTime(start.year, start.month, start.day);
-            !date.isAfter(calcEnd);
-            date = date.add(const Duration(days: 1))) {
-          scheduledDates.add(DateFormat('yyyy-MM-dd').format(date));
-        }
-      }
-
-      final recordsSnap = await caseRef.collection('custodyRecords').get();
-      int fulfilled = 0;
-      int justified = 0;
-
-      for (final doc in recordsSnap.docs) {
-        final data = doc.data();
-        if (!(data['isScheduled'] ?? false)) continue;
-        final ts = data['startDate'];
-        if (ts is! Timestamp) continue;
-        final dateKey = DateFormat('yyyy-MM-dd').format(ts.toDate());
-        if (scheduledDates.contains(dateKey)) {
-          if (data['isFulfilled'] ?? false) {
-            fulfilled++;
-          } else {
-            justified++;
-          }
-        }
-      }
-
-      final missed = (scheduledDates.length - (fulfilled + justified)).clamp(0, 999999);
-      final rate = scheduledDates.isNotEmpty
-          ? ((fulfilled + justified) / scheduledDates.length) * 100
-          : 0.0;
-
-      return _CustodyCompliance(fulfilled, justified, missed, rate.toDouble());
-    } catch (e) {
-      debugPrint('Custody compliance calc failed for report: $e');
-      return const _CustodyCompliance(0, 0, 0, 0);
     }
   }
 
@@ -822,21 +903,39 @@ class _Stat {
   const _Stat(this.value, this.label);
 }
 
-/// Custody compliance figures, matching the Insights "Custody Compliance" card.
-class _CustodyCompliance {
-  final int fulfilled;
-  final int justified;
-  final int missed;
-  final double rate;
-  const _CustodyCompliance(this.fulfilled, this.justified, this.missed, this.rate);
+/// Custody figures for the report's "Custody Compliance" card — the same
+/// Total Nights / Total Entries the Insights screen shows, plus one row per
+/// child included in the report.
+class _CustodySummary {
+  final CustodyTotals overall;
+  final List<({String childName, CustodyTotals totals})> perChild;
+
+  const _CustodySummary(this.overall, this.perChild);
+
+  factory _CustodySummary.from(
+    List<CalendarEvent> events,
+    List<ChildModel> children,
+    TimeWindow window,
+  ) {
+    final custody = events.where((e) => e.type == EventType.custody).toList();
+    return _CustodySummary(
+      CustodyTotals.from(custody.map((e) => e.span), window),
+      [
+        for (final child in children)
+          (
+            childName: child.name.trim(),
+            totals: CustodyTotals.from(
+              custody.where((e) => e.childIds.contains(child.id)).map((e) => e.span),
+              window,
+            ),
+          ),
+      ],
+    );
+  }
 }
 
 /// Aggregated insights over the filtered (child + date) event set. Mirrors the
 /// in-app Insights screen cards so the report and the app agree.
-///
-/// Custody compliance % / "justified" vs "missed" depends on the scheduled-rule
-/// calendar, which isn't part of the exported event data, so custody is
-/// summarised by fulfilled / not-fulfilled record counts instead.
 class _ReportStats {
   // Payments
   final double paid;
@@ -947,7 +1046,15 @@ class _Attachment {
   final String url;
   final String fileName;
   final bool isImage;
-  final pw.ImageProvider? image;
+  // Captured in-app (stamped) vs. picked from the device library.
+  final EvidenceSource source;
+  // Filled in by _collectAttachments once the download finishes.
+  pw.ImageProvider? image;
 
-  _Attachment({required this.url, required this.fileName, required this.isImage, this.image});
+  _Attachment({
+    required this.url,
+    required this.fileName,
+    required this.isImage,
+    this.source = EvidenceSource.unknown,
+  });
 }

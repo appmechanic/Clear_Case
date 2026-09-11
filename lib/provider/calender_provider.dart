@@ -5,6 +5,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import '../core/utils/attachments.dart';
+import '../core/utils/custody_span.dart';
 import '../models/case_model.dart';
 import '../services/case_selection_service.dart';
 import 'dart:async';
@@ -39,8 +40,26 @@ class CalendarProvider extends ChangeNotifier {
   List<ChildModel> get children => _selectedCase?.children ?? [];
 
   final Map<DateTime, List<CalendarEvent>> _events = {};
-  List<CalendarEvent> get allEvents =>
-      _events.values.expand((element) => element).toList();
+
+  /// Every event once. Multi-day custody entries are filed under each day they
+  /// cover, so they're de-duplicated by id here (the PDF export reads this).
+  List<CalendarEvent> get allEvents {
+    final seenCustody = <String>{};
+    return _events.values
+        .expand((element) => element)
+        .where((e) => e.type != EventType.custody || seenCustody.add(e.id))
+        .toList();
+  }
+
+  // Date-range selection (long-press a day, or the "Select date range"
+  // button). Held here rather than inside TableCalendar so it survives month
+  // navigation and the loader that replaces the calendar during refetches.
+  bool _isRangeMode = false;
+  DateTime? _rangeStart;
+  DateTime? _rangeEnd;
+  bool get isRangeMode => _isRangeMode;
+  DateTime? get rangeStart => _rangeStart;
+  DateTime? get rangeEnd => _rangeEnd;
   List<CaseModel> _allCases = [];
   CaseModel? _selectedCase;
 
@@ -121,6 +140,9 @@ class CalendarProvider extends ChangeNotifier {
     CaseSelectionService.instance.clear();
     _focusedDay = DateTime.now();
     _selectedDay = _focusedDay;
+    _isRangeMode = false;
+    _rangeStart = null;
+    _rangeEnd = null;
     _initialLoad = true;
     _ongoing = 0;
   }
@@ -223,6 +245,9 @@ class CalendarProvider extends ChangeNotifier {
     // screens see a changed id and follow.
     CaseSelectionService.instance.select(selected?.id);
     _events.clear();
+    _isRangeMode = false;
+    _rangeStart = null;
+    _rangeEnd = null;
 
      _focusedDay = DateTime.now();
     _selectedDay = DateTime.now();
@@ -308,8 +333,6 @@ class CalendarProvider extends ChangeNotifier {
             isFlagged: data['flagEntry'] == true,
             location: data['location'],
             isReceived: data['isReceived'] == true,
-            isFulfilled: data['isReceived'] == true,
-            isScheduled: data['isScheduled'] == true,
             paymentCategory: data['paymentCategory'],
             paymentMethod: data['paymentMethod'],
             transactionType: data['transactionType'],
@@ -324,22 +347,29 @@ class CalendarProvider extends ChangeNotifier {
         final data = doc.data();
         if (data.containsKey('frequency') || data.containsKey('notificationPref')) continue;
 
-        final Timestamp? timestamp = data['startDate'] as Timestamp?;
-        if (timestamp != null) {
-          _addEventToMap(CalendarEvent(
+        final span = CustodySpan.fromMap(data);
+        if (span != null) {
+          final event = CalendarEvent(
             id: doc.id,
             title: data['notes'] ?? 'Custody Record',
-            date: timestamp.toDate(),
+            date: span.start,
+            endDate: span.end,
+            startTime: (data['startTime'] as Timestamp?)?.toDate(),
+            endTime: (data['endTime'] as Timestamp?)?.toDate(),
             type: EventType.custody,
             description: data['notes'],
             childNames: _resolveChildNames(data['childIds'] ?? []),
             childIds: List<String>.from(data['childIds'] ?? []),
             isFlagged: data['flagEntry'] == true,
             attachmentUrls: readAttachmentUrls(data),
-            isFulfilled: data['isFulfilled'] == true,
-            isScheduled: data['isScheduled'] == true,
             location: data['location'],
-          ));
+          );
+          // A multi-day entry sits on every day it covers so the calendar can
+          // draw it as one continuous bar. Capped so a mistyped end year can't
+          // generate thousands of map entries.
+          for (final day in span.days.take(_maxCustodySpanDays)) {
+            _addEventToMap(event, day: day);
+          }
         }
       }
 
@@ -500,8 +530,12 @@ class CalendarProvider extends ChangeNotifier {
     return instances;
   }
 
-  void _addEventToMap(CalendarEvent event) {
-    final dayKey = DateTime(event.date.year, event.date.month, event.date.day);
+  static const int _maxCustodySpanDays = 400;
+
+  /// Files [event] under [day] (defaults to the event's own date).
+  void _addEventToMap(CalendarEvent event, {DateTime? day}) {
+    final on = day ?? event.date;
+    final dayKey = DateTime(on.year, on.month, on.day);
     if (_events[dayKey] == null) _events[dayKey] = [];
     if (!_events[dayKey]!.any((existing) => existing.id == event.id)) {
       _events[dayKey]!.add(event);
@@ -521,6 +555,44 @@ class CalendarProvider extends ChangeNotifier {
   }
 
   void onPageChanged(DateTime focused) => { _focusedDay = focused, notifyListeners() };
+
+  // --- DATE-RANGE SELECTION ---
+
+  /// Enters range mode. [from] (a long-pressed day) becomes the range start;
+  /// without it the next tapped day does.
+  void startRangeSelection([DateTime? from]) {
+    _isRangeMode = true;
+    _rangeStart = from == null ? null : DateTime(from.year, from.month, from.day);
+    _rangeEnd = null;
+    if (from != null) _focusedDay = from;
+    notifyListeners();
+  }
+
+  /// A tap while in range mode: the first tap sets the start, the second the
+  /// end (in either order). Tapping again after a complete range starts over.
+  /// Days can be on different months — the start is kept while the user pages.
+  void selectRangeDay(DateTime day, DateTime focused) {
+    final d = DateTime(day.year, day.month, day.day);
+    _focusedDay = focused;
+    if (_rangeStart == null || _rangeEnd != null) {
+      _rangeStart = d;
+      _rangeEnd = null;
+    } else if (d.isBefore(_rangeStart!)) {
+      _rangeEnd = _rangeStart;
+      _rangeStart = d;
+    } else {
+      _rangeEnd = d;
+    }
+    notifyListeners();
+  }
+
+  void cancelRangeSelection() {
+    if (!_isRangeMode && _rangeStart == null) return;
+    _isRangeMode = false;
+    _rangeStart = null;
+    _rangeEnd = null;
+    notifyListeners();
+  }
 
   bool isSameDay(DateTime? a, DateTime? b) {
     if (a == null || b == null) return false;

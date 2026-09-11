@@ -247,10 +247,10 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
       decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(12)),
       child: const Column(
         children: [
-          Text("Compliance Calculation", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+          Text("Reminders & Planned Dates", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           SizedBox(height: 6),
           Text(
-            "Compliance is calculated per child. Select which children this rule applies to for accurate tracking and legal documentation.",
+            "Scheduled rules show planned dates on your calendar and send reminders. Select which children this rule applies to. Insights and reports are based on the entries you record, not on this schedule.",
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: Colors.black54, height: 1.4),
           ),
@@ -543,18 +543,24 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE1F5FE)),
       ),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: const CircleAvatar(
-          backgroundColor: Color(0xFFF3E5F5),
-          child: Icon(Icons.person, color: Color(0xFF4A148C), size: 20),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)) : null,
-        trailing: Icon(
-          isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
-          color: const Color(0xFF4A148C),
+      child: Material(
+        // Gives the tile its own ink surface: the container's colour
+        // would otherwise hide the tap ripple.
+        type: MaterialType.transparency,
+        child: ListTile(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          onTap: onTap,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          leading: const CircleAvatar(
+            backgroundColor: Color(0xFFF3E5F5),
+            child: Icon(Icons.person, color: Color(0xFF4A148C), size: 20),
+          ),
+          title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: Colors.grey, fontSize: 14)) : null,
+          trailing: Icon(
+            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+            color: const Color(0xFF4A148C),
+          ),
         ),
       ),
     );

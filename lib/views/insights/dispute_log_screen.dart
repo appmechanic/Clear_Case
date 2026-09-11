@@ -10,6 +10,8 @@ import '../../provider/insight_provider.dart';
 import '../widgets/custom_search_box.dart';
 import '../widgets/filter_ui.dart';
 import 'dispute_log_viewer_screen.dart';
+import '../home/new_dispute_screen.dart';
+import '../widgets/quick_add_button.dart';
 
 class DisputesLogScreen extends StatefulWidget {
   static const routeName = '/disputes-log';
@@ -25,7 +27,6 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
 
   // Change your local state to this:
   FilterOptions _currentFilters = FilterOptions(
-    selectedTimePeriod: "All Time",
     selectedCategory: "All",
     selectedChildIds: [], // Empty means "Select All" in your logic
   );
@@ -55,10 +56,13 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
     if (_isInit) {
       final selectedCase = ModalRoute.of(context)!.settings.arguments as dynamic;
       if (selectedCase != null) {
+        // Start on the period the Insights screen is showing.
+        _currentFilters.selectedTimePeriod =
+            Provider.of<InsightProvider>(context, listen: false).timeframe;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           final insightProv = Provider.of<InsightProvider>(context, listen: false);
           insightProv.setSelectedCase(selectedCase);
-          Provider.of<DisputeInsightsProvider>(context, listen: false).fetchDisputes(selectedCase.id);
+          Provider.of<DisputeInsightsProvider>(context, listen: false).fetchDisputes(selectedCase.id, timePeriod: _currentFilters.selectedTimePeriod);
         });
       }
       _isInit = false;
@@ -66,10 +70,28 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
     super.didChangeDependencies();
   }
 
+  // After a Quick Add: reload, then re-apply the filters and search the
+  // screen is on.
+  Future<void> _reloadAfterQuickAdd() async {
+    if (!mounted) return;
+    final selected = Provider.of<InsightProvider>(context, listen: false).selectedCase;
+    if (selected == null) return;
+    final provider = Provider.of<DisputeInsightsProvider>(context, listen: false);
+    await provider.fetchDisputes(selected.id, timePeriod: _currentFilters.selectedTimePeriod);
+    provider.applyAdvancedFilters(_currentFilters);
+    provider.filterBySearch(_searchController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      // Add an entry here without going back to the Calendar.
+      floatingActionButton: QuickAddButton(
+        label: "Add Dispute",
+        routeName: NewDisputeScreen.routeName,
+        onReturn: _reloadAfterQuickAdd,
+      ),
       appBar: AppBar(
         title: const Text("Disputes Log", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent, elevation: 0,
@@ -78,9 +100,9 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
       body: Consumer2<DisputeInsightsProvider, InsightProvider>(
         builder: (context, disputeProv, insightProv, child) {
           return RefreshIndicator(
-            onRefresh: () => disputeProv.fetchDisputes(insightProv.selectedCase!.id),
+            onRefresh: () => disputeProv.fetchDisputes(insightProv.selectedCase!.id, timePeriod: _currentFilters.selectedTimePeriod),
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of the Quick Add button
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               child: Column(
                 children: [
@@ -188,7 +210,7 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
         )).toList(),
         onChanged: (value) {
           insightProv.setSelectedCase(value);
-          if (value != null) disputeProv.fetchDisputes((value as CaseModel).id);
+          if (value != null) disputeProv.fetchDisputes((value as CaseModel).id, timePeriod: _currentFilters.selectedTimePeriod);
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
         dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), color: Colors.white)),

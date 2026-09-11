@@ -4,12 +4,13 @@ class CustodyRecordModel {
   String? id;
   String? caseId;
   List<String>? childIds;
+  // First and last calendar day the entry covers (date-only). Records saved
+  // before multi-day custody have no endDate and cover only startDate.
   DateTime? startDate;
+  DateTime? endDate;
   DateTime? startTime;
   DateTime? endTime;
-  bool? isScheduled;
   String? location;
-  bool? isFulfilled;
   String? notes;
   bool? flagEntry;
   DateTime? createdAt;
@@ -20,11 +21,10 @@ class CustodyRecordModel {
     this.caseId,
     this.childIds,
     this.startDate,
+    this.endDate,
     this.startTime,
     this.endTime,
-    this.isScheduled,
     this.location,
-    this.isFulfilled,
     this.notes,
     this.flagEntry,
     this.createdAt,
@@ -36,11 +36,10 @@ class CustodyRecordModel {
       'caseId': caseId,
       'childIds': childIds,
       'startDate': startDate != null ? Timestamp.fromDate(startDate!) : null,
+      'endDate': endDate != null ? Timestamp.fromDate(endDate!) : null,
       'startTime': startTime != null ? Timestamp.fromDate(startTime!) : null,
       'endTime': endTime != null ? Timestamp.fromDate(endTime!) : null,
-      'isScheduled': isScheduled,
       'location': location,
-      'isFulfilled': isFulfilled,
       'notes': notes,
       'flagEntry': flagEntry,
       'createdAt': createdAt != null ? Timestamp.fromDate(createdAt!) : null,
@@ -55,11 +54,10 @@ class CustodyRecordModel {
       caseId: map['caseId'] as String?,
       childIds: map['childIds'] != null ? List<String>.from(map['childIds']) : null,
       startDate: (map['startDate'] as Timestamp?)?.toDate(),
+      endDate: (map['endDate'] as Timestamp?)?.toDate(),
       startTime: (map['startTime'] as Timestamp?)?.toDate(),
       endTime: (map['endTime'] as Timestamp?)?.toDate(),
-      isScheduled: map['isScheduled'] as bool?,
       location: map['location'] as String?,
-      isFulfilled: map['isFulfilled'] as bool?,
       notes: map['notes'] as String?,
       flagEntry: map['flagEntry'] as bool?,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/utils/timeframe.dart';
 import '../../models/filter_model.dart';
 
 class CommonFilterSheet extends StatefulWidget {
@@ -63,31 +64,29 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
               fontWeight: FontWeight.bold, color: Colors.black54)),
           const SizedBox(height: 10),
           _buildChipGroup(
-            [
-              "Last month",
-              "Quarter",
-              "Bi-annual",
-              "Yearly",
-              "Current Financial year",
-              "All Time"
-            ],
+            Timeframe.options,
             _tempOptions.selectedTimePeriod,
                 (val) => setState(() => _tempOptions.selectedTimePeriod = val),
+            labelFor: Timeframe.label,
           ),
 
           const SizedBox(height: 20),
 
-          // 3. Dynamic Category Section (Payment Type / Status / Severity)
-          Text(_getCategoryLabel(), style: const TextStyle(
-              fontWeight: FontWeight.bold, color: Colors.black54)),
-          const SizedBox(height: 10),
-          _buildChipGroup(
-            _getCategoryOptions(),
-            _tempOptions.selectedCategory,
-                (val) => setState(() => _tempOptions.selectedCategory = val),
-          ),
+          // 3. Dynamic Category Section (Payment Type / Status / Severity).
+          // Custody has none: entries are no longer typed as scheduled or not.
+          if (_getCategoryOptions().isNotEmpty) ...[
+            Text(_getCategoryLabel(), style: const TextStyle(
+                fontWeight: FontWeight.bold, color: Colors.black54)),
+            const SizedBox(height: 10),
+            _buildChipGroup(
+              _getCategoryOptions(),
+              _tempOptions.selectedCategory,
+                  (val) => setState(() => _tempOptions.selectedCategory = val),
+            ),
+            const SizedBox(height: 10),
+          ],
 
-          const SizedBox(height: 30),
+          const SizedBox(height: 20),
 
           // Apply Button
           SizedBox(
@@ -181,14 +180,14 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
   }
 
   Widget _buildChipGroup(List<String> options, String? selected,
-      Function(String) onSelect) {
+      Function(String) onSelect, {String Function(String)? labelFor}) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: options.map((option) {
         bool isSelected = selected == option;
         return ChoiceChip(
-          label: Text(option),
+          label: Text(labelFor?.call(option) ?? option),
           selected: isSelected,
           onSelected: (_) => onSelect(option),
           selectedColor: const Color(0xFFE3F2FD),
@@ -230,7 +229,7 @@ class _CommonFilterSheetState extends State<CommonFilterSheet> {
       case FilterType.nonCompliance:
         return ["Serious", "Moderate", "Minor", "All"];
        case FilterType.custody:
-        return ["Scheduled", "Non-Scheduled", "All Records"];
+        return [];
     }
   }
 }

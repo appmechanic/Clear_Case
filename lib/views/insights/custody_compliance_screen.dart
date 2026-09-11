@@ -5,12 +5,18 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/attachments.dart';
+import '../../core/utils/custody_span.dart';
+import '../../core/utils/timeframe.dart';
 import '../../models/case_model.dart';
 import '../../models/filter_model.dart';
 import '../../provider/custody_insight_provider.dart';
 import '../../provider/insight_provider.dart';
 import '../widgets/custom_search_box.dart';
 import '../widgets/filter_ui.dart';
+import '../home/new_custody_screen.dart';
+import '../widgets/quick_add_button.dart';
 
  class CustodyComplianceScreen extends StatefulWidget {
    static const routeName = '/custody-insight-compliance';
@@ -29,14 +35,15 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final insightProv = Provider.of<InsightProvider>(context, listen: false);
       if (insightProv.selectedCase != null) {
+        // Open on the same period the Insights screen is showing.
         Provider.of<CustodyInsightProvider>(context, listen: false)
-            .fetchCustodyRecords(insightProv.selectedCase!.id);
+            .fetchCustodyRecords(insightProv.selectedCase!.id, timePeriod: insightProv.timeframe);
       }
     });
   }
 
   void _openFilterSheet(dynamic selectedCase) {
-    // Current filter state should be managed locally in state or pulled from provider
+    final custodyProv = Provider.of<CustodyInsightProvider>(context, listen: false);
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -44,7 +51,7 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
       builder: (context) => CommonFilterSheet(
         type: FilterType.custody,
         children: selectedCase?.children ?? [],
-        initialOptions: FilterOptions(selectedTimePeriod: "All Time", selectedCategory: "All Records"),
+        initialOptions: custodyProv.currentFilters,
         onApply: (newFilters) {
           Provider.of<CustodyInsightProvider>(context, listen: false).applyAdvancedFilters(newFilters);
         },
@@ -52,10 +59,29 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
+  // After a Quick Add: reload, then re-apply the filters and search the
+  // screen is on.
+  Future<void> _reloadAfterQuickAdd() async {
+    if (!mounted) return;
+    final selected = Provider.of<InsightProvider>(context, listen: false).selectedCase;
+    if (selected == null) return;
+    final provider = Provider.of<CustodyInsightProvider>(context, listen: false);
+    final filters = provider.currentFilters;
+    await provider.fetchCustodyRecords(selected.id, timePeriod: filters.selectedTimePeriod);
+    provider.applyAdvancedFilters(filters);
+    provider.filterBySearch(_searchController.text);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F5),
+      // Add an entry here without going back to the Calendar.
+      floatingActionButton: QuickAddButton(
+        label: "Add Custody",
+        routeName: NewCustodyScreen.routeName,
+        onReturn: _reloadAfterQuickAdd,
+      ),
       appBar: _buildAppBar("Insights"),
       body: Consumer2<InsightProvider, CustodyInsightProvider>(
         builder: (context, insightProv, custodyProv, child) {
@@ -64,11 +90,12 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
               if (insightProv.selectedCase != null) {
                 // Execute them sequentially
                 await insightProv.listenToUserCases();
-                await custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id);
+                await custodyProv.fetchCustodyRecords(insightProv.selectedCase!.id,
+                    timePeriod: custodyProv.currentFilters.selectedTimePeriod);
               }
             },
             child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of the Quick Add button
               physics: const AlwaysScrollableScrollPhysics(
                 parent: BouncingScrollPhysics()
               ),
@@ -83,11 +110,11 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
                     ],
                   ),
                   const SizedBox(height: 20),
-                  _buildHeaderCard(insightProv), // Static UI as requested
+                  _buildHeaderCard(custodyProv),
                   const SizedBox(height: 20),
                   CustomSearchBar(
                     controller: _searchController,
-                    hintText: "Search notes, 'fulfilled' or 'missed'...",
+                    hintText: "Search notes or location...",
                     onChanged: (val) => custodyProv.filterBySearch(val),
                   ),
 
@@ -132,8 +159,9 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
                           }
                         }
 
-                        final bool isFulfilled = record['isFulfilled'] ?? false;
-                        final bool hasAttachment = record['attachmentUrls'] != null && (record['attachmentUrls'] as List).isNotEmpty;
+                        final span = CustodySpan.fromMap(record);
+                        final bool hasAttachment = readAttachmentUrls(record).isNotEmpty;
+                        final String notes = (record['notes'] ?? "").toString().trim();
 
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -142,10 +170,10 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
                             GestureDetector(
                               onTap: () => Navigator.pushNamed(context, CustodyDetailsScreen.routeName,arguments: record),
                               child: _buildCustodyItem(
-                                date: startDate != null ? DateFormat('MMM dd').format(startDate) : "N/A",
-                                title: record['isScheduled'] == true ? "Scheduled Custody" : "Non-Scheduled Custody",
-                                desc: record['notes'] ?? "No notes provided",
-                                isFulfilled: isFulfilled,
+                                date: span?.label ?? "N/A",
+                                title: _childNames(insightProv.selectedCase, record['childIds']),
+                                desc: notes.isEmpty ? "No notes provided" : notes,
+                                nights: span?.nights ?? 0,
                                 hasAttachment: hasAttachment,
                               ),
                             ),
@@ -170,11 +198,21 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
+  // Names of the children an entry is for, e.g. "Emma, Liam".
+  String _childNames(CaseModel? selectedCase, dynamic childIds) {
+    final ids = (childIds as List?)?.map((e) => e.toString()).toSet() ?? {};
+    final names = (selectedCase?.children ?? const <ChildModel>[])
+        .where((c) => ids.contains(c.id))
+        .map((c) => c.name.trim())
+        .toList();
+    return names.isEmpty ? "Custody Entry" : names.join(", ");
+  }
+
   Widget _buildCustodyItem({
     required String date,
     required String title,
     required String desc,
-    required bool isFulfilled,
+    required int nights,
     required bool hasAttachment,
   }) {
     return Container(
@@ -191,7 +229,9 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(date, style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
+              Flexible(
+                child: Text(date, style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
+              ),
               Row(
                 children: [
                   if (hasAttachment)
@@ -204,15 +244,15 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: isFulfilled ? Colors.green.withOpacity(0.1) : Colors.red.withOpacity(0.1),
+                      color: AppColors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      isFulfilled ? "Fulfilled" : "Unfulfilled",
-                      style: TextStyle(
+                      nightsLabel(nights),
+                      style: const TextStyle(
                           fontSize: 10,
                           fontWeight: FontWeight.bold,
-                          color: isFulfilled ? Colors.green : Colors.red
+                          color: AppColors.primary
                       ),
                     ),
                   ),
@@ -239,9 +279,9 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
-  Widget _buildHeaderCard(InsightProvider insightProv) {
-    // Get current month and year for the subtitle
-    final String currentPeriod = DateFormat('MMMM yyyy').format(DateTime.now());
+  // Totals for the entries currently shown (period + child filter + search).
+  Widget _buildHeaderCard(CustodyInsightProvider custodyProv) {
+    final String currentPeriod = Timeframe.describe(custodyProv.currentFilters.selectedTimePeriod);
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -272,33 +312,10 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _buildStat("${insightProv.fulfilledDays}", "Custody Days\n(fulfilled)"),
-              _buildStat("${insightProv.justifiedDays}", "With\nJustification"),
-              // Highlight missed days in red if they exist
-              _buildStat(
-                  "${insightProv.missedDays}",
-                  "Missed Days\n(No Just.)",
-                  color: insightProv.missedDays > 0 ? Colors.red : Colors.black
-              ),
+              _buildStat("${custodyProv.totalNights}", "Total\nNights"),
+              _buildStat("${custodyProv.totalEntries}", "Total\nEntries"),
             ],
           ),
-          const SizedBox(height: 15),
-          const Divider(),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text("Overall Compliance", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.w500)),
-              Text(
-                  "${insightProv.complianceRate.toStringAsFixed(1)}%",
-                  style: const TextStyle(
-                      color: Color(0xFF00C853),
-                      fontWeight: FontWeight.bold,
-                      fontSize: 20
-                  )
-              ),
-            ],
-          )
         ],
       ),
     );
@@ -320,15 +337,13 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
     );
   }
 
+  // No Export here — reports are exported from the main Insights screen.
   PreferredSizeWidget _buildAppBar(String title) {
     return AppBar(
       title: Text(title, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
-      actions: [
-        Container(margin: const EdgeInsets.only(right: 20), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5), decoration: BoxDecoration(color: Colors.blue.shade50, borderRadius: BorderRadius.circular(20)), child: Row(children: const [Text("Export", style: TextStyle(color: Colors.blue)), SizedBox(width: 5), Icon(Icons.upload, size: 16, color: Colors.blue)])),
-      ],
     );
   }
 
@@ -344,7 +359,10 @@ class _CustodyComplianceScreenState extends State<CustodyComplianceScreen>{
         )).toList(),
         onChanged: (value) {
           insightProv.setSelectedCase(value);
-          if (value != null) custodyProv.fetchCustodyRecords((value as CaseModel).id);
+          if (value != null) {
+            custodyProv.fetchCustodyRecords((value as CaseModel).id,
+                timePeriod: custodyProv.currentFilters.selectedTimePeriod);
+          }
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
         dropdownStyleData: DropdownStyleData(decoration: BoxDecoration(borderRadius: BorderRadius.circular(12),color: Colors.white)),

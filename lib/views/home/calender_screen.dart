@@ -9,11 +9,14 @@ import 'package:clearcase/views/home/new_remainder_screen.dart';
 import 'package:clearcase/views/home/scheduled_dates_screen.dart';
 import 'package:clearcase/views/widgets/custom_dialog.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
+import 'package:flutter/gestures.dart' show kTouchSlop;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/utils/calendar_grid.dart';
 import '../../core/utils/custody_span.dart';
 import '../../core/utils/helping_functions.dart';
 import '../widgets/delete_entries_confirmation.dart';
@@ -31,6 +34,19 @@ class CalenderScreen extends StatefulWidget {
 }
 
 class _CalenderScreenState extends State<CalenderScreen> {
+  static const double _rowHeight = 52;
+
+  // --- Swipe-to-select state ---
+  final GlobalKey _calendarKey = GlobalKey();
+  DateTime? _swipeAnchor; // day the finger went down on
+  Offset? _swipeOrigin;
+  bool _swiping = false;
+  bool _lockPageScroll = false;
+
+  // Movement before a press counts as a swipe rather than a tap. Same as the
+  // tap recognizer's own limit, so a press is never both.
+  static const double _swipeSlop = kTouchSlop;
+
   // Undecorated day cell, rounded like the selected / range-end cells so
   // TableCalendar's state-change animation can interpolate between them.
   static const BoxDecoration _plainCellDecoration = BoxDecoration(
@@ -63,9 +79,14 @@ class _CalenderScreenState extends State<CalenderScreen> {
                 }
               },
               child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(
-                  parent: BouncingScrollPhysics(),
-                ),child:  Column(
+                // Page scrolling pauses while a finger is on the day grid, so
+                // a vertical swipe across weeks selects dates instead.
+                physics: _lockPageScroll
+                    ? const NeverScrollableScrollPhysics()
+                    : const AlwaysScrollableScrollPhysics(
+                        parent: BouncingScrollPhysics(),
+                      ),
+                child:  Column(
                     children: [
                       _buildHeader(context),
                       _buildCalendar(context, provider),
@@ -308,7 +329,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
           ),
         ),
       )
-          : TableCalendar<CalendarEvent>(
+          : _buildSwipeSelector(provider, TableCalendar<CalendarEvent>(
+        key: _calendarKey,
+        rowHeight: _rowHeight,
         daysOfWeekHeight: 32,
         sixWeekMonthsEnforced: false,
         firstDay: DateTime.utc(2020, 10, 16),
@@ -482,10 +505,58 @@ class _CalenderScreenState extends State<CalenderScreen> {
                 ),
               ],
             );
-          },   ),      ),
+          },   ),      )),
     );
   }
 
+
+  // Swipe across days to select a range. Uses raw pointer events (outside
+  // the gesture arena) so TableCalendar's own tap / long-press on a day keep
+  // working: a press that doesn't move is still a tap. Once the finger moves
+  // past a small slop the swipe takes over and the range follows the finger
+  // (backwards too), ending on release with the "Add Custody Entry" bar.
+  Widget _buildSwipeSelector(CalendarProvider provider, Widget calendar) {
+    CalendarGrid grid() => CalendarGrid(month: provider.focusedDay, rowHeight: _rowHeight);
+    RenderBox? box() => _calendarKey.currentContext?.findRenderObject() as RenderBox?;
+
+    void endSwipe() {
+      _swipeAnchor = null;
+      _swipeOrigin = null;
+      _swiping = false;
+      if (_lockPageScroll) setState(() => _lockPageScroll = false);
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        final b = box();
+        if (b == null) return;
+        final local = b.globalToLocal(event.position);
+        final day = grid().dayAt(local, b.size);
+        if (day == null) return; // header, weekday row or a blank cell
+        _swipeAnchor = day;
+        _swipeOrigin = event.position;
+        _swiping = false;
+        setState(() => _lockPageScroll = true);
+      },
+      onPointerMove: (event) {
+        final anchor = _swipeAnchor;
+        final b = box();
+        if (anchor == null || b == null) return;
+        if (!_swiping) {
+          if ((event.position - _swipeOrigin!).distance < _swipeSlop) return;
+          _swiping = true;
+          provider.beginSwipe();
+          HapticFeedback.selectionClick();
+        }
+        final day = grid().dayAt(b.globalToLocal(event.position), b.size, clamp: true);
+        if (day != null) provider.updateSwipe(anchor, day);
+      },
+      onPointerUp: (_) => endSwipe(),
+      onPointerCancel: (_) => endSwipe(),
+      child: calendar,
+    );
+  }
 
   // Draws a custody entry as a bar along the bottom of each day it covers.
   // Ends are rounded where an entry starts or finishes and flush where it
@@ -535,7 +606,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
               ),
             ),
             const Spacer(),
-            const Text("or long-press a date", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text("or swipe across dates", style: TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       );
@@ -553,7 +624,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
       subtitle = "Starts ${DateFormat('d MMM yyyy').format(start)}. Now tap the last day — "
           "use the arrows to move to another month.";
     } else {
-      subtitle = "${daysLabel(span.nights + 1)} · ${nightsLabel(span.nights)}";
+      subtitle = "${daysLabel(span.nights + 1)} · ${nightsLabel(span.nights)}\n"
+          "To continue into another month, use the arrows and swipe or tap there.";
     }
 
     return Container(

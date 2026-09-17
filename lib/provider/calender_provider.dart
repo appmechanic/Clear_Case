@@ -6,6 +6,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import '../core/utils/attachments.dart';
 import '../core/utils/custody_span.dart';
+import '../core/utils/date_range_selection.dart';
 import '../models/case_model.dart';
 import '../services/case_selection_service.dart';
 import 'dart:async';
@@ -568,22 +569,44 @@ class CalendarProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// A tap while in range mode: the first tap sets the start, the second the
-  /// end (in either order). Tapping again after a complete range starts over.
-  /// Days can be on different months — the start is kept while the user pages.
-  void selectRangeDay(DateTime day, DateTime focused) {
-    final d = DateTime(day.year, day.month, day.day);
-    _focusedDay = focused;
-    if (_rangeStart == null || _rangeEnd != null) {
-      _rangeStart = d;
-      _rangeEnd = null;
-    } else if (d.isBefore(_rangeStart!)) {
-      _rangeEnd = _rangeStart;
-      _rangeStart = d;
-    } else {
-      _rangeEnd = d;
-    }
+  DateRangeSelection get _selection => _isRangeMode
+      ? DateRangeSelection(start: _rangeStart, end: _rangeEnd)
+      : const DateRangeSelection();
+
+  void _applySelection(DateRangeSelection r) {
+    if (_isRangeMode && _rangeStart == r.start && _rangeEnd == r.end) return;
+    _isRangeMode = true;
+    _rangeStart = r.start;
+    _rangeEnd = r.end;
     notifyListeners();
+  }
+
+  /// A tap while in range mode: the first tap sets the start, the second the
+  /// end (in either order). After that, a tap on another month continues the
+  /// range; a tap on the range's own month starts over.
+  void selectRangeDay(DateTime day, DateTime focused) {
+    _focusedDay = focused;
+    _applySelection(DateRangeSelection.tap(_selection, day));
+    notifyListeners();
+  }
+
+  // Selection as it was when the current swipe began.
+  DateRangeSelection _swipeBase = const DateRangeSelection();
+
+  /// Call once when a swipe starts, before [updateSwipe].
+  void beginSwipe() => _swipeBase = _selection;
+
+  /// A swipe across the calendar: [anchor] is the day the finger went down
+  /// on, [current] the day it's over now (either direction). On a month the
+  /// range doesn't start/end in, it continues the range (see
+  /// DateRangeSelection) — so 26–30 Sep, then 1–5 Oct on the next page,
+  /// gives 26 Sep – 5 Oct.
+  void updateSwipe(DateTime anchor, DateTime current) {
+    _applySelection(DateRangeSelection.swipe(
+      base: _swipeBase,
+      anchor: anchor,
+      current: current,
+    ));
   }
 
   void cancelRangeSelection() {

@@ -8,13 +8,17 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:clearcase/core/utils/attachments.dart';
+import 'package:clearcase/core/utils/child_names.dart';
+import 'package:clearcase/core/utils/helping_functions.dart';
 import 'package:clearcase/views/widgets/attachment_picker_widget.dart';
 import 'package:clearcase/views/widgets/attachment_preview.dart';
 import 'package:clearcase/views/widgets/file_type_icon.dart';
 import '../../provider/calender_provider.dart';
 import '../../provider/non_compliance_provider.dart';
+import '../widgets/child_multi_selector.dart';
 import '../widgets/custom_dropdown.dart';
 import '../widgets/evidence_source_badge.dart';
+import '../widgets/related_party_picker.dart';
 
 class NewNonComplianceScreen extends StatefulWidget {
   static const routeName = '/new-non-compliance';
@@ -29,12 +33,14 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
   final _proofController = TextEditingController();
   final _descNode = FocusNode();
   final _proofNode = FocusNode();
-  final _nameController = TextEditingController();
-  final _nameNode = FocusNode();
+  final _party = RelatedPartyController();
 
   DateTime selectedDate = DateTime.now();
   String selectedType = "Late for pickup/handover";
-  String selectedParty = "Mother";
+  // The record's saved party, once loaded in edit mode. Seeds the picker.
+  String? _loadedParty;
+  String? _loadedName;
+  Set<String> selectedChildIds = {};
   String severity = "Serious";
   bool flagEntry = false;
   bool isInitialized = false;
@@ -59,6 +65,11 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
       } else if (args is DateTime) {
         selectedDate = args;
       }
+      // A one-child case has only one possible answer.
+      final children = calProvider.selectedCase?.children ?? const [];
+      if (_editingNonComplianceId == null && children.length == 1) {
+        selectedChildIds = {children.first.id};
+      }
       isInitialized = true;
     }
   }
@@ -82,9 +93,10 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
           _proofController.text = data['proof'] ?? '';
           selectedDate = (data['date'] as Timestamp?)?.toDate() ?? DateTime.now();
           selectedType = data['type'] ?? "Late for pickup/handover";
-          selectedParty = data['party'] ?? "Mother";
+          _loadedParty = data['party'] ?? '';
+          _loadedName = data['name'] ?? '';
+          selectedChildIds = readChildIds(data).toSet();
           severity = data['severity'] ?? "Serious";
-          _nameController.text = data['name'] ?? '';
           flagEntry = data['flagEntry'] ?? false;
           _existingAttachmentUrls = readAttachmentUrls(data);
         });
@@ -94,14 +106,26 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
     }
   }
 
-  void _submitForm(NonComplianceProvider provider, String caseId) {
+  void _submitForm(NonComplianceProvider provider, CalendarProvider calProvider, String caseId) {
+    if (selectedChildIds.isEmpty) {
+      showSnackBar(context, "Please select at least one child");
+      return;
+    }
+    if (_party.relation.isEmpty) {
+      showSnackBar(context, "Please select the related party's relationship");
+      return;
+    }
+    if (_party.saveToCase) {
+      calProvider.saveRelatedParty(caseId, relation: _party.relation, name: _party.name);
+    }
     final data = {
       'date': selectedDate,
       'type': selectedType,
       'severity': severity,
       'description': _descController.text.trim(),
-      'name': _nameController.text.trim(),
-      'party': selectedParty,
+      'name': _party.name,
+      'party': _party.relation,
+      'childIds': selectedChildIds.toList(),
       'proof': _proofController.text.trim(),
       'flagEntry': flagEntry,
     };
@@ -119,8 +143,6 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
     _proofController.dispose();
     _descNode.dispose();
     _proofNode.dispose();
-    _nameController.dispose();
-    _nameNode.dispose();
     super.dispose();
   }
 
@@ -139,6 +161,12 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ChildMultiSelector(
+                  caseModel: selectedCase,
+                  selectedIds: selectedChildIds,
+                  onChanged: (ids) => setState(() => selectedChildIds = ids),
+                ),
+                const SizedBox(height: 15),
                 _buildClickableField("Date", DateFormat('dd MMM yyyy').format(selectedDate), () async {
                   final d = await showDatePicker(context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2030));
                   if (d != null) setState(() => selectedDate = d);
@@ -159,27 +187,14 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
                 const SizedBox(height: 15),
                 CustomTextField(labelText: "Description", hintText: "Describe the non-compliance...", maxLines: 3, controller: _descController, node: _descNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
                 const SizedBox(height: 15),
-                 CustomTextField(
-                  labelText: "Name of the Related party",
-                  hintText: "Enter the name",
-                  maxLines: 1,
-                  controller: _nameController,
-                  node: _nameNode,
-                  borderRadius: 8,
-                  backgroundColor: Colors.grey.shade200,
+                RelatedPartyPicker(
+                  caseModel: selectedCase,
+                  controller: _party,
+                  initialRelation: _loadedParty,
+                  initialName: _loadedName,
                 ),
                 const SizedBox(height: 15),
-                _buildLabel("Related Party"),
-                CustomDropDown<String>(
-                  value: selectedParty,
-                  hint: "Select Party",
-                  items: ["Mother", "Father"]
-                      .map((v) => DropdownMenuItem(value: v, child: Text(v)))
-                      .toList(),
-                  onChanged: (v) => setState(() => selectedParty = v!),
-                ),
-                const SizedBox(height: 15),
-                CustomTextField(labelText: "Evidence/Proof (Optional)", hintText: "Summarize proof", maxLines: 3, controller: _proofController, node: _proofNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Evidence (Optional)", hintText: "Describe the evidence", maxLines: 3, controller: _proofController, node: _proofNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
                 const SizedBox(height: 15),
 
                 // Attachments Section
@@ -194,7 +209,7 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
 
                 SizedBox(width: double.infinity, height: 50, child: ElevatedButton(
                   style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-                  onPressed: selectedCase == null ? null : () => _submitForm(nonComplianceProvider, selectedCase.id),
+                  onPressed: selectedCase == null ? null : () => _submitForm(nonComplianceProvider, calProvider, selectedCase.id),
                   child: Text(_editingNonComplianceId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white)),
                 )),
               ],
@@ -266,6 +281,10 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
                   if (id != null) {
                     final selected = calProvider.allCases.firstWhere((c) => c.id == id);
                     calProvider.setSelectedCase(selected);
+                    // Children belong to a case; don't carry a selection across.
+                    setState(() => selectedChildIds = selected.children.length == 1
+                        ? {selected.children.first.id}
+                        : {});
                   }
                 },
               ),

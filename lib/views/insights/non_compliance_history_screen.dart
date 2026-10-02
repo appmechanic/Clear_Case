@@ -7,6 +7,7 @@ import '../../models/non_compliance_model.dart';
 import '../../models/case_model.dart';
 import '../../models/filter_model.dart';
 import '../../provider/insight_provider.dart';
+import '../widgets/child_tag.dart';
 import '../widgets/custom_search_box.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 
@@ -217,7 +218,7 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
                                     arguments: record,
                                   );
                                 },
-                                child: _buildNonComplianceItem(record),
+                                child: _buildNonComplianceItem(record, insightProv.selectedCase),
                               ),
                             ],
                           );
@@ -294,7 +295,7 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
     );
   }
 
-  Widget _buildNonComplianceItem(NonComplianceRecordModel record) {
+  Widget _buildNonComplianceItem(NonComplianceRecordModel record, CaseModel? selectedCase) {
     Color severityColor = record.severity == "Serious" ? Colors.red :
     (record.severity == "Minor" ? Colors.green : Colors.orange);
 
@@ -310,7 +311,10 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
             children: [
               Text(record.date != null ? DateFormat('MMM dd').format(record.date!) : "N/A",
                   style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
-              Row(
+              const SizedBox(width: 10),
+              Flexible(
+                child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   if (record.attachments != null && record.attachments!.isNotEmpty)
                     Container(
@@ -319,6 +323,8 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
                       decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
                       child: const Icon(Icons.attachment, size: 14, color: Color(0xFF6200EE)),
                     ),
+                  Flexible(child: ChildTag.forIds(record.childIds, selectedCase)),
+                  const SizedBox(width: 8),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                     decoration: BoxDecoration(
@@ -328,7 +334,8 @@ class _NonComplianceHistoryScreenState extends State<NonComplianceHistoryScreen>
                         style: TextStyle(color: severityColor, fontWeight: FontWeight.bold, fontSize: 10)),
                   ),
                 ],
-              )
+              ),
+              ),
             ],
           ),
           const SizedBox(height: 12),

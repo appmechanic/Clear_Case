@@ -1,3 +1,4 @@
+import '../core/utils/device_timezone.dart';
 import 'package:clearcase/core/utils/helping_functions.dart';
 import 'package:clearcase/provider/setting_provider.dart';
 import 'package:clearcase/services/notification_service.dart';
@@ -7,7 +8,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
 import '../views/auth/email_verification_screen.dart';
@@ -94,12 +94,7 @@ class AuthProvider extends ChangeNotifier {
       User? user = userCredential.user;
       await _authService.updateUserName("$firstName $lastName");
 
-      final dynamic tz = await FlutterTimezone.getLocalTimezone();
-
-       String rawTz = tz.toString();
-      String currentTimeZone = rawTz.contains('(')
-          ? rawTz.split('(')[1].split(',')[0]
-          : rawTz;
+      String currentTimeZone = await deviceTimezone();
 
       debugPrint("Clean Timezone: $currentTimeZone");
       final offset = DateTime.now().timeZoneOffset;
@@ -147,11 +142,7 @@ class AuthProvider extends ChangeNotifier {
 
          String? token = await PushNotificationService.fetchToken();
 
-         final dynamic tz = await FlutterTimezone.getLocalTimezone();
-        String rawTz = tz.toString();
-        String currentTimeZone = rawTz.contains('(')
-            ? rawTz.split('(')[1].split(',')[0]
-            : rawTz;
+         String currentTimeZone = await deviceTimezone();
 
         final offset = DateTime.now().timeZoneOffset;
         final String offsetString = "${offset.isNegative ? '-' : '+'}${offset.inHours.toString().padLeft(2, '0').replaceFirst('-', '')}:${(offset.inMinutes.abs() % 60).toString().padLeft(2, '0')}";
@@ -225,11 +216,7 @@ class AuthProvider extends ChangeNotifier {
 
       final String? fcmToken = await PushNotificationService.fetchToken();
 
-      final dynamic tz = await FlutterTimezone.getLocalTimezone();
-      final String rawTz = tz.toString();
-      final String currentTimeZone = rawTz.contains('(')
-          ? rawTz.split('(')[1].split(',')[0]
-          : rawTz;
+      final String currentTimeZone = await deviceTimezone();
 
       final offset = DateTime.now().timeZoneOffset;
       final String offsetString =
@@ -341,11 +328,7 @@ class AuthProvider extends ChangeNotifier {
 
       final String? fcmToken = await PushNotificationService.fetchToken();
 
-      final dynamic tz = await FlutterTimezone.getLocalTimezone();
-      final String rawTz = tz.toString();
-      final String currentTimeZone = rawTz.contains('(')
-          ? rawTz.split('(')[1].split(',')[0]
-          : rawTz;
+      final String currentTimeZone = await deviceTimezone();
 
       final offset = DateTime.now().timeZoneOffset;
       final String offsetString =

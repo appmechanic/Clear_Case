@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/utils/attachments.dart';
+import '../core/utils/child_names.dart';
 
 class NonComplianceRecordModel {
   String id;
@@ -9,7 +10,10 @@ class NonComplianceRecordModel {
   String party; // e.g., "Mother", "Father"
   String severity; // "Minor", "Significant", "Serious"
   String description;
-  String proof;
+  String proof; // shown as "Evidence"
+  // Children the record is about. Empty on records created before child
+  // selection existed — those apply to every child.
+  List<String> childIds;
   DateTime? date;
   List<String>? attachments;
   bool flagEntry;
@@ -22,6 +26,7 @@ class NonComplianceRecordModel {
     required this.severity,
     required this.description,
     required this.proof,
+    this.childIds = const [],
     this.date,
     this.attachments,
     this.flagEntry = false,
@@ -36,6 +41,7 @@ class NonComplianceRecordModel {
       severity: map['severity'] ?? 'Minor',
       description: map['description'] ?? '',
       proof: map['proof'] ?? '',
+      childIds: readChildIds(map),
       flagEntry: map['flagEntry'] ?? false,
       attachments: readAttachmentUrls(map),
       date: (map['date'] as Timestamp?)?.toDate(),

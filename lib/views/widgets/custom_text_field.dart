@@ -45,7 +45,11 @@ class CustomTextField extends StatefulWidget {
     this.isWritable = true,
     this.isReadOnly = false,
     this.borderRadius = 0,
+    this.prefixText,
   });
+
+  /// Always-visible text before the input, e.g. "\$" on an amount.
+  final String? prefixText;
 
   String? hintText;
   Function()? tapOn;
@@ -129,6 +133,18 @@ class _CustomTextFieldState extends State<CustomTextField> {
               borderRadius: BorderRadius.circular(4),
             ),
             floatingLabelBehavior: FloatingLabelBehavior.always,
+            // A prefixIcon rather than prefixText: prefixText is hidden until
+            // the field is focused or filled.
+            prefixIcon: widget.prefixText == null
+                ? null
+                : Padding(
+                    padding: const EdgeInsets.only(left: 12, right: 2),
+                    child: Text(
+                      widget.prefixText!,
+                      style: TextStyle(color: widget.textFieldTextColor, fontSize: 18, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+            prefixIconConstraints: const BoxConstraints(minWidth: 0, minHeight: 0),
             suffixIcon: widget.isPassword
                 ? IconButton(
               onPressed: () {

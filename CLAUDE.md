@@ -18,7 +18,7 @@ flutter test                     # see caveat below
 flutter test test/widget_test.dart -p "name of test"
 ```
 
-Cloud Functions ([functions/](functions/), Node 20):
+Cloud Functions ([functions/](functions/), Node 22 — run `npm ci` in `functions/` once before deploying):
 
 ```bash
 cd functions
@@ -50,10 +50,12 @@ users/{uid}                      profile, fcmToken, tokenUpdatedAt, timezone,
         ├── paymentRecords/{id}
         ├── disputeRecords/{id}/logs/{id}
         ├── nonComplianceRecords/{id}
-        ├── scheduledRules/{id}
-        ├── reminders/{id}
+        ├── scheduledRules/{id}  legacy: written by the old case-setup "Scheduled" flow
+        ├── reminders/{id}       single or repeated (weekdays × every N weeks)
         └── flaggedEvents/{id}
 ```
+
+Reminders replaced "Scheduled": new schedules are repeated reminders (`ReminderModel` in `remainder_model.dart`, free-text tag stored as `type`, ARGB `color`, `weekdays`, `intervalWeeks`, optional `ruleEndDate`). Existing `scheduledRules` docs are still drawn on the calendar, notified, and listed (edit/delete via `RuleConfigurationScreen`) under Reminders → Repeated, but nothing creates new ones. Disputes and non-compliance records carry `childIds` like custody/payment; an empty list means a legacy whole-case record — use the helpers in `lib/core/utils/child_names.dart`. Cases may carry `relatedPartyName` / `relatedPartyRelation`, which pre-fill those two forms.
 
 Models in [lib/models/](lib/models/) are hand-written (no freezed/json_serializable); `fromMap` factories take the `documentId` as a separate positional arg since Firestore data maps exclude the id.
 
@@ -71,7 +73,7 @@ The three services use three different patterns: `PushNotificationService` is al
 
 **Auth** ([lib/views/auth/auth_controller.dart](lib/views/auth/auth_controller.dart)): `SplashScreen` is the initial route and does a one-shot imperative check in `addPostFrameCallback` — there is no reactive `authStateChanges` gate in the routing layer. Branch order: no user → Login; not `emailVerified` → EmailVerification; no cases → CaseSetup; else MainScreen. Email/password + Google + Apple (iOS only; Android stays Google-only). Apple uses the nonce flow and account deletion does reauth + token revocation for App Store 5.1.1(v) — see [docs/superpowers/specs/2026-05-20-apple-sign-in-design.md](docs/superpowers/specs/2026-05-20-apple-sign-in-design.md). `AuthService` errors are thrown as raw `String`s, not typed exceptions.
 
-**Notifications** are server-driven: [functions/index.js](functions/index.js) exports one `onSchedule` function running every 5 min in UTC. It reads each user's `notificationTime` + `timezone`, walks their `reminders` and `scheduledRules`, and sends FCM. Dedupe is a per-doc `lastNotifiedDate === todayStr` guard, deliberately using a window trigger (`nowLocal >= triggerLocal`) rather than exact-minute matching to tolerate Scheduler drift and DST. `data.kind` (`"reminder"` / `"scheduledRule"`) routes the tap client-side via `PushNotificationService.navigatorKey`. The offset tables map UI strings to day counts — if you change a dropdown label in the app, update the table in `index.js` or notifications silently stop matching.
+**Notifications** are server-driven: [functions/index.js](functions/index.js) exports one `onSchedule` function running every 5 min in UTC. It reads each user's `notificationTime` + `timezone`, walks their `reminders` and `scheduledRules`, and sends FCM. Dedupe is a per-doc `lastNotifiedDate === todayStr` guard, deliberately using a window trigger (`nowLocal >= triggerLocal`) rather than exact-minute matching to tolerate Scheduler drift and DST. `data.kind` (`"reminder"` / `"scheduledRule"`) routes the tap client-side via `PushNotificationService.navigatorKey`. The offset tables map UI strings to day counts — if you change a dropdown label in the app, update the table in `index.js` or notifications silently stop matching. `reminderOccursOn` in `index.js` mirrors `ReminderModel.occursOn`; change both together (cases in [test/reminder_schedule_test.dart](test/reminder_schedule_test.dart)).
 
 No `firebase_options.dart`; `Firebase.initializeApp()` relies on native config. `firebase.json` deploys functions only — Firestore rules/indexes and Storage rules are not managed from this repo.
 

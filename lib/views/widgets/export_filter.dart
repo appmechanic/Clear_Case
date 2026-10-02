@@ -312,7 +312,12 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
 
   // --- 4. Include Checkboxes ---
   Widget _buildIncludeCheckboxes() {
-    return Column(
+    // The tiles need their own Material: the sheet's white container would
+    // otherwise sit between them and the bottom sheet's Material, which
+    // Flutter reports as "ink splashes may be invisible" on every rebuild.
+    return Material(
+      type: MaterialType.transparency,
+      child: Column(
       children: includeInReport.keys.map((key) {
         return CheckboxListTile(
           title: Text(key, style: const TextStyle(fontSize: 14)),
@@ -323,6 +328,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
           onChanged: (val) => setState(() => includeInReport[key] = val!),
         );
       }).toList(),
+      ),
     );
   }
 

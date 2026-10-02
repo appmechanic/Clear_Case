@@ -143,19 +143,11 @@ class SettingsScreen extends StatelessWidget {
           const Text("Notifications",style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
           const SizedBox(height: 15),
 
-          // 1. Scheduled Dates Toggle
-          _buildToggleItem(
-            title: "Scheduled",
-            subtitle: "Get alerts for your custody/payments schedule",
-            value: provider.isScheduledDatesEnabled,
-            onChanged: provider.toggleScheduledDates,
-          ),
-          const Divider(height: 30),
-
-          // 2. Reminders Toggle
+          // 1. Reminders Toggle (single and repeated reminders, including
+          // schedules set up before reminders replaced "Scheduled")
           _buildToggleItem(
             title: "Reminders",
-            subtitle: "Get alerts for your important date",
+            subtitle: "Get alerts for your reminders and repeated schedules",
             value: provider.isRemindersEnabled,
             onChanged: provider.toggleReminders,
           ),

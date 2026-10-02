@@ -5,9 +5,11 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import '../core/utils/attachments.dart';
+import '../core/utils/child_names.dart';
 import '../core/utils/custody_span.dart';
 import '../core/utils/date_range_selection.dart';
 import '../models/case_model.dart';
+import '../models/remainder_model.dart';
 import '../services/case_selection_service.dart';
 import 'dart:async';
 
@@ -79,6 +81,14 @@ class CalendarProvider extends ChangeNotifier {
   bool _fetchInFlight = false;
   bool _pendingRefetch = false;
 
+  // The selected case's reminders, and the schedules saved by the old
+  // case-setup flow (`scheduledRules` docs, with 'id' added). Rebuilt on
+  // every fetch alongside _events.
+  List<ReminderModel> _reminders = [];
+  List<Map<String, dynamic>> _scheduledRules = [];
+  List<ReminderModel> get reminders => _reminders;
+  List<Map<String, dynamic>> get scheduledRules => _scheduledRules;
+
   List<CaseModel> get allCases => _allCases;
   CaseModel? get selectedCase => _selectedCase;
   DateTime get focusedDay => _focusedDay;
@@ -136,6 +146,8 @@ class CalendarProvider extends ChangeNotifier {
     _fetchInFlight = false;
     _pendingRefetch = false;
     _events.clear();
+    _reminders = [];
+    _scheduledRules = [];
     _allCases = [];
     _selectedCase = null;
     CaseSelectionService.instance.clear();
@@ -246,6 +258,8 @@ class CalendarProvider extends ChangeNotifier {
     // screens see a changed id and follow.
     CaseSelectionService.instance.select(selected?.id);
     _events.clear();
+    _reminders = [];
+    _scheduledRules = [];
     _isRangeMode = false;
     _rangeStart = null;
     _rangeEnd = null;
@@ -387,6 +401,8 @@ class CalendarProvider extends ChangeNotifier {
             description: data['description'],
             category: data['category'],
             party: data['party'],
+            childNames: _resolveChildNames(readChildIds(data)),
+            childIds: readChildIds(data),
             isFlagged: data['flagEntry'] == true,
             attachmentUrls: readAttachmentUrls(data),
           ));
@@ -404,6 +420,8 @@ class CalendarProvider extends ChangeNotifier {
             date: date,
             type: EventType.nonCompliance,
             description: data['description'],
+            childNames: _resolveChildNames(readChildIds(data)),
+            childIds: readChildIds(data),
             isFlagged: data['flagEntry'] == true,
             party: data['party'],
             severity: data['severity'],
@@ -431,6 +449,8 @@ class CalendarProvider extends ChangeNotifier {
           .collection('cases').doc(caseId)
           .collection('scheduledRules')
           .get();
+
+      _scheduledRules = snapshot.docs.map((d) => {...d.data(), 'id': d.id}).toList();
 
       for (var doc in snapshot.docs) {
         final data = doc.data();
@@ -464,6 +484,8 @@ class CalendarProvider extends ChangeNotifier {
             type: category == 'custody'
                 ? EventType.custody
                 : (category == 'payment' ? EventType.payment : EventType.reminder),
+            // The rule doc id, so a tap can open the rule for editing.
+            category: doc.id,
             description: data['notes'],
             childNames: _resolveChildNames(
               (data['appliedChildren'] as List? ?? [])
@@ -622,11 +644,21 @@ class CalendarProvider extends ChangeNotifier {
     return a.year == b.year && a.month == b.month && a.day == b.day;
   }
 
-  String getCaseDisplayName(CaseModel caseItem) {
-    // Show the child name(s); fall back to the case number only when a case
-    // has no children attached.
-    if (caseItem.children.isEmpty) return caseItem.caseNumber;
-    return caseItem.children.map((c) => c.name.trim()).join(' & ');
+  String getCaseDisplayName(CaseModel caseItem) => caseDisplayName(caseItem);
+
+  /// Saves [relation] / [name] as the case's related party, which pre-fills
+  /// new disputes and non-compliance records. The cases stream picks it up.
+  Future<void> saveRelatedParty(String caseId, {required String relation, required String name}) async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+    try {
+      await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId).update({
+        'relatedPartyRelation': relation,
+        'relatedPartyName': name,
+      });
+    } catch (e) {
+      debugPrint("Save related party error: $e");
+    }
   }
 
   Future<void> fetchRemindersForCase(String caseId) async {
@@ -636,39 +668,65 @@ class CalendarProvider extends ChangeNotifier {
       final snapshot = await _firestore.collection('users').doc(user.uid)
           .collection('cases').doc(caseId).collection('reminders').get();
 
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        DateTime start = (data['date'] as Timestamp).toDate();
-        DateTime? end = (data['ruleEndDate'] as Timestamp?)?.toDate();
-        String repeat = data['repeatOption'] ?? "None";
+      _reminders = snapshot.docs.map((d) => ReminderModel.fromMap(d.data(), d.id)).toList();
 
-        List<DateTime> dates = _generateRecurringDates(start, end, repeat);
-        for (DateTime date in dates) {
+      // Repeated reminders are generated from their start to two years past
+      // today (or their end date), like the old scheduled rules.
+      final horizon = DateTime.now().add(const Duration(days: 730));
+      for (final reminder in _reminders) {
+        final dates = reminder.isRepeat
+            ? reminder.occurrencesBetween(reminder.date, horizon).take(_maxReminderOccurrences)
+            : [reminder.date];
+        for (final date in dates) {
           _addEventToMap(CalendarEvent(
-            id: doc.id,
-            title: data['title'] ?? 'Reminder',
+            id: reminder.id!,
+            title: reminder.title.isEmpty ? 'Reminder' : reminder.title,
             date: date,
             type: EventType.reminder,
-            description: data['description'],
+            description: reminder.description,
+            category: reminder.tag,
+            color: reminder.color,
+            isRepeatedReminder: reminder.isRepeat,
           ));
         }
       }
     } catch (e) { debugPrint("Reminder error: $e"); }
   }
 
-  List<DateTime> _generateRecurringDates(DateTime start, DateTime? end, String repeat) {
-    List<DateTime> dates = [start];
-    DateTime limit = end ?? start.add(const Duration(days: 365));
-    DateTime current = start;
-    if (repeat == "None") return dates;
-    while (current.isBefore(limit)) {
-      if (repeat == "Daily") current = current.add(const Duration(days: 1));
-      else if (repeat == "Weekly") current = current.add(const Duration(days: 7));
-      else if (repeat == "Monthly") current = DateTime(current.year, current.month + 1, current.day);
-      else break;
-      if (!current.isAfter(limit)) dates.add(current);
+  // Caps one repeated reminder's generated days (daily-ish for ~5 years).
+  static const int _maxReminderOccurrences = 2000;
+
+  /// Reminders from today onwards — single, repeated, and the old case-setup
+  /// schedules — in date order, one entry per occurrence.
+  List<CalendarEvent> upcomingReminders({int days = 90, int limit = 100}) {
+    final today = DateTime.now();
+    final start = DateTime(today.year, today.month, today.day);
+    final end = start.add(Duration(days: days));
+    final keys = _events.keys
+        .where((d) => !d.isBefore(start) && !d.isAfter(end))
+        .toList()
+      ..sort();
+    final result = <CalendarEvent>[];
+    for (final day in keys) {
+      for (final e in _events[day]!) {
+        if (e.type == EventType.reminder || e.isScheduledRule) result.add(e);
+      }
+      if (result.length >= limit) break;
     }
-    return dates;
+    return result.take(limit).toList();
+  }
+
+  /// Deletes a schedule saved by the old case-setup flow.
+  Future<void> deleteScheduledRule(String ruleId) async {
+    final user = _auth.currentUser;
+    final caseId = _selectedCase?.id;
+    if (user == null || caseId == null) return;
+    try {
+      await _firestore.collection('users').doc(user.uid).collection('cases').doc(caseId)
+          .collection('scheduledRules').doc(ruleId).delete();
+    } catch (e) {
+      debugPrint("Delete rule error: $e");
+    }
   }
 
   List<String> _resolveChildNames(List<dynamic> childIds) {

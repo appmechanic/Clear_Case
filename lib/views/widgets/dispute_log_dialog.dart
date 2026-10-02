@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/utils/attachments.dart';
 import '../../provider/dispute_insight_provider.dart';
 import 'attachment_picker_widget.dart';
 import 'attachment_preview.dart';
@@ -10,11 +11,11 @@ import 'file_type_icon.dart';
 import 'custom_text_field.dart';
 import 'evidence_source_badge.dart';
 
-/// Add/edit dialog for a dispute log. Shared by DisputeDetailsScreen (list rows
-/// and "Add New Log") and DisputeLogViewerScreen (full-screen reader).
+/// Add/edit dialog for a dispute log, opened from DisputeDetailsScreen (each
+/// log's edit button and "Add New Log").
 ///
-/// Owns its own busy state: it is used from two different screens, so it cannot
-/// reach into a host's `_isLoading`. Resolves true when a log was saved.
+/// Owns its own busy state rather than reaching into a host's `_isLoading`.
+/// Resolves true when a log was saved.
 Future<bool?> showDisputeLogDialog(
   BuildContext context, {
   required String caseId,
@@ -64,7 +65,7 @@ class _DisputeLogDialogState extends State<_DisputeLogDialog> {
     _titleC = TextEditingController(text: widget.existingLog?['title']);
     _descC = TextEditingController(text: widget.existingLog?['description']);
     _currentUrls = widget.existingLog != null
-        ? List<String>.from(widget.existingLog!['attachments'] ?? [])
+        ? List<String>.from(readAttachmentUrls(widget.existingLog))
         : [];
   }
 

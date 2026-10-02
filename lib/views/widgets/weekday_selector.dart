@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// A row of 7 circular day chips (S M T W T F S) for picking one or more
+/// A row of 7 circular day chips (M T W T F S S) for picking one or more
 /// weekdays. Values use Dart's [DateTime.weekday] convention:
 /// Monday = 1 ... Sunday = 7.
 class WeekdaySelector extends StatelessWidget {
@@ -16,15 +16,16 @@ class WeekdaySelector extends StatelessWidget {
     required this.onToggle,
   });
 
-  // Display order starts on Sunday: (label, DateTime.weekday value)
+  // Display order starts on Monday, like the calendar:
+  // (label, DateTime.weekday value)
   static const List<MapEntry<String, int>> _days = [
-    MapEntry('S', DateTime.sunday),
     MapEntry('M', DateTime.monday),
     MapEntry('T', DateTime.tuesday),
     MapEntry('W', DateTime.wednesday),
     MapEntry('T', DateTime.thursday),
     MapEntry('F', DateTime.friday),
     MapEntry('S', DateTime.saturday),
+    MapEntry('S', DateTime.sunday),
   ];
 
   @override

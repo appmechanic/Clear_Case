@@ -7,6 +7,11 @@ import '../../provider/dispute_insight_provider.dart';
 import '../widgets/attachment_thumbnail.dart';
 import '../widgets/dispute_log_dialog.dart';
 
+/// UNUSED — nothing navigates here any more. DisputeDetailsScreen now shows
+/// every log of a dispute on one vertical page. Kept only because its route is
+/// still registered in routers.dart; delete this file together with that
+/// import and route.
+///
 /// Full-screen reader for a dispute's logs. Swipe or use Previous/Next to move
 /// between entries; the whole entry is readable without expanding anything.
 ///

@@ -14,12 +14,14 @@ initializeApp();
 // Named (non-default) Firestore database used by the Flutter app.
 const db = getFirestore("clearcase");
 
-// Reminder doc → days to subtract from event date.
+// Reminder doc → days to subtract from event date. Labels match
+// remindMeOptions in lib/models/remainder_model.dart.
 const REMIND_OFFSET_DAYS = {
   "On day of event": 0,
   "1 day before": 1,
   "A week before": 7,
 };
+const REMINDER_OFF = "No notification";
 
 // scheduledRules doc → days to shift the entire [start, end] window earlier.
 const SCHEDULED_RULE_OFFSET_DAYS = {
@@ -49,6 +51,52 @@ function formatScheduledTime(timeStr) {
   const m = parseInt(parts[1], 10);
   if (isNaN(h) || isNaN(m)) return timeStr;
   return DateTime.fromObject({ hour: h, minute: m }).toFormat("h:mm a");
+}
+
+// Whether a reminder falls on `day` (a luxon DateTime at start of day in the
+// user's zone). Mirrors ReminderModel.occursOn in the app: a single reminder
+// is on its date; a repeated one is on its chosen weekdays (Mon=1..Sun=7) in
+// every `intervalWeeks`-th week, counting from the week of its start date,
+// between that date and its optional ruleEndDate.
+function reminderOccursOn(reminder, day, timezone) {
+  const start = DateTime.fromJSDate(reminder.date.toDate())
+    .setZone(timezone)
+    .startOf("day");
+  const weekdays = Array.isArray(reminder.weekdays) ? reminder.weekdays : [];
+  if (reminder.isRepeat !== true || weekdays.length === 0) {
+    return day.hasSame(start, "day");
+  }
+  if (day < start) return false;
+  if (reminder.ruleEndDate) {
+    const end = DateTime.fromJSDate(reminder.ruleEndDate.toDate())
+      .setZone(timezone)
+      .startOf("day");
+    if (day > end) return false;
+  }
+  if (!weekdays.includes(day.weekday)) return false;
+  const interval = [1, 2, 3, 4].includes(reminder.intervalWeeks)
+    ? reminder.intervalWeeks
+    : 1;
+  const startMonday = start.minus({ days: start.weekday - 1 });
+  const dayMonday = day.minus({ days: day.weekday - 1 });
+  // Round: a DST change makes the span a few hours off whole days.
+  const weeks = Math.round(dayMonday.diff(startMonday, "days").days / 7);
+  return weeks % interval === 0;
+}
+
+// The zone to evaluate a user's day in. `timezone` should be an IANA name
+// ("Australia/Sydney"), but app builds before Oct 2026 saved the literal
+// "TimezoneInfo". Fall back to the fixed `utcOffset` the app also saves
+// ("+10:00"); it ignores later DST changes but is right to within an hour.
+function resolveZone(user) {
+  const tz = user.timezone;
+  if (tz && DateTime.now().setZone(tz).isValid) return tz;
+  const m = /^([+-])(\d{1,2}):?(\d{2})$/.exec(String(user.utcOffset || "").trim());
+  if (m) {
+    const zone = `UTC${m[1]}${parseInt(m[2], 10)}${m[3] === "00" ? "" : ":" + m[3]}`;
+    if (DateTime.now().setZone(zone).isValid) return zone;
+  }
+  return null;
 }
 
 function joinChildNames(appliedChildren) {
@@ -105,15 +153,18 @@ exports.pushNotifications = onSchedule(
       const userId = userDoc.id;
       const fcmToken = user.fcmToken;
       const notificationTime = user.notificationTime;
-      const timezone = user.timezone || "UTC";
-
       if (!fcmToken || !notificationTime) continue;
 
-      const nowLocal = nowUtc.setZone(timezone);
-      if (!nowLocal.isValid) {
-        logger.warn("Invalid timezone for user", { userId, timezone });
+      const timezone = resolveZone(user);
+      if (!timezone) {
+        logger.warn("No usable timezone for user", {
+          userId,
+          timezone: user.timezone,
+          utcOffset: user.utcOffset,
+        });
         continue;
       }
+      const nowLocal = nowUtc.setZone(timezone);
 
       // Window-based trigger: fire once we're at or past the user's
       // notificationTime today, and rely on each doc's lastNotifiedDate guard
@@ -159,16 +210,14 @@ exports.pushNotifications = onSchedule(
             scannedReminders++;
             const reminder = reminderDoc.data();
             if (!reminder.date) continue;
+            if (reminder.remindMeOption === REMINDER_OFF) continue;
 
             const offsetDays = REMIND_OFFSET_DAYS[reminder.remindMeOption];
             if (offsetDays === undefined) continue;
 
-            const eventDate = DateTime.fromJSDate(reminder.date.toDate())
-              .setZone(timezone)
-              .startOf("day");
-            const triggerDate = eventDate.minus({ days: offsetDays });
-
-            if (triggerDate.toISODate() !== todayStr) continue;
+            // Notify today when the reminder falls `offsetDays` from now.
+            const eventDay = todayStart.plus({ days: offsetDays });
+            if (!reminderOccursOn(reminder, eventDay, timezone)) continue;
             if (reminder.lastNotifiedDate === todayStr) continue;
 
             try {

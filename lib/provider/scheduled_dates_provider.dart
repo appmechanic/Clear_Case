@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import '../core/utils/child_names.dart';
 import '../models/case_model.dart';
 import '../services/case_selection_service.dart';
 
@@ -194,12 +195,7 @@ class ScheduledDatesProvider extends ChangeNotifier {
 
   String getCaseDisplayName(dynamic caseItem) {
     if (caseItem is! CaseModel) return "Select Case";
-    // Show the child name(s); fall back to the case number only when a case
-    // has no children attached.
-    if (caseItem.children.isEmpty) {
-      return caseItem.caseNumber.isEmpty ? "No Case Reference Number" : caseItem.caseNumber;
-    }
-    return caseItem.children.map((child) => child.name.trim()).join(' & ');
+    return caseDisplayName(caseItem, emptyFallback: "No Case Reference Number");
   }
 
   Future<void> deleteRule(String caseId, String recordId, String category) async {

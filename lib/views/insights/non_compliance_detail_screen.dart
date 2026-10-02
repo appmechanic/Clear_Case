@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import '../../core/utils/child_names.dart';
+import '../../models/non_compliance_model.dart';
+import '../../provider/insight_provider.dart';
 import '../widgets/attachment_thumbnail.dart';
+import '../widgets/child_tag.dart';
 
 class NonComplianceDetailsScreen extends StatelessWidget {
   static const routeName = '/non-compliance-details';
@@ -8,9 +13,10 @@ class NonComplianceDetailsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final record = ModalRoute.of(context)!.settings.arguments as dynamic;
+    final record = ModalRoute.of(context)!.settings.arguments as NonComplianceRecordModel?;
 
     if (record == null) return const Scaffold(body: Center(child: Text("No data found")));
+    final selectedCase = Provider.of<InsightProvider>(context, listen: false).selectedCase;
 
     Color severityColor = record.severity == "Serious" ? Colors.red :
     (record.severity == "Minor" ? Colors.green : Colors.orange);
@@ -58,17 +64,27 @@ class NonComplianceDetailsScreen extends StatelessWidget {
                     ],
                   ),
                   const Divider(height: 30),
-                  _buildDetailRow("Party Name", record.name ?? ""),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(record.childIds.length > 1 || record.childIds.isEmpty ? "Children" : "Child",
+                          style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                      const SizedBox(width: 12),
+                      Flexible(child: ChildTag(childTagLabel(record.childIds, selectedCase))),
+                    ],
+                  ),
                   const SizedBox(height: 12),
-                  _buildDetailRow("Relation Party", record.party ?? ""),
+                  _buildDetailRow("Party Name", record.name),
                   const SizedBox(height: 12),
-                  _buildDetailRow("Reason", record.type ?? ""),
+                  _buildDetailRow("Relation Party", record.party),
+                  const SizedBox(height: 12),
+                  _buildDetailRow("Reason", record.type),
                 ],
               ),
             ),
             const SizedBox(height: 15),
 
-            // --- DESCRIPTION & PROOF CARD ---
+            // --- DESCRIPTION & EVIDENCE CARD ---
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(20),
@@ -80,18 +96,18 @@ class NonComplianceDetailsScreen extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text("Incident Description", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                      _buildTag(record.severity ?? "Moderate", severityColor),
+                      _buildTag(record.severity, severityColor),
                     ],
                   ),
                   const SizedBox(height: 15),
                   Text(
-                    record.description ?? "No description provided.",
+                    record.description.isEmpty ? "No description provided." : record.description,
                     style: const TextStyle(color: Colors.black87, height: 1.5, fontSize: 14),
                   ),
 
-                  if (record.proof != null && record.proof!.isNotEmpty) ...[
+                  if (record.proof.isNotEmpty) ...[
                     const SizedBox(height: 20),
-                    _buildProofSummaryCard(record.proof!),
+                    _buildEvidenceCard(record.proof),
                   ],
 
                   if (record.attachments != null && record.attachments!.isNotEmpty) ...[
@@ -134,7 +150,7 @@ class NonComplianceDetailsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildProofSummaryCard(String proofText) {
+  Widget _buildEvidenceCard(String evidenceText) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -144,11 +160,11 @@ class NonComplianceDetailsScreen extends StatelessWidget {
       ),
       child: Column(
         children: [
-          const Text("Proof Summary",
+          const Text("Evidence",
               style: TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold, fontSize: 15)),
           const SizedBox(height: 8),
           Text(
-            proofText,
+            evidenceText,
             textAlign: TextAlign.center,
             style: const TextStyle(color: Color(0xFF7E57C2), fontSize: 13, height: 1.4),
           ),

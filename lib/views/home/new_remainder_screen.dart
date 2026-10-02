@@ -1,12 +1,42 @@
- import 'package:clearcase/models/remainder_model.dart';
+import 'package:clearcase/models/remainder_model.dart';
 import 'package:clearcase/provider/remainder_provider.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../core/theme/app_colors.dart';
+import '../../core/utils/helping_functions.dart';
 import '../../provider/calender_provider.dart';
 import '../widgets/custom_dropdown.dart';
+import '../widgets/delete_entries_confirmation.dart';
+import '../widgets/reminder_tag_picker.dart';
+import '../widgets/weekday_selector.dart';
 
+/// Opens the reminder form straight onto a given kind, optionally prefilled.
+/// With [draftOnly] nothing is saved: the reminder is returned through
+/// `Navigator.pop` — case setup uses this before the case exists.
+class ReminderFormArgs {
+  final bool repeated;
+  final ReminderModel? draft;
+  final String? presetTitle;
+  final String? presetTag;
+  final int? presetColor;
+  final bool draftOnly;
+
+  const ReminderFormArgs({
+    this.repeated = true,
+    this.draft,
+    this.presetTitle,
+    this.presetTag,
+    this.presetColor,
+    this.draftOnly = false,
+  });
+}
+
+/// Add or edit a reminder. Arguments:
+/// - none / a DateTime: asks "Single or Repeated?" first (the date prefills);
+/// - a reminder id (String): edits it;
+/// - [ReminderFormArgs]: skips the question.
 class NewReminderScreen extends StatefulWidget {
   static const routeName = '/new-reminder';
   const NewReminderScreen({super.key});
@@ -15,401 +45,321 @@ class NewReminderScreen extends StatefulWidget {
   State<NewReminderScreen> createState() => _NewReminderScreenState();
 }
 
+enum _Mode { choose, single, repeated }
+
 class _NewReminderScreenState extends State<NewReminderScreen> {
   final _titleController = TextEditingController();
-  final _daysController = TextEditingController();
+  final _tagController = TextEditingController();
   final _descController = TextEditingController();
-
   final _titleNode = FocusNode();
-  final _daysNode = FocusNode();
+  final _tagNode = FocusNode();
   final _descNode = FocusNode();
 
+  _Mode _mode = _Mode.choose;
+  // True when the form was reached through the chooser, so Back returns to it.
+  bool _cameFromChooser = false;
+  bool _draftOnly = false;
   String? _editingId;
   bool _isFetching = false;
+  bool _isInitialized = false;
 
-  DateTime selectedDate = DateTime.now();
-  DateTime? ruleEndDate;
-  String selectedType = "Birthday";
-  bool isRepeat = false;
-  String remindMeOption = "On day of event";
-  bool enableNotifications = true;
+  DateTime _date = DateTime.now();
+  int _color = reminderColors.first;
+  Set<int> _weekdays = {};
+  int _intervalWeeks = 1;
+  bool _hasEndDate = false;
+  DateTime? _endDate;
+  String _remindMe = remindMeOptions.first;
 
-  final List<String> types = ["Birthday", "Medical", "School", "Court", "Other"];
-  final List<String> remindMeOptions = ["On day of event", "1 day before", "A week before"];
-
-  // List of reminders to be saved in one go
-  final List<ReminderModel> _pendingReminders = [];
-  bool isDateSetFromArgs = false;
-  bool isInitialized = false;
+  bool get _isRepeated => _mode == _Mode.repeated;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    if (_isInitialized) return;
+    _isInitialized = true;
+
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (!isInitialized) {
-      if (args is String) {
-        // Handle Edit Mode
-        _editingId = args;
-        _loadReminderData();
-      } else if (args is DateTime && !isDateSetFromArgs) {
-        selectedDate = args;
-        isDateSetFromArgs = true;
+    if (args is String) {
+      _editingId = args;
+      _loadReminder(args);
+    } else if (args is ReminderFormArgs) {
+      _draftOnly = args.draftOnly;
+      _mode = args.repeated ? _Mode.repeated : _Mode.single;
+      final draft = args.draft;
+      if (draft != null) {
+        _fill(draft);
+      } else {
+        _titleController.text = args.presetTitle ?? '';
+        _tagController.text = args.presetTag ?? '';
+        _color = args.presetColor ?? _color;
       }
-      isInitialized = true;
+    } else if (args is DateTime) {
+      _date = args;
     }
   }
 
-  Future<void> _loadReminderData() async {
+  Future<void> _loadReminder(String id) async {
+    final caseId = Provider.of<CalendarProvider>(context, listen: false).selectedCase?.id;
+    if (caseId == null) return;
     setState(() => _isFetching = true);
-    final reminderProvider = Provider.of<ReminderProvider>(context, listen: false);
-    final calProvider = Provider.of<CalendarProvider>(context, listen: false);
-
-    if (calProvider.selectedCase != null && _editingId != null) {
-      final reminder = await reminderProvider.getReminderById(calProvider.selectedCase!.id, _editingId!);
-      if (mounted && reminder != null) {
-        setState(() {
-          _titleController.text = reminder.title;
-          _descController.text = reminder.description;
-          selectedDate = reminder.date;
-          selectedType = reminder.type;
-           isRepeat = reminder.isRepeat;
-           _daysController.text = reminder.days ?? "";
-          // ruleEndDate = reminder.ruleEndDate;
-          remindMeOption = reminder.remindMeOption;
-         });
-      }
-    }
-    if (mounted) setState(() => _isFetching = false);
-  }
-
-  Future<void> _pickDate(BuildContext context, bool isStart) async {
-    final DateTime firstDate = isStart ? DateTime(2000) : selectedDate;
-    final DateTime initialDate = isStart
-        ? selectedDate
-        : (ruleEndDate ?? selectedDate);
-
-    final DateTime? picked = await showDatePicker(
-      context: context,
-      // Ensure we don't start before the firstDate
-      initialDate: initialDate.isBefore(firstDate) ? firstDate : initialDate,
-      firstDate: firstDate,
-      lastDate: DateTime(2100),
-    );
-
-    if (picked != null) {
-      setState(() {
-        if (isStart) {
-          selectedDate = picked;
-          // If start date moves past current end date, reset end date
-          if (ruleEndDate != null && ruleEndDate!.isBefore(picked)) {
-            ruleEndDate = picked;
-          }
-        } else {
-          ruleEndDate = picked;
-        }
-      });
-    }
-  }
-
-  // --- Logic ---
-  void _addToBuffer() {
-    if (_titleController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a title")));
-      return;
-    }
-
+    final reminder = await Provider.of<ReminderProvider>(context, listen: false).getReminderById(caseId, id);
+    if (!mounted) return;
     setState(() {
-      _pendingReminders.add(ReminderModel(
-        caseId: "", // Temporary
-        date: selectedDate,
-        title: _titleController.text.trim(),
-        type: selectedType,
-        isRepeat: isRepeat,
-        days: isRepeat ? _daysController.text.trim() : null,
-        description: _descController.text.trim(),
-        remindMeOption: remindMeOption,
-         createdAt: DateTime.now(),
-      ));
-
-      // Clear inputs for next one
-      _titleController.clear();
-      _descController.clear();
-      _daysController.clear();
+      if (reminder != null) {
+        _fill(reminder);
+        _mode = reminder.isRepeat ? _Mode.repeated : _Mode.single;
+      }
+      _isFetching = false;
     });
   }
 
-  void _submitForm(ReminderProvider provider, String caseId) {
-    // 1. If we are editing an existing record, perform a standard update
-    if (_editingId != null) {
-      final reminder = ReminderModel(
-        id: _editingId,
-        caseId: caseId,
-        date: selectedDate,
-        title: _titleController.text.trim(),
-        type: selectedType,
-        isRepeat: isRepeat,
-        days: isRepeat ? _daysController.text.trim() : null,
-        // ruleEndDate: ruleEndDate,
-        description: _descController.text.trim(),
-        remindMeOption: remindMeOption,
-        // enableNotifications: enableNotifications,
-      );
-      provider.updateReminder(context, reminder);
+  void _fill(ReminderModel r) {
+    _titleController.text = r.title;
+    _tagController.text = r.tag;
+    _descController.text = r.description;
+    _color = r.color;
+    _date = r.date;
+    _weekdays = r.weekdays.toSet();
+    _intervalWeeks = r.intervalWeeks;
+    _endDate = r.endDate;
+    _hasEndDate = r.endDate != null;
+    _remindMe = remindMeOptions.contains(r.remindMeOption) ? r.remindMeOption : remindMeOptions.first;
+  }
+
+  void _choose(_Mode mode) {
+    setState(() {
+      _mode = mode;
+      _cameFromChooser = true;
+      // Starting a repeat from a tapped day: repeat on that weekday.
+      if (mode == _Mode.repeated && _weekdays.isEmpty) _weekdays = {_date.weekday};
+    });
+  }
+
+  ReminderModel _buildReminder(String caseId) {
+    final tag = _tagController.text.trim();
+    return ReminderModel(
+      id: _editingId,
+      caseId: caseId,
+      date: _date,
+      title: _titleController.text.trim(),
+      tag: tag.isEmpty ? "Reminder" : tag,
+      color: _color,
+      isRepeat: _isRepeated,
+      weekdays: _isRepeated ? (_weekdays.toList()..sort()) : const [],
+      intervalWeeks: _isRepeated ? _intervalWeeks : 1,
+      endDate: (_isRepeated && _hasEndDate) ? _endDate : null,
+      description: _descController.text.trim(),
+      remindMeOption: _remindMe,
+    );
+  }
+
+  void _submit(ReminderProvider provider, String? caseId) {
+    if (_titleController.text.trim().isEmpty) {
+      showSnackBar(context, "Please enter a title");
       return;
     }
-
-    // 2. If the user hasn't added any to the buffer, but has typed in the fields,
-    // automatically add that to the buffer before saving.
-    if (_pendingReminders.isEmpty) {
-      if (_titleController.text.trim().isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a title")));
+    if (_isRepeated) {
+      if (_weekdays.isEmpty) {
+        showSnackBar(context, "Select at least one day to repeat on");
         return;
       }
-      // Add current form state to buffer
-      _addToBuffer();
+      if (_hasEndDate && _endDate == null) {
+        showSnackBar(context, "Pick an end date, or turn off the end date");
+        return;
+      }
+      if (_hasEndDate && _buildReminder('').nextOccurrence(from: _date) == null) {
+        showSnackBar(context, "This reminder ends before it first repeats");
+        return;
+      }
     }
 
-    // 3. Submit the collection of reminders
-    final finalReminders = _pendingReminders.map((r) => r.copyWith(caseId: caseId)).toList();
-    provider.addMultipleReminders(context, caseId, finalReminders);
+    if (_draftOnly) {
+      Navigator.pop(context, _buildReminder(''));
+      return;
+    }
+    if (caseId == null) {
+      showSnackBar(context, "Select a case first");
+      return;
+    }
+    final reminder = _buildReminder(caseId);
+    if (_editingId == null) {
+      provider.addReminder(context, reminder);
+    } else {
+      provider.updateReminder(context, reminder);
+    }
+  }
+
+  void _confirmDelete(ReminderProvider provider, String caseId) {
+    DeleteEntriesConfirmation.show(context, () async {
+      await provider.deleteReminder(context, caseId, _editingId!);
+      if (mounted) Navigator.pop(context);
+    });
   }
 
   @override
   void dispose() {
     _titleController.dispose();
-    _daysController.dispose();
+    _tagController.dispose();
     _descController.dispose();
     _titleNode.dispose();
-    _daysNode.dispose();
+    _tagNode.dispose();
     _descNode.dispose();
     super.dispose();
   }
+
   @override
   Widget build(BuildContext context) {
     return Consumer2<CalendarProvider, ReminderProvider>(
       builder: (context, calProvider, reminderProvider, child) {
         final selectedCase = calProvider.selectedCase;
-        bool showLoader = reminderProvider.isLoading || _isFetching;
+        final showLoader = reminderProvider.isLoading || _isFetching;
 
-        return Scaffold(
-          backgroundColor: const Color(0xFFF5F5F5),
-          appBar: _buildAppBar(calProvider),
-          body: showLoader
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 1. List of Added Cards
-                if (_editingId == null && _pendingReminders.isNotEmpty) ...[
-                  ListView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: _pendingReminders.length,
-                    itemBuilder: (context, index) {
-                      final item = _pendingReminders[index];
-                      return Card(
-                        color: Colors.white,
-                        margin: const EdgeInsets.only(bottom: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                        elevation: 2,
-                        child: ListTile(
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          title: Text(
-                              item.title,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
-                          ),
-                          subtitle: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const SizedBox(height: 4),
-                              Text(
-                                "${item.type} • ${DateFormat('dd MMM yyyy').format(item.date)}",
-                                style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-                              ),
-                              if (item.description.isNotEmpty) ...[
-                                const SizedBox(height: 4),
-                                Text(
-                                  item.description,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                                ),
-                              ],
-                            ],
-                          ),
-                          trailing: IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.redAccent),
-                            onPressed: () => setState(() => _pendingReminders.removeAt(index)),
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 10),
-                    child: Divider(thickness: 1),
-                  ),
-                ],
-                _buildClickableField(
-                  label: "Date",
-                  value: DateFormat('dd MMM yyyy').format(selectedDate),
-                  icon: Icons.calendar_today,
-                  onTap: () => _pickDate(context, true),
-                ),
-                const SizedBox(height: 15),
-                CustomTextField(
-                  labelText: "Reminder Title",
-                  hintText: "e.g. Emma's birthday",
-                  controller: _titleController,
-                  node: _titleNode,
-                  borderRadius: 8,
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 15),
-                _buildDropdown("Type", selectedType, types, (val) => setState(() => selectedType = val!)),
-                const SizedBox(height: 15),
-                CustomTextField(
-                  labelText: "Description",
-                  hintText: "Describe the remainder...",
-                  maxLines: 3,
-                  controller: _descController,
-                  node: _descNode,
-                  borderRadius: 8,
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                // const SizedBox(height: 15),
-                // _buildRepeatToggle(),
-                // if (isRepeat) ...[
-                //   const SizedBox(height: 10),
-                //   CustomTextField(
-                //     labelText: "Days",
-                //     hintText: "e.g. 10",
-                //     isNum: true,
-                //     icon: Icons.calendar_today,
-                //     controller: _daysController,
-                //     node: _daysNode,
-                //     borderRadius: 8,
-                //     backgroundColor: Colors.grey.shade200,
-                //   ),
-                //
-                // ],
-                const SizedBox(height: 20),
-                _buildDropdown("Remind me", remindMeOption, remindMeOptions, (val) => setState(() => remindMeOption = val!)),
-                 const SizedBox(height: 20),
-                // _buildClickableField(
-                //   label: "Rule End Date",
-                //   value: ruleEndDate == null ? "Select Date" : DateFormat('dd/MM/yyyy').format(ruleEndDate!),
-                //   icon: Icons.calendar_today,
-                //   onTap: () => _pickDate(context, false),
-                // ),
-                // const SizedBox(height: 15),
-
-
-                // Row(
-                //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                //   children: [
-                //     const Column(
-                //       crossAxisAlignment: CrossAxisAlignment.start,
-                //       children: [
-                //         Text("Enable Notifications", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                //         SizedBox(height: 4),
-                //         Text("Receive push notifications", style: TextStyle(color: Colors.grey, fontSize: 11)),
-                //       ],
-                //     ),
-                //     Switch(
-                //       value: enableNotifications,
-                //       activeTrackColor: const Color(0xFF4A148C),activeThumbColor: Colors.white,
-                //       onChanged: (val) => setState(() => enableNotifications = val),
-                //     ),
-                //   ],
-                // ),
-                const SizedBox(height: 30),
-                // 3. Add Another Button (Only show if creating new)
-                if (_editingId == null) ...[
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: _addToBuffer,
-                      style: OutlinedButton.styleFrom(
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                        backgroundColor: const Color(0xFFE3F2FD),
-                        side: const BorderSide(color: Color(0xFF6A1B9A), width: 2),
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        return PopScope(
+          // From a form reached via the chooser, Back returns to the chooser.
+          canPop: !(_cameFromChooser && _mode != _Mode.choose),
+          onPopInvokedWithResult: (didPop, _) {
+            if (!didPop) setState(() => _mode = _Mode.choose);
+          },
+          child: Scaffold(
+            backgroundColor: AppColors.surfaceColor,
+            appBar: _buildAppBar(calProvider, reminderProvider),
+            body: showLoader
+                ? const Center(child: CircularProgressIndicator())
+                : _mode == _Mode.choose
+                    ? _buildChooser()
+                    : SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: _isRepeated
+                            ? _buildRepeatedForm(reminderProvider, selectedCase?.id)
+                            : _buildSingleForm(reminderProvider, selectedCase?.id),
                       ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.add, color: Color(0xFF6A1B9A)),
-                          SizedBox(width: 8),
-                          Text(
-                            "Add Another Reminder",
-                            style: TextStyle(color: Color(0xFF6A1B9A), fontWeight: FontWeight.bold, fontSize: 16),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 15),
-                ],
-                 SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4A148C),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                    ),
-                    onPressed: selectedCase == null ? null : () => _submitForm(reminderProvider, selectedCase.id),
-                    child: Text(_editingId == null ? "Save Record" : "Update Record", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
-                ),
-              ],
-            ),
           ),
         );
       },
     );
   }
 
-  AppBar _buildAppBar(CalendarProvider calProvider) {
-    bool isEditMode = _editingId != null;
+  PreferredSizeWidget _buildAppBar(CalendarProvider calProvider, ReminderProvider reminderProvider) {
+    final isEditMode = _editingId != null;
+    final String title;
+    if (isEditMode) {
+      title = "Edit Reminder";
+    } else if (_mode == _Mode.single) {
+      title = "Single Reminder";
+    } else if (_mode == _Mode.repeated) {
+      title = "Repeated Reminder";
+    } else {
+      title = "Add Reminder";
+    }
+    final showCasePicker = !_draftOnly && calProvider.allCases.length > 1;
 
     return AppBar(
-      leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back, color: Colors.black)
-      ),
-      title: Text(
-          !isEditMode ? "Add Reminder" : "Edit Reminder",
-          style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)
-      ),
+      title: Text(title, style: const TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
       backgroundColor: Colors.transparent,
       elevation: 0,
       iconTheme: const IconThemeData(color: Colors.black),
-      bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(60),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-          child: IgnorePointer(
-            // Prevents case switching while editing
-            ignoring: isEditMode,
-            child: Opacity(
-              // Greys out the dropdown for a "disabled" look
-              opacity: isEditMode ? 0.6 : 1.0,
-              child: CustomDropDown<String>(
-                hint: "Select a Case",
-                value: calProvider.selectedCase?.id,
-                items: calProvider.allCases.map((c) => DropdownMenuItem(
-                  value: c.id,
-                  child: Text(c.caseNumber),
-                )).toList(),
-                onChanged: (id) {
-                  final selected = calProvider.allCases.firstWhere((c) => c.id == id);
-                  calProvider.setSelectedCase(selected);
-                },
+      actions: [
+        if (isEditMode && calProvider.selectedCase != null)
+          IconButton(
+            tooltip: "Delete reminder",
+            icon: const Icon(Icons.delete, color: Colors.red),
+            onPressed: () => _confirmDelete(reminderProvider, calProvider.selectedCase!.id),
+          ),
+      ],
+      bottom: showCasePicker
+          ? PreferredSize(
+              preferredSize: const Size.fromHeight(70),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                child: IgnorePointer(
+                  // Prevents case switching while editing
+                  ignoring: isEditMode,
+                  child: Opacity(
+                    opacity: isEditMode ? 0.6 : 1.0,
+                    child: CustomDropDown<String>(
+                      hint: "Select a Case",
+                      value: calProvider.selectedCase?.id,
+                      items: calProvider.allCases
+                          .map((c) => DropdownMenuItem(
+                                value: c.id,
+                                child: Text(calProvider.getCaseDisplayName(c),
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                              ))
+                          .toList(),
+                      onChanged: (id) {
+                        final selected = calProvider.allCases.firstWhere((c) => c.id == id);
+                        calProvider.setSelectedCase(selected);
+                      },
+                    ),
+                  ),
+                ),
               ),
+            )
+          : null,
+    );
+  }
+
+  // --- Chooser ---------------------------------------------------------------
+
+  Widget _buildChooser() {
+    return ListView(
+      padding: const EdgeInsets.all(20),
+      children: [
+        const Text("What kind of reminder?", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        const SizedBox(height: 16),
+        _choiceCard(
+          icon: Icons.event,
+          title: "Single Reminder",
+          subtitle: "A reminder on one specific date.",
+          onTap: () => _choose(_Mode.single),
+        ),
+        _choiceCard(
+          icon: Icons.repeat,
+          title: "Repeated Reminder",
+          subtitle: "Repeats on the days you choose — e.g. every second Monday and Friday.",
+          onTap: () => _choose(_Mode.repeated),
+        ),
+      ],
+    );
+  }
+
+  Widget _choiceCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 24,
+                  backgroundColor: AppColors.primary.withValues(alpha: 0.1),
+                  child: Icon(icon, color: AppColors.primary),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 4),
+                      Text(subtitle, style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right, color: Colors.grey),
+              ],
             ),
           ),
         ),
@@ -417,24 +367,291 @@ class _NewReminderScreenState extends State<NewReminderScreen> {
     );
   }
 
+  // --- Forms -----------------------------------------------------------------
 
-  Widget _buildClickableField({required String label, required String value, required IconData icon, required VoidCallback onTap}) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)), const SizedBox(height: 8), InkWell(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)), child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(value, style: const TextStyle(fontSize: 14)), Icon(icon, size: 18, color: Colors.grey[700])])))]);
-  }
-
-  Widget _buildDropdown(String label, String value, List<String> items, Function(String?) onChanged) {
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500)), const SizedBox(height: 8), CustomDropDown<String>(value: value, hint: "Select $label", items: items.map((val) => DropdownMenuItem(value: val, child: Text(val))).toList(), onChanged: onChanged)]);
-  }
-  Widget _buildRepeatToggle() {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildSingleForm(ReminderProvider provider, String? caseId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text("Repeat Reminder", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        Switch(
-          value: isRepeat,
-          activeTrackColor: const Color(0xFF4A148C),
-          activeThumbColor: Colors.white,
-          onChanged: (val) => setState(() => isRepeat = val),
+        _titleField("e.g. Emma's dentist appointment"),
+        const SizedBox(height: 15),
+        _buildClickableField(
+          label: "Date",
+          value: DateFormat('EEE, d MMM yyyy').format(_date),
+          onTap: () => _pickDate(
+            initial: _date,
+            first: DateTime(2000),
+            onPicked: (d) => _date = d,
+          ),
+        ),
+        const SizedBox(height: 20),
+        _tagPicker(),
+        const SizedBox(height: 20),
+        _notificationField(),
+        const SizedBox(height: 15),
+        _descriptionField(),
+        const SizedBox(height: 30),
+        _saveButton(provider, caseId),
+      ],
+    );
+  }
+
+  Widget _buildRepeatedForm(ReminderProvider provider, String? caseId) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _titleField("e.g. Weekend handover"),
+        const SizedBox(height: 20),
+        _tagPicker(),
+        const SizedBox(height: 24),
+        _label("Repeat on"),
+        const Text("Select one or more days", style: TextStyle(color: Colors.grey, fontSize: 11)),
+        const SizedBox(height: 12),
+        WeekdaySelector(
+          selectedDays: _weekdays,
+          onToggle: (d) => setState(() => _weekdays.contains(d) ? _weekdays.remove(d) : _weekdays.add(d)),
+        ),
+        const SizedBox(height: 24),
+        _label("Repeat frequency"),
+        const SizedBox(height: 4),
+        _frequencySelector(),
+        const SizedBox(height: 20),
+        _buildClickableField(
+          label: "Starting from",
+          value: DateFormat('EEE, d MMM yyyy').format(_date),
+          onTap: () => _pickDate(
+            initial: _date,
+            first: DateTime(2000),
+            onPicked: (d) {
+              _date = d;
+              if (_endDate != null && _endDate!.isBefore(d)) _endDate = d;
+            },
+          ),
+        ),
+        const SizedBox(height: 15),
+        _endDateSection(),
+        const SizedBox(height: 15),
+        _scheduleSummary(),
+        const SizedBox(height: 20),
+        _notificationField(),
+        const SizedBox(height: 15),
+        _descriptionField(),
+        const SizedBox(height: 30),
+        _saveButton(provider, caseId),
+      ],
+    );
+  }
+
+  Widget _titleField(String hint) => CustomTextField(
+        labelText: "Reminder Title",
+        hintText: hint,
+        controller: _titleController,
+        node: _titleNode,
+        nextNode: _tagNode,
+        borderRadius: 8,
+        backgroundColor: Colors.grey.shade200,
+      );
+
+  Widget _tagPicker() => ReminderTagPicker(
+        tagController: _tagController,
+        tagNode: _tagNode,
+        color: _color,
+        onColorChanged: (c) => setState(() => _color = c),
+        onTagChanged: () => setState(() {}),
+      );
+
+  Widget _descriptionField() => CustomTextField(
+        labelText: "Notes (Optional)",
+        hintText: "Any extra details...",
+        maxLines: 3,
+        controller: _descController,
+        node: _descNode,
+        borderRadius: 8,
+        backgroundColor: Colors.grey.shade200,
+      );
+
+  Widget _notificationField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label("Notification"),
+        const SizedBox(height: 8),
+        CustomDropDown<String>(
+          value: _remindMe,
+          hint: "Select notification",
+          items: remindMeOptions.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+          onChanged: (v) => setState(() => _remindMe = v ?? remindMeOptions.first),
+        ),
+      ],
+    );
+  }
+
+  Widget _frequencySelector() {
+    return GridView.count(
+      crossAxisCount: 2,
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisSpacing: 10,
+      mainAxisSpacing: 10,
+      childAspectRatio: 3.2,
+      padding: const EdgeInsets.only(top: 8),
+      children: reminderFrequencies.entries.map((f) {
+        final selected = _intervalWeeks == f.key;
+        return GestureDetector(
+          onTap: () => setState(() => _intervalWeeks = f.key),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? AppColors.primary : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.primary),
+            ),
+            child: Text(
+              f.value,
+              style: TextStyle(
+                color: selected ? Colors.white : AppColors.primary,
+                fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ),
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _endDateSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text("End date", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                  SizedBox(height: 2),
+                  Text("Optional — off repeats indefinitely", style: TextStyle(color: Colors.grey, fontSize: 11)),
+                ],
+              ),
+            ),
+            Switch(
+              value: _hasEndDate,
+              activeTrackColor: AppColors.primary,
+              activeThumbColor: Colors.white,
+              onChanged: (v) => setState(() => _hasEndDate = v),
+            ),
+          ],
+        ),
+        if (_hasEndDate) ...[
+          const SizedBox(height: 10),
+          _buildClickableField(
+            label: "Ends on",
+            value: _endDate == null ? "Select date" : DateFormat('EEE, d MMM yyyy').format(_endDate!),
+            onTap: () => _pickDate(
+              initial: _endDate ?? _date,
+              first: _date,
+              onPicked: (d) => _endDate = d,
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // Spells the repeat out and lists the next few dates, so "Fortnightly" on
+  // Mon + Fri can be checked before saving.
+  Widget _scheduleSummary() {
+    if (_weekdays.isEmpty) return const SizedBox.shrink();
+    final preview = _buildReminder('');
+    final upcoming = preview
+        .occurrencesBetween(_date, _date.add(Duration(days: 7 * _intervalWeeks * 3)))
+        .take(4)
+        .map((d) => DateFormat('EEE d MMM').format(d))
+        .toList();
+    final ends = (_hasEndDate && _endDate != null) ? ", until ${DateFormat('d MMM yyyy').format(_endDate!)}" : "";
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Color(_color).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            "Repeats ${ReminderModel.describeRepeat(_weekdays, _intervalWeeks)}, "
+            "from ${DateFormat('d MMM yyyy').format(_date)}$ends.",
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
+          if (upcoming.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text("Next: ${upcoming.join(' · ')}", style: TextStyle(color: Colors.grey[700], fontSize: 12)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _saveButton(ReminderProvider provider, String? caseId) {
+    final String label;
+    if (_draftOnly) {
+      label = "Done";
+    } else if (_editingId != null) {
+      label = "Update Reminder";
+    } else {
+      label = "Save Reminder";
+    }
+    return SizedBox(
+      width: double.infinity,
+      height: 50,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: AppColors.primary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+        ),
+        onPressed: () => _submit(provider, caseId),
+        child: Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+      ),
+    );
+  }
+
+  Future<void> _pickDate({
+    required DateTime initial,
+    required DateTime first,
+    required void Function(DateTime) onPicked,
+  }) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial.isBefore(first) ? first : initial,
+      firstDate: first,
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) setState(() => onPicked(picked));
+  }
+
+  Widget _label(String text) => Text(text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500));
+
+  Widget _buildClickableField({required String label, required String value, required VoidCallback onTap}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _label(label),
+        const SizedBox(height: 8),
+        InkWell(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(color: Colors.grey[200], borderRadius: BorderRadius.circular(8)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(value, style: const TextStyle(fontSize: 14)),
+                Icon(Icons.calendar_today, size: 18, color: Colors.grey[700]),
+              ],
+            ),
+          ),
         ),
       ],
     );

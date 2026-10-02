@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import '../models/non_compliance_model.dart';
+import '../core/utils/child_names.dart';
 import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart'; // Ensure this path is correct
 
@@ -238,10 +239,13 @@ class NonComplianceProviderInsight with ChangeNotifier {
       // 2. Time Filter
       bool matchesTime = Timeframe.contains(_currentFilters.selectedTimePeriod, nonCompliance.date);
 
-      return matchesSeverity && matchesTime;
+      // 3. Child Filter
+      bool matchesChild = matchesChildFilter(nonCompliance.childIds, _currentFilters.selectedChildIds);
+
+      return matchesSeverity && matchesTime && matchesChild;
     }).toList();
 
-    // 3. Search Query
+    // 4. Search Query
     if (_currentSearchQuery.isNotEmpty) {
       final q = _currentSearchQuery.toLowerCase();
       results = results.where((b) {

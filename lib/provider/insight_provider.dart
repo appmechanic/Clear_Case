@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import '../core/utils/child_names.dart';
 import '../core/utils/custody_span.dart';
 import '../core/utils/timeframe.dart';
 import '../models/calender_event_model.dart';
@@ -361,12 +362,7 @@ class InsightProvider with ChangeNotifier {
 
   String getCaseDisplayName(dynamic caseItem) {
     if (caseItem is! CaseModel) return "Select Case";
-    // Show the child name(s); fall back to the case number only when a case
-    // has no children attached.
-    if (caseItem.children.isEmpty) {
-      return caseItem.caseNumber.isEmpty ? "No Case Reference Number" : caseItem.caseNumber;
-    }
-    return caseItem.children.map((child) => child.name.trim()).join(' & ');
+    return caseDisplayName(caseItem, emptyFallback: "No Case Reference Number");
   }
 
   Future<void> fetchAllEventsForReport() async {

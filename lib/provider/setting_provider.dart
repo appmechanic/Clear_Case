@@ -1,4 +1,5 @@
 
+import '../core/utils/device_timezone.dart';
 import 'dart:async';
 
 import 'package:clearcase/models/case_model.dart';
@@ -9,7 +10,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_timezone/flutter_timezone.dart';
 
 import '../core/utils/helping_functions.dart';
 import '../services/auth_service.dart';
@@ -190,8 +190,12 @@ class SettingsProvider extends ChangeNotifier {
     _saveSettingsToFirebase();
   }
 
+  /// Reminders now cover schedules too, so one switch drives both server
+  /// flags: isScheduledDatesEnabled still gates schedules saved by the old
+  /// case-setup flow (scheduledRules) in functions/index.js.
   void toggleReminders(bool val) {
     _isRemindersEnabled = val;
+    _isScheduledDatesEnabled = val;
     notifyListeners();
     _saveSettingsToFirebase();
   }
@@ -245,13 +249,7 @@ class SettingsProvider extends ChangeNotifier {
     if (user != null) {
       try {
         // 1. டைம்ஜோன் பெயரைப் பெறுதல்
-        final dynamic tz = await FlutterTimezone.getLocalTimezone();
-        String rawTz = tz.toString();
-
-        // அசிங்கமான வரியிலிருந்து "Asia/Kolkata" வை மட்டும் பிரித்தல்
-        String currentTimeZone = rawTz.contains('(')
-            ? rawTz.split('(')[1].split(',')[0]
-            : rawTz;
+        String currentTimeZone = await deviceTimezone();
 
         // 2. UTC Offset-ஐக் கணக்கிடுதல்
         final offset = DateTime.now().timeZoneOffset;

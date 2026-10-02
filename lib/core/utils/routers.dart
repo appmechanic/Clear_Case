@@ -6,6 +6,7 @@ import 'package:clearcase/views/home/new_dispute_screen.dart';
 import 'package:clearcase/views/home/new_entry_screen.dart';
 import 'package:clearcase/views/home/new_payment_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
+import 'package:clearcase/views/home/reminders_screen.dart';
 import 'package:clearcase/views/home/rule_configuration_screen.dart';
 import 'package:clearcase/views/home/scheduled_dates_screen.dart';
 import 'package:clearcase/views/insights/non_compliance_detail_screen.dart';
@@ -59,6 +60,7 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
       );
     },
     NewReminderScreen.routeName: (context) => const NewReminderScreen(),
+    RemindersScreen.routeName: (context) => const RemindersScreen(),
     CustodyComplianceScreen.routeName: (context) => const CustodyComplianceScreen(),
     PaymentAnalyticsScreen.routeName: (context) => const PaymentAnalyticsScreen(),
     DisputesLogScreen.routeName: (context) => const DisputesLogScreen(),

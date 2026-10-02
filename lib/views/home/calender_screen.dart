@@ -6,7 +6,7 @@ import 'package:clearcase/views/home/new_dispute_screen.dart';
 import 'package:clearcase/views/home/new_entry_screen.dart';
 import 'package:clearcase/views/home/new_payment_screen.dart';
 import 'package:clearcase/views/home/new_remainder_screen.dart';
-import 'package:clearcase/views/home/scheduled_dates_screen.dart';
+import 'package:clearcase/views/home/reminders_screen.dart';
 import 'package:clearcase/views/widgets/custom_dialog.dart';
 import 'package:dropdown_button2/dropdown_button2.dart';
 import 'package:flutter/gestures.dart' show kTouchSlop;
@@ -23,6 +23,8 @@ import '../widgets/delete_entries_confirmation.dart';
 import '../widgets/export_button.dart';
 import '../widgets/export_filter.dart';
 import '../widgets/pdf_generator.dart';
+import '../widgets/reminder_tag_picker.dart';
+import '../../models/remainder_model.dart';
 import 'case_setup_screen.dart';
 
 
@@ -97,20 +99,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
                         padding: const EdgeInsets.fromLTRB(20, 12, 20, 88),
                         child: Column(
                           children: [
-                            _buildBottomButton("Scheduled", () {
-                              // Carry over the case currently selected on the
-                              // calendar so the Scheduled screen opens on
-                              // the same case (and its children) instead of
-                              // defaulting to the first case.
-                              Navigator.pushNamed(
-                                context,
-                                ScheduledDatesScreen.routeName,
-                                arguments: provider.selectedCase?.id,
-                              );
-                            }),
+                            _buildRemindersPreview(context, provider),
                             const SizedBox(height: 12),
-                            _buildBottomButton("Legends", () {
-                              _showLegendsPopup(context);
+                            _buildBottomButton("Legend", () {
+                              _showLegendPopup(context);
                             }),
                           ],
                         ),
@@ -337,6 +329,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
         firstDay: DateTime.utc(2020, 10, 16),
         lastDay: DateTime.utc(2030, 3, 14),
         focusedDay: provider.focusedDay,
+        // Weeks run Monday–Sunday. CalendarGrid (swipe hit-testing) and the
+        // scheduled-tint joins below assume the same.
+        startingDayOfWeek: StartingDayOfWeek.monday,
         // Months change only via the header arrows — no swipe — so a range
         // can be picked across months without accidental page flips.
         availableGestures: AvailableGestures.none,
@@ -426,13 +421,13 @@ class _CalenderScreenState extends State<CalenderScreen> {
             if (tint == null) return null;
 
             // A scheduled "run" only connects within a single calendar row.
-            // The TableCalendar grid starts each row on Sunday (en_US default),
-            // so Sunday can't reach back to Saturday and vice-versa.
-            final prevTint = date.weekday == DateTime.sunday
+            // Rows start on Monday, so Monday can't reach back to Sunday and
+            // vice-versa.
+            final prevTint = date.weekday == DateTime.monday
                 ? null
                 : _getScheduledTintColor(provider
                     .getEventsForDay(date.subtract(const Duration(days: 1))));
-            final nextTint = date.weekday == DateTime.saturday
+            final nextTint = date.weekday == DateTime.sunday
                 ? null
                 : _getScheduledTintColor(provider
                     .getEventsForDay(date.add(const Duration(days: 1))));
@@ -449,10 +444,10 @@ class _CalenderScreenState extends State<CalenderScreen> {
             // background instead. Custody entries draw as a bar along the
             // bottom of every day they cover; other entries are icons.
             final custodyEntries = events
-                .where((e) => !e.isScheduledRule && e.type == EventType.custody)
+                .where((e) => !e.isScheduleLayer && e.type == EventType.custody)
                 .toList();
             final manualEntries = events
-                .where((e) => !e.isScheduledRule && e.type != EventType.custody)
+                .where((e) => !e.isScheduleLayer && e.type != EventType.custody)
                 .toList();
             if (custodyEntries.isEmpty && manualEntries.isEmpty) return null;
 
@@ -483,7 +478,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                             size: iconSize,
                             color: isSelected
                                 ? Colors.white.withOpacity(0.9)
-                                : _getColorForType(e.type),
+                                : _eventColor(e),
                           ),
                         );
                       }),
@@ -690,6 +685,101 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
 
+  // "Reminders" section under the calendar: the next upcoming reminder, and
+  // the way into the full list.
+  Widget _buildRemindersPreview(BuildContext context, CalendarProvider provider) {
+    final upcoming = provider.isLoading ? const <CalendarEvent>[] : provider.upcomingReminders(limit: 1);
+    final next = upcoming.isEmpty ? null : upcoming.first;
+
+    Widget body;
+    if (next == null) {
+      body = Text(
+        provider.isLoading ? "Loading…" : "No upcoming reminders",
+        style: TextStyle(color: Colors.grey[600], fontSize: 13),
+      );
+    } else {
+      final legacy = next.isScheduledRule;
+      final color = legacy
+          ? _getColorForType(next.type)
+          : Color(next.color ?? defaultReminderColor);
+      body = Row(
+        children: [
+          Container(
+            width: 4,
+            height: 38,
+            decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(next.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Flexible(
+                      child: ReminderTagChip(
+                        tag: legacy ? "Schedule" : (next.category ?? "Reminder"),
+                        color: color.toARGB32(),
+                      ),
+                    ),
+                    if (next.isScheduleLayer) ...[
+                      const SizedBox(width: 6),
+                      Icon(Icons.repeat, size: 14, color: Colors.grey[600]),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(_relativeDay(next.date),
+              style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 13)),
+        ],
+      );
+    }
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.pushNamed(context, RemindersScreen.routeName),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 12, 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text("Reminders", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Spacer(),
+                  Text("View all", style: TextStyle(color: Colors.grey[700], fontSize: 13)),
+                  Icon(Icons.chevron_right, color: Colors.grey[700], size: 20),
+                ],
+              ),
+              const SizedBox(height: 10),
+              body,
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _relativeDay(DateTime date) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(date.year, date.month, date.day);
+    if (day == today) return "Today";
+    if (day == today.add(const Duration(days: 1))) return "Tomorrow";
+    return DateFormat('EEE d MMM').format(date);
+  }
+
   Widget _buildBottomButton(String label, VoidCallback onTap) {
     return SizedBox(
       width: double.infinity,
@@ -788,8 +878,11 @@ class _CalenderScreenState extends State<CalenderScreen> {
       ),
     );
   }
-  void _showLegendsPopup(BuildContext context) {
+  void _showLegendPopup(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
+    // The old case-setup schedules only matter to cases that still have one.
+    final hasLegacyRules =
+        Provider.of<CalendarProvider>(context, listen: false).scheduledRules.isNotEmpty;
     TopPopupDialog.show(
       context: context,
       // Cap the popup at ~75% of screen height so the legend list can
@@ -804,7 +897,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text("Legends", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
+                const Text("Legend", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
                 IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
               ],
             ),
@@ -819,13 +912,16 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8),
                       child: Text(
-                        "Scheduled (background)",
+                        "Shaded days",
                         style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey, fontSize: 13),
                       ),
                     ),
-                    _buildScheduledLegendItem("Scheduled Custody", Colors.purple),
-                    _buildScheduledLegendItem("Scheduled Payments", Colors.green),
-                    _buildScheduledLegendItem("Custom Rules", Colors.lightBlue),
+                    _buildRepeatedReminderLegendItem(),
+                    if (hasLegacyRules) ...[
+                      _buildScheduledLegendItem("Scheduled Custody", Colors.purple),
+                      _buildScheduledLegendItem("Scheduled Payments", Colors.green),
+                      _buildScheduledLegendItem("Custom Rules", Colors.lightBlue),
+                    ],
                     const SizedBox(height: 10),
                     const Padding(
                       padding: EdgeInsets.only(bottom: 8),
@@ -838,7 +934,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     _buildLegendItem("Payments", Icons.payment, Colors.green),
                     _buildLegendItem("Non-Compliance", Icons.cancel_presentation, Colors.red),
                     _buildLegendItem("Flagged Events", Icons.flag, Colors.orange),
-                    _buildLegendItem("Reminders", Icons.notifications, Colors.purpleAccent),
+                    _buildLegendItem("Single reminders (in their colour)", Icons.notifications, Colors.purpleAccent),
                     _buildLegendItem("Disputes", Icons.error, Colors.redAccent),
                   ],
                 ),
@@ -887,6 +983,31 @@ class _CalenderScreenState extends State<CalenderScreen> {
     );
   }
 
+  // Repeated reminders shade their days in the colour picked for them.
+  Widget _buildRepeatedReminderLegendItem() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text("Repeated reminders (in their colour)",
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+          ),
+          for (final c in reminderColors.take(3))
+            Container(
+              width: 12,
+              height: 28,
+              margin: const EdgeInsets.only(left: 2),
+              decoration: BoxDecoration(
+                color: Color(c).withValues(alpha: 0.13),
+                borderRadius: BorderRadius.circular(4),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildScheduledLegendItem(String title, Color color) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -909,7 +1030,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
 
   // --- 3. Event Card Widget (Matches Screenshot 2026-01-27 174107.png) ---
   Widget _buildEventCard(CalendarEvent event) {
-    Color typeColor = _getColorForType(event.type);
+    Color typeColor = _eventColor(event);
     Color lightColor = typeColor.withOpacity(0.1);
 
     String formattedDate = DateFormat('dd MMM yyyy').format(event.date);
@@ -918,6 +1039,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
       formattedDate = "${event.span.label} · ${nightsLabel(event.span.nights)}";
     }
     String tagText = event.type.name[0].toUpperCase() + event.type.name.substring(1);
+    if (event.type == EventType.reminder && (event.category ?? '').isNotEmpty) {
+      tagText = event.category!;
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12), // Add margin for spacing between cards
@@ -1045,7 +1169,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
           if (event.type == EventType.payment && event.amount != null) ...[
             const SizedBox(height: 10),
             Text(
-              "Amount: ₹${event.amount!.toStringAsFixed(2)}", // Changed to ₹ based on your locale
+              "Amount: \$${event.amount!.toStringAsFixed(2)}",
               style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green, fontSize: 14),
             ),
           ],
@@ -1119,20 +1243,27 @@ class _CalenderScreenState extends State<CalenderScreen> {
   }
 
   // Returns the tint color to paint behind a day when it carries scheduled
-  // events (rule-generated custody / payment / reminders). Custody wins over
-  // payment when both apply, so the dominant visual cue stays consistent on
-  // mixed days. Returns null when the day has no scheduled events.
+  // events: repeated reminders (in their own colour) and the schedules from
+  // the old case setup (custody / payment / custom rules). Schedules win so
+  // existing cases look as before; between repeated reminders the earliest
+  // created one wins, keeping a day's colour stable. Returns null when the
+  // day has nothing scheduled.
   Color? _getScheduledTintColor(List<CalendarEvent> events) {
-    final scheduled =
-        events.where((e) => e.id.startsWith("rule_")).toList();
-    if (scheduled.isEmpty) return null;
-
-    final hasCustody = scheduled.any((e) => e.type == EventType.custody);
-    if (hasCustody) return _getColorForType(EventType.custody);
-    final hasPayment = scheduled.any((e) => e.type == EventType.payment);
-    if (hasPayment) return _getColorForType(EventType.payment);
-    return Colors.lightBlue;
+    final rules = events.where((e) => e.isScheduledRule).toList();
+    if (rules.isNotEmpty) {
+      if (rules.any((e) => e.type == EventType.custody)) return _getColorForType(EventType.custody);
+      if (rules.any((e) => e.type == EventType.payment)) return _getColorForType(EventType.payment);
+      return Colors.lightBlue;
+    }
+    for (final e in events) {
+      if (e.isRepeatedReminder) return Color(e.color ?? defaultReminderColor);
+    }
+    return null;
   }
+
+  // An entry's colour: a reminder's own tag colour, else its type's.
+  Color _eventColor(CalendarEvent e) =>
+      (e.type == EventType.reminder && e.color != null) ? Color(e.color!) : _getColorForType(e.type);
 
   Widget _buildScheduledCell(
     DateTime date,

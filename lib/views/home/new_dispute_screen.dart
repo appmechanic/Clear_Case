@@ -10,11 +10,15 @@ import 'package:provider/provider.dart';
  import '../../provider/calender_provider.dart';
 import '../../provider/dispute_provider.dart';
 import '../../core/utils/attachments.dart';
+import '../../core/utils/child_names.dart';
+import '../../core/utils/helping_functions.dart';
 import '../widgets/attachment_picker_widget.dart';
 import '../widgets/attachment_preview.dart';
 import '../widgets/file_type_icon.dart';
+import '../widgets/child_multi_selector.dart';
 import '../widgets/custom_dropdown.dart';
 import '../widgets/evidence_source_badge.dart';
+import '../widgets/related_party_picker.dart';
 
 
 class NewDisputeScreen extends StatefulWidget {
@@ -31,7 +35,11 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
 
   DateTime selectedDate = DateTime.now();
   String selectedCategory = "Payment Disputes";
-  String selectedParty = "Mother";
+  final _party = RelatedPartyController();
+  // The record's saved party, once loaded in edit mode. Seeds the picker.
+  String? _loadedParty;
+  String? _loadedName;
+  Set<String> selectedChildIds = {};
   bool flagEntry = false;
   bool isInitialized = false;
   bool _isFetching = false;
@@ -41,10 +49,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
   List<String> _existingAttachmentUrls = [];
 
   final List<String> categories = ["Payment Disputes", "Transfer Issues", "Communication"];
-  final List<String> parties = ["Mother", "Father", "Grandparent"];
 
-  final _nameController = TextEditingController();
-  final _nameNode = FocusNode();
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -60,6 +65,11 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
         }
       } else if (args is DateTime) {
         selectedDate = args;
+      }
+      // A one-child case has only one possible answer.
+      final children = calProvider.selectedCase?.children ?? const [];
+      if (_editingDisputeId == null && children.length == 1) {
+        selectedChildIds = {children.first.id};
       }
       isInitialized = true;
     }
@@ -82,9 +92,10 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
           _descController.text = data['description'] ?? '';
           selectedDate = (data['date'] as Timestamp).toDate();
           selectedCategory = data['category'] ?? "Payment Disputes"; // Set default if null
-          selectedParty = data['party'] ?? "Mother";
+          _loadedParty = data['party'] ?? '';
+          _loadedName = data['name'] ?? '';
+          selectedChildIds = readChildIds(data).toSet();
           flagEntry = data['flagEntry'] ?? false;
-          _nameController.text = data['name'] ?? '';
           _existingAttachmentUrls = readAttachmentUrls(data);
         });
       }
@@ -93,18 +104,30 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
     }
   }
 
-  void _submitForm(DisputeProvider provider, String caseId) {
-    if (_descController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Please enter a description")));
+  void _submitForm(DisputeProvider provider, CalendarProvider calProvider, String caseId) {
+    if (selectedChildIds.isEmpty) {
+      showSnackBar(context, "Please select at least one child");
       return;
+    }
+    if (_descController.text.trim().isEmpty) {
+      showSnackBar(context, "Please enter a description");
+      return;
+    }
+    if (_party.relation.isEmpty) {
+      showSnackBar(context, "Please select the related party's relationship");
+      return;
+    }
+    if (_party.saveToCase) {
+      calProvider.saveRelatedParty(caseId, relation: _party.relation, name: _party.name);
     }
 
     final data = {
       'date': selectedDate,
       'category': selectedCategory,
       'description': _descController.text.trim(),
-      'name': _nameController.text.trim(), // Added
-      'party': selectedParty,
+      'name': _party.name,
+      'party': _party.relation,
+      'childIds': selectedChildIds.toList(),
       'flagEntry': flagEntry,
       'disputeStatus': _editingDisputeId == null ? 'Open' : null, // Set 'Open' only for new entries
     };
@@ -128,8 +151,6 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
   void dispose() {
     _descController.dispose();
     _descNode.dispose();
-    _nameController.dispose();
-    _nameNode.dispose();
     super.dispose();
   }
 
@@ -150,6 +171,12 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                ChildMultiSelector(
+                  caseModel: selectedCase,
+                  selectedIds: selectedChildIds,
+                  onChanged: (ids) => setState(() => selectedChildIds = ids),
+                ),
+                const SizedBox(height: 15),
                 _buildClickableField("Date", DateFormat('dd MMM yyyy').format(selectedDate), () async {
                   final d = await showDatePicker(
                       context: context, initialDate: selectedDate, firstDate: DateTime(2000), lastDate: DateTime(2030));
@@ -174,22 +201,11 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
                   backgroundColor: Colors.grey.shade200,
                 ),
                 const SizedBox(height: 15),
-                 CustomTextField(
-                   labelText: "Name of the Related party",
-                  hintText: "Enter the name",
-                  maxLines: 1, // Usually a name is a single line
-                  controller: _nameController,
-                  node: _nameNode,
-                  borderRadius: 8,
-                  backgroundColor: Colors.grey.shade200,
-                ),
-                const SizedBox(height: 15),
-                _buildLabel("Related Party"),
-                 CustomDropDown<String>(
-                  value: selectedParty,
-                  hint: "Select Party",
-                  items: parties.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-                  onChanged: (v) => setState(() => selectedParty = v!),
+                RelatedPartyPicker(
+                  caseModel: selectedCase,
+                  controller: _party,
+                  initialRelation: _loadedParty,
+                  initialName: _loadedName,
                 ),
                 const SizedBox(height: 25),
                 const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
@@ -213,7 +229,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
                     style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF4A148C),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25))),
-                    onPressed: selectedCase == null ? null : () => _submitForm(disputeProvider, selectedCase.id),
+                    onPressed: selectedCase == null ? null : () => _submitForm(disputeProvider, calProvider, selectedCase.id),
                     child: Text(isEditing ? "Update Dispute" : "Open Dispute",
                         style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
@@ -282,6 +298,10 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
                   if (id != null) {
                     final selected = calProvider.allCases.firstWhere((c) => c.id == id);
                     calProvider.setSelectedCase(selected);
+                    // Children belong to a case; don't carry a selection across.
+                    setState(() => selectedChildIds = selected.children.length == 1
+                        ? {selected.children.first.id}
+                        : {});
                   }
                 },
               ),

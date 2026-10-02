@@ -1,16 +1,21 @@
 
 import 'package:clearcase/models/case_model.dart';
+import 'package:clearcase/models/remainder_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 
+/// Case setup wizard. Creating a case: Step 1 (case, related party,
+/// children) → Step 2 (optional repeated reminders). Editing a case: Step 1
+/// only — its reminders are managed from the Reminders screen.
 class CaseSetupProvider extends ChangeNotifier {
   final FirebaseFirestore _firestore = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase');
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
   int _currentStep = 1;
   int get currentStep => _currentStep;
+  int get stepCount => isEditing ? 1 : 2;
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
@@ -29,64 +34,13 @@ class CaseSetupProvider extends ChangeNotifier {
   String? _editingCaseId;
   bool get isEditing => _editingCaseId != null;
 
-  // Existing scheduledRules docs, keyed by lower-cased category, so a wizard
-  // re-run edits the current rule instead of overwriting it from blank.
-  Map<String, Map<String, dynamic>> _existingRules = {};
-  Map<String, dynamic>? existingRuleFor(String category) =>
-      _existingRules[category.toLowerCase()];
-
-  // False only while an edit-mode rule load is in flight. Starts true so the
-  // create flow — which never loads rules — is never gated on anything; it is
-  // flipped false by loadExistingCase when we actually enter edit mode, and back
-  // to true by loadExistingRules on every exit path (success, empty, failure).
-  //
-  // Step 3 seeds its form once in initState from existingRuleFor(). If it were
-  // allowed to build while this is false, it would seed blank and a save would
-  // then fully overwrite the case's real rule (submitCase writes the rule with
-  // batch.set and no merge). The screen must not render Step 3 until this is
-  // true.
-  bool _rulesLoaded = true;
-  bool get rulesLoaded => _rulesLoaded;
-
-  void _markRulesLoaded() {
-    _rulesLoaded = true;
-  }
-
-  // True only when an edit-mode rule load actually THREW (set in
-  // loadExistingRules' catch, cleared on every attempt and on success).
-  //
-  // A failed load and a case that legitimately has no rules both leave
-  // _existingRules empty, so without this flag Step 3 cannot tell them apart and
-  // renders a blank form either way. That is fine for the "no rules yet" case,
-  // but catastrophic for the failure case: submitCase writes the rule with
-  // batch.set and NO merge, so saving the blank form fully overwrites the case's
-  // real, court-order-derived rule. Step 3 must surface this and block saving.
-  //
-  // Always false in the create flow — nothing is ever loaded there.
-  bool _rulesLoadFailed = false;
-  bool get rulesLoadFailed => _rulesLoadFailed;
-
-  /// Re-attempts the edit-mode rule load after a failure. No-op outside edit
-  /// mode so the create flow can never be gated on it.
-  Future<void> retryLoadExistingRules() async {
-    final id = _editingCaseId;
-    if (id == null) return;
-    _rulesLoaded = false;
-    _rulesLoadFailed = false;
-    notifyListeners();
-    await loadExistingRules(id);
-  }
-
-  // Step 2 Selection
-  String? _selectedRuleType;
-  String? get selectedRuleType => _selectedRuleType;
-
-  // Step 3 Data (Holds the raw map of the rule config)
-  Map<String, dynamic>? _configuredRuleData;
+  // Step 2: repeated reminders set up during onboarding, saved with the case.
+  final List<ReminderModel> _reminderDrafts = [];
+  List<ReminderModel> get reminderDrafts => List.unmodifiable(_reminderDrafts);
 
   // --- NAVIGATION ---
   void nextStep() {
-    if (_currentStep < 3) {
+    if (_currentStep < stepCount) {
       _currentStep++;
       notifyListeners();
     }
@@ -103,6 +57,13 @@ class CaseSetupProvider extends ChangeNotifier {
   void updateCaseInfo(String number, String rep) {
     _caseData.caseNumber = number;
     _caseData.legalRep = rep;
+    notifyListeners();
+  }
+
+  /// Blank values clear the related party.
+  void updateRelatedParty({String? relation, String? name}) {
+    _caseData.relatedPartyRelation = (relation ?? '').trim().isEmpty ? null : relation!.trim();
+    _caseData.relatedPartyName = (name ?? '').trim().isEmpty ? null : name!.trim();
     notifyListeners();
   }
 
@@ -167,101 +128,34 @@ class CaseSetupProvider extends ChangeNotifier {
     // isEditing would become true and submitCase would call casesCol.doc(''),
     // which throws. Only enter edit mode when we actually have an id.
     _editingCaseId = c.id.trim().isEmpty ? null : c.id;
-    // Entering edit mode means a rule load is expected: gate Step 3 until
-    // loadExistingRules reports back. A blank id leaves us in create mode, where
-    // there are no rules to wait for, so the flag stays true.
-    if (_editingCaseId != null) {
-      _rulesLoaded = false;
-      _rulesLoadFailed = false;
-    }
     notifyListeners();
-  }
-
-  Future<void> loadExistingRules(String caseId) async {
-    final user = _auth.currentUser;
-    if (user == null) {
-      // No user means no load will ever happen — don't strand Step 3 behind a
-      // spinner waiting for a result that isn't coming.
-      _markRulesLoaded();
-      notifyListeners();
-      return;
-    }
-    _rulesLoadFailed = false;
-    try {
-      final snap = await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('cases')
-          .doc(caseId)
-          .collection('scheduledRules')
-          .get();
-      _existingRules = {
-        for (final doc in snap.docs) doc.id: doc.data(),
-      };
-      // In edit mode, pre-select the existing rule's type so Step 2 shows it as
-      // chosen and Step 3 seeds from it — otherwise both look blank until the
-      // user re-picks the type. A case can hold several rule docs (one per
-      // category); the wizard edits one at a time, so default to the first and
-      // leave the rest untouched (submitCase only writes the selected type).
-      if (isEditing && _selectedRuleType == null && _existingRules.isNotEmpty) {
-        final entry = _existingRules.entries.first;
-        final category = entry.value['category'];
-        if (category is String && category.trim().isNotEmpty) {
-          _selectedRuleType = category;
-        } else if (entry.key.isNotEmpty) {
-          // Rule docs written elsewhere may lack the readable `category` field;
-          // derive it from the doc id ('custody' -> 'Custody').
-          _selectedRuleType = entry.key[0].toUpperCase() + entry.key.substring(1);
-        }
-      }
-      // A completed-but-empty collection IS loaded — the case simply has no
-      // rules yet, and Step 3 should proceed to its blank defaults.
-      _markRulesLoaded();
-      notifyListeners();
-    } catch (e) {
-      debugPrint('loadExistingRules failed: $e');
-      // Don't leave stale rules from a previously-loaded case sitting around —
-      // the form could otherwise prefill from the wrong case's data.
-      _existingRules = {};
-      // Record that this emptiness is a FAILURE, not "no rules yet". Step 3 keys
-      // off this to show an error and disable saving instead of presenting a
-      // blank form whose save would clobber the case's real rule.
-      _rulesLoadFailed = true;
-      // A failed load is still a finished load — release the gate so the user
-      // gets the error rather than an inescapable spinner.
-      _markRulesLoaded();
-      notifyListeners();
-    }
   }
 
   // --- STEP 2: LOGIC ---
-  void selectRuleType(String type) {
-    _selectedRuleType = type;
+
+  void addReminderDraft(ReminderModel draft) {
+    _reminderDrafts.add(draft);
     notifyListeners();
   }
 
-  // --- STEP 3: LOGIC ---
-  void setRuleConfiguration(Map<String, dynamic> data) {
-    _configuredRuleData = data;
-    
-    // We only set the Boolean Flags here. 
-    // The actual data map will be saved to a sub-collection in submitCase()
-    if (_selectedRuleType == 'Custody') {
-      _caseData.isCustodyRuleSet = true;
-    } else if (_selectedRuleType == 'Payment') {
-      _caseData.isPaymentRuleSet = true;
-    } else if (_selectedRuleType == 'Custom') {
-       // Assuming CustomRuleSet flag exists or logic handles it
-       // _caseData.isCustomRuleSet = true; 
-    }
+  void replaceReminderDraft(int index, ReminderModel draft) {
+    if (index < 0 || index >= _reminderDrafts.length) return;
+    _reminderDrafts[index] = draft;
     notifyListeners();
   }
 
-  // --- SUBMIT (Updated Storage Paths) ---
+  void removeReminderDraft(int index) {
+    if (index < 0 || index >= _reminderDrafts.length) return;
+    _reminderDrafts.removeAt(index);
+    notifyListeners();
+  }
+
+  // --- SUBMIT ---
   bool _isSubmitting = false;
   bool get isSubmitting => _isSubmitting;
 
-  Future<void> submitCase(BuildContext context) async {
+  /// Saves the case and, unless [skipReminders], the reminder drafts.
+  Future<void> submitCase(BuildContext context, {bool skipReminders = false}) async {
     final user = _auth.currentUser;
     if (user == null) return;
 
@@ -301,19 +195,14 @@ class CaseSetupProvider extends ChangeNotifier {
       }
       _caseData.id = caseRef.id;
 
-      // 3. NEW LOGIC: Save ALL Rules to a dedicated 'scheduledRules' sub-collection
-      if (_configuredRuleData != null && _selectedRuleType != null) {
-        // Use the lower-case category as the ID (e.g., 'custody', 'payment', 'custom')
-        // This ensures only one rule per category exists per case.
-        DocumentReference ruleRef = caseRef
-            .collection('scheduledRules')
-            .doc(_selectedRuleType!.toLowerCase());
-
-        Map<String, dynamic> rulePayload = Map.from(_configuredRuleData!);
-        rulePayload['createdAt'] = FieldValue.serverTimestamp();
-        rulePayload['category'] = _selectedRuleType; // Store the readable category name
-
-        batch.set(ruleRef, rulePayload);
+      // 3. Reminders set up in Step 2.
+      if (!skipReminders) {
+        for (final draft in _reminderDrafts) {
+          batch.set(
+            caseRef.collection('reminders').doc(),
+            draft.copyWith(caseId: caseRef.id).toMap(),
+          );
+        }
       }
 
       await batch.commit();

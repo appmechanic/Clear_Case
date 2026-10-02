@@ -3,7 +3,8 @@ import 'dart:ui';
 /// Maps a touch point on a month-view TableCalendar to the day under it, for
 /// swipe-to-select. Mirrors TableCalendar's layout: the day grid is the
 /// bottom `weeks × rowHeight` of the widget (header and weekday row sit above
-/// it), weeks start on Sunday, and there's no table padding.
+/// it), weeks start on Monday (`StartingDayOfWeek.monday`), and there's no
+/// table padding.
 class CalendarGrid {
   final DateTime month;
   final double rowHeight;
@@ -13,14 +14,17 @@ class CalendarGrid {
   DateTime get _firstOfMonth => DateTime(month.year, month.month, 1);
   DateTime get _lastOfMonth => DateTime(month.year, month.month + 1, 0);
 
-  /// Sunday on or before the 1st — the top-left cell.
+  /// Blank cells before the 1st in its week row (Monday = 0).
+  int get _leadingBlanks => _firstOfMonth.weekday - DateTime.monday;
+
+  /// Monday on or before the 1st — the top-left cell.
   DateTime get firstVisibleDay =>
-      DateTime(month.year, month.month, 1 - (_firstOfMonth.weekday % 7));
+      DateTime(month.year, month.month, 1 - _leadingBlanks);
 
   /// Week rows the month occupies (4–6), matching
   /// `sixWeekMonthsEnforced: false`.
   int get weekCount {
-    final cells = (_firstOfMonth.weekday % 7) + _lastOfMonth.day;
+    final cells = _leadingBlanks + _lastOfMonth.day;
     return (cells / 7).ceil();
   }
 

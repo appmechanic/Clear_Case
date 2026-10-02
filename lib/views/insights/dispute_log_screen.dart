@@ -9,7 +9,10 @@ import '../../provider/insight_provider.dart';
  import '../../models/case_model.dart';
 import '../widgets/custom_search_box.dart';
 import '../widgets/filter_ui.dart';
-import 'dispute_log_viewer_screen.dart';
+import '../widgets/child_tag.dart';
+import '../../core/utils/attachments.dart';
+import '../../core/utils/child_names.dart';
+import 'dispute_log_details_screen.dart';
 import '../home/new_dispute_screen.dart';
 import '../widgets/quick_add_button.dart';
 
@@ -70,8 +73,14 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
     super.didChangeDependencies();
   }
 
-  // After a Quick Add: reload, then re-apply the filters and search the
-  // screen is on.
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  // After a Quick Add or pull-to-refresh: reload, then re-apply the filters
+  // and search the screen is on (fetchDisputes resets the provider's).
   Future<void> _reloadAfterQuickAdd() async {
     if (!mounted) return;
     final selected = Provider.of<InsightProvider>(context, listen: false).selectedCase;
@@ -100,7 +109,7 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
       body: Consumer2<DisputeInsightsProvider, InsightProvider>(
         builder: (context, disputeProv, insightProv, child) {
           return RefreshIndicator(
-            onRefresh: () => disputeProv.fetchDisputes(insightProv.selectedCase!.id, timePeriod: _currentFilters.selectedTimePeriod),
+            onRefresh: _reloadAfterQuickAdd,
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 96), // clear of the Quick Add button
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
@@ -146,23 +155,23 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
                       controller: _searchController,
                       hintText: "Search by status, category, name",
                       onChanged: (val) => disputeProv.filterBySearch(val),
-                      onClear: () => disputeProv.clearAll(),
+                      // Clearing the search keeps the filters picked in the sheet.
+                      onClear: () => disputeProv.filterBySearch(""),
                     ),
                     const SizedBox(height: 20),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: const [
-                        Text("Dispute Analytics", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text("Dispute History", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         Icon(Icons.error, color: Colors.redAccent),
                       ],
                     ),
+                    const SizedBox(height: 10),
 
                     if (disputeProv.disputes.isEmpty)
-                      const Column(
-                        children: [
-                          SizedBox(height: 10,),
-                          Text("No disputes found.", style: TextStyle(color: Colors.grey))
-                        ],
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 40),
+                        child: Text("No disputes found.", style: TextStyle(color: Colors.grey)),
                       )
                     else
                       ListView.builder(
@@ -184,7 +193,7 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               if (showMonthHeader) _buildMonthHeader(date),
-                              _buildDisputeItem(context, data, date),
+                              _buildDisputeItem(context, data, date, insightProv.selectedCase),
                             ],
                           );
                         },
@@ -210,6 +219,16 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
         )).toList(),
         onChanged: (value) {
           insightProv.setSelectedCase(value);
+          // Child ids belong to the previous case; fetchDisputes also resets
+          // the provider's filters, so start the new case unfiltered.
+          setState(() {
+            _currentFilters = FilterOptions(
+              selectedTimePeriod: _currentFilters.selectedTimePeriod,
+              selectedCategory: "All",
+              selectedChildIds: [],
+            );
+          });
+          _searchController.clear();
           if (value != null) disputeProv.fetchDisputes((value as CaseModel).id, timePeriod: _currentFilters.selectedTimePeriod);
         },
         buttonStyleData: const ButtonStyleData(height: 60, padding: EdgeInsets.zero),
@@ -258,67 +277,114 @@ class _DisputesLogScreenState extends State<DisputesLogScreen> {
     );
   }
 
-  Widget _buildDisputeItem(BuildContext context, Map<String, dynamic> data, DateTime date) {
-    final status = data['disputeStatus'] ?? "Open";
-    final color = status == "Open" ? Colors.red : Colors.green;
-    final hasAttachments = (data['attachments'] as List?)?.isNotEmpty ?? false;
+  Widget _buildDisputeItem(
+    BuildContext context,
+    Map<String, dynamic> data,
+    DateTime date,
+    CaseModel? caseModel,
+  ) {
+    final String status = (data['disputeStatus'] ?? "Open").toString();
+    final Color statusColor = status == "Resolved" ? Colors.green : Colors.red;
+    final bool hasAttachments = readAttachmentUrls(data).isNotEmpty;
     final int logCount = data['logCount'] ?? 0;
+    final String category = (data['category'] ?? "General").toString();
+    final String description = (data['description'] ?? "").toString().trim();
+    final String party = (data['party'] ?? "").toString().trim();
+    final String name = (data['name'] ?? "").toString().trim();
+    final String partyLine = [party, name].where((e) => e.isNotEmpty).join(" · ");
 
     return GestureDetector(
-      // Open the full-screen reader directly instead of a condensed card list.
-      onTap: () => Navigator.pushNamed(
-        context,
-        DisputeLogViewerScreen.routeName,
-        arguments: {
-          'caseId': data['caseId'],
-          'disputeId': data['id'],
-          'initialIndex': 0,
-          'party': data['party'] ?? '',
-          'isClosed': data['disputeStatus'] == 'Resolved',
-        },
-      ),
+      onTap: () async {
+        final provider = Provider.of<DisputeInsightsProvider>(context, listen: false);
+        await Navigator.pushNamed(context, DisputeDetailsScreen.routeName, arguments: data);
+        // Logs may have been added or deleted on the detail page.
+        final caseId = data['caseId'], id = data['id'];
+        if (caseId is String && id is String) provider.refreshLogCount(caseId, id);
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 5)],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Text(DateFormat('MMM dd').format(date), style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
-                      if (hasAttachments) ...[
-                        const SizedBox(width: 8),
-                        Container(
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.all(6),
-                          decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
-                          child: const Icon(Icons.attachment, size: 14, color: Color(0xFF6200EE)),
-                        ),                      ]
-                    ],
+            Row(
+              children: [
+                Text(DateFormat('MMM dd').format(date),
+                    style: const TextStyle(color: Color(0xFF6200EE), fontWeight: FontWeight.bold)),
+                const Spacer(),
+                if (hasAttachments)
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.all(6),
+                    decoration: const BoxDecoration(color: Color(0xFFE3F2FD), shape: BoxShape.circle),
+                    child: const Icon(Icons.attachment, size: 14, color: Color(0xFF6200EE)),
                   ),
-                  const SizedBox(height: 4),
-                  Text(data['category'] ?? "General", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 4),
-                  Text(
-                      "$logCount ${logCount == 1 ? 'log' : 'logs'}",
-                      style: const TextStyle(color: Colors.grey, fontSize: 12)
-                  ),
-                ],
+                _pill(status, statusColor),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                _pill(category, const Color(0xFF7B2CBF)),
+                ChildTag.forIds(readChildIds(data), caseModel),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Text(
+              description.isEmpty ? "No description" : description,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: description.isEmpty ? Colors.grey : Colors.black87,
+                fontSize: 13,
+                fontStyle: description.isEmpty ? FontStyle.italic : FontStyle.normal,
               ),
             ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20)),
-              child: Text(status, style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
-            )
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                if (partyLine.isNotEmpty) ...[
+                  CircleAvatar(
+                    radius: 10,
+                    backgroundColor: Colors.purple.shade50,
+                    child: const Icon(Icons.person, size: 12, color: Colors.purple),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(partyLine,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ] else
+                  const Spacer(),
+                const SizedBox(width: 8),
+                const Icon(Icons.history, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text("$logCount ${logCount == 1 ? 'log' : 'logs'}",
+                    style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              ],
+            ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _pill(String text, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(12)),
+      child: Text(text,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color)),
     );
   }
 

@@ -31,6 +31,10 @@ class CalendarEvent {
   final DateTime? endDate;
   final DateTime? startTime;
   final DateTime? endTime;
+  // Reminders only: the tag colour (ARGB) and whether it's one occurrence of
+  // a repeated reminder. The tag itself is in [category].
+  final int? color;
+  final bool isRepeatedReminder;
 
   CalendarEvent({
     required this.id,
@@ -56,12 +60,18 @@ class CalendarEvent {
     this.endDate,
     this.startTime,
     this.endTime,
+    this.color,
+    this.isRepeatedReminder = false,
   });
 
   /// Days covered by a custody entry; a single day for every other type.
   CustodySpan get span => CustodySpan(date, endDate ?? date);
 
   bool get isScheduledRule => id.startsWith("rule_");
+
+  /// Painted as a shaded background on the calendar rather than an icon:
+  /// schedules from the old case setup, and repeated reminders.
+  bool get isScheduleLayer => isScheduledRule || isRepeatedReminder;
 
   factory CalendarEvent.fromMap(Map<String, dynamic> map, {String? docId}) {
     String origin = map['originCollection'] ?? '';

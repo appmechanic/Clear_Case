@@ -6,6 +6,8 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 
+import '../core/utils/attachments.dart';
+import '../core/utils/child_names.dart';
 import '../core/utils/storage_cleanup.dart';
 import '../core/utils/timeframe.dart';
 import '../models/filter_model.dart';
@@ -266,7 +268,6 @@ class DisputeInsightsProvider with ChangeNotifier {
         final data = doc.data();
         data['id'] = doc.id;
         data['caseId'] = caseId;
-        _calculateStats(data);
         return data;
       }).toList();
 
@@ -290,40 +291,66 @@ class DisputeInsightsProvider with ChangeNotifier {
     }
   }
 
-  /// THE ENGINE: Combines Search, Time, and Status Filters
+  /// THE ENGINE: Combines Search, Time, Child and Status Filters.
+  ///
+  /// The header stats follow the period and children picked (not the status
+  /// filter or search, which would zero out the Open/Resolved split).
   void _runCombinedFilters() {
-    List<Map<String, dynamic>> results = List.from(_allDisputes);
-
-    // 1. Apply Advanced Filters
-    results = results.where((dispute) {
-      // Status Filter (Open/Resolved/All)
-      bool matchesStatus = true;
-      if (_currentFilters.selectedCategory == "Open") {
-        matchesStatus = (dispute['disputeStatus'] ?? "") == "Open";
-      } else if (_currentFilters.selectedCategory == "Resolved") {
-        matchesStatus = (dispute['disputeStatus'] ?? "") == "Resolved";
-      }
-
-      // Time Filter (Using the 'date' field from your Firestore data)
+    // 1. Period + children: the scope the header stats describe.
+    final scoped = _allDisputes.where((dispute) {
       final DateTime? disputeDate = (dispute['date'] as Timestamp?)?.toDate();
-      bool matchesTime = Timeframe.contains(_currentFilters.selectedTimePeriod, disputeDate);
-
-      return matchesStatus && matchesTime;
+      if (!Timeframe.contains(_currentFilters.selectedTimePeriod, disputeDate)) return false;
+      // Disputes from before child selection have no childIds and cover every
+      // child, so they show under any child filter.
+      return matchesChildFilter(readChildIds(dispute), _currentFilters.selectedChildIds);
     }).toList();
 
-    // 2. Apply Search Query
+    _resetStats();
+    for (final dispute in scoped) {
+      _calculateStats(dispute);
+    }
+
+    // 2. Status Filter (Open/Resolved/All)
+    var results = scoped.where((dispute) {
+      final status = (dispute['disputeStatus'] ?? "Open").toString();
+      if (_currentFilters.selectedCategory == "Open") return status == "Open";
+      if (_currentFilters.selectedCategory == "Resolved") return status == "Resolved";
+      return true;
+    }).toList();
+
+    // 3. Search Query
     if (_currentSearchQuery.isNotEmpty) {
       final query = _currentSearchQuery.toLowerCase();
       results = results.where((d) {
-        final status = (d['disputeStatus'] ?? "").toString().toLowerCase();
-        final cat = (d['category'] ?? "").toString().toLowerCase();
-        final name = (d['name'] ?? "").toString().toLowerCase();
-        return status.contains(query) || cat.contains(query) || name.contains(query);
+        bool has(String key) => (d[key] ?? "").toString().toLowerCase().contains(query);
+        return has('disputeStatus') || has('category') || has('name') ||
+            has('party') || has('description');
       }).toList();
     }
 
     _filteredDisputes = results;
     notifyListeners();
+  }
+
+  /// Re-counts one dispute's logs after its detail page added or deleted some,
+  /// so the list row's "N logs" stays right without a full reload.
+  Future<void> refreshLogCount(String caseId, String disputeId) async {
+    final userId = _auth.currentUser?.uid;
+    if (userId == null) return;
+    try {
+      final logSnap = await _db.collection('users').doc(userId).collection('cases')
+          .doc(caseId).collection('disputeRecords').doc(disputeId)
+          .collection('logs').count().get();
+      for (final dispute in _allDisputes) {
+        if (dispute['id'] == disputeId) {
+          dispute['logCount'] = logSnap.count ?? 0;
+          break;
+        }
+      }
+      notifyListeners();
+    } catch (e) {
+      debugPrint("Error refreshing log count: $e");
+    }
   }
 
 
@@ -388,7 +415,7 @@ class DisputeInsightsProvider with ChangeNotifier {
     if (logId != null) {
       final logSnap = await _db.collection('users').doc(userId).collection('cases').doc(caseId)
           .collection('disputeRecords').doc(disputeId).collection('logs').doc(logId).get();
-      previousUrls = List<String>.from((logSnap.data() ?? const {})['attachments'] ?? const []);
+      previousUrls = readAttachmentUrls(logSnap.data());
     }
 
     if (files != null && files.isNotEmpty) {
@@ -422,16 +449,10 @@ class DisputeInsightsProvider with ChangeNotifier {
         .collection('disputeRecords').doc(disputeId).update({'disputeStatus': newStatus, 'updatedAt': FieldValue.serverTimestamp()});
 
     // Keep the in-memory cache in sync so the previous (list) screen reflects
-    // the change without needing a manual refresh.
+    // the change without needing a manual refresh. The header stats are
+    // recounted by _runCombinedFilters.
     for (final dispute in _allDisputes) {
       if (dispute['id'] == disputeId) {
-        final String oldStatus = (dispute['disputeStatus'] ?? "Open").toString();
-        if (oldStatus != newStatus) {
-          if (oldStatus == "Open" && openCount > 0) openCount--;
-          if (oldStatus == "Resolved" && resolvedCount > 0) resolvedCount--;
-          if (newStatus == "Open") openCount++;
-          if (newStatus == "Resolved") resolvedCount++;
-        }
         dispute['disputeStatus'] = newStatus;
         break;
       }
@@ -440,8 +461,7 @@ class DisputeInsightsProvider with ChangeNotifier {
   }
 
   Future<void> deleteLogWithStorage(String caseId, String disputeId, Map<String, dynamic> log) async {
-    final List attachments = log['attachments'] ?? [];
-    for (String url in attachments) {
+    for (final url in readAttachmentUrls(log)) {
       try { await FirebaseStorage.instance.refFromURL(url).delete(); } catch (_) {}
     }
     await _db.collection('users').doc(_auth.currentUser?.uid).collection('cases').doc(caseId)

@@ -3,9 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/utils/child_names.dart';
+import '../../models/case_model.dart';
 import '../../models/non_compliance_model.dart';
 import '../../models/payment_model.dart';
 import '../../provider/insight_provider.dart';
+import '../widgets/child_tag.dart';
 import 'custody_detail_screen.dart';
 import 'dispute_log_details_screen.dart';
 import 'non_compliance_detail_screen.dart';
@@ -120,6 +123,7 @@ class FlaggedEventsScreen extends StatelessWidget {
                         ..._buildGroup(
                           context,
                           group,
+                          provider.selectedCase,
                           events
                               .where((e) => _bucketOf(e) == group.key)
                               .toList(),
@@ -150,8 +154,8 @@ class FlaggedEventsScreen extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildGroup(
-      BuildContext context, _FlaggedGroup group, List<Map<String, dynamic>> items) {
+  List<Widget> _buildGroup(BuildContext context, _FlaggedGroup group,
+      CaseModel? selectedCase, List<Map<String, dynamic>> items) {
     if (items.isEmpty) return const [];
     return [
       Padding(
@@ -181,14 +185,14 @@ class FlaggedEventsScreen extends StatelessWidget {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         itemCount: items.length,
-        itemBuilder: (context, i) => _buildItem(context, group, items[i]),
+        itemBuilder: (context, i) => _buildItem(context, group, selectedCase, items[i]),
       ),
       const SizedBox(height: 20),
     ];
   }
 
-  Widget _buildItem(
-      BuildContext context, _FlaggedGroup group, Map<String, dynamic> event) {
+  Widget _buildItem(BuildContext context, _FlaggedGroup group,
+      CaseModel? selectedCase, Map<String, dynamic> event) {
     return GestureDetector(
       onTap: () => _navigateToDetail(context, group.key, event),
       child: Container(
@@ -214,10 +218,19 @@ class FlaggedEventsScreen extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  Text(_dateOf(event),
-                      style:
-                          const TextStyle(color: Colors.grey, fontSize: 12)),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Text(_dateOf(event),
+                          style: const TextStyle(
+                              color: Colors.grey, fontSize: 12)),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: ChildTag(
+                            childTagLabel(readChildIds(event), selectedCase)),
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),

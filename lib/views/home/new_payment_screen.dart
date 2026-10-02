@@ -236,7 +236,8 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
 
                     CustomTextField(
                       labelText: "Amount",
-                      hintText: "0.0",
+                      hintText: "0.00",
+                      prefixText: "\$",
                       isNum: true,
                       controller: _amountController,
                       node: _amountNode,

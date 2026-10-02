@@ -6,6 +6,12 @@ class CaseModel {
   String caseNumber;
   String legalRep;
   List<ChildModel> children; 
+
+  // The other party named in the court order (usually the other parent).
+  // Pre-fills the related party on new disputes and non-compliance records.
+  // Null until the user enters one.
+  String? relatedPartyName;
+  String? relatedPartyRelation; // one of relatedPartyRelations
   
   // Rules Config
   bool isCustodyRuleSet;
@@ -24,6 +30,8 @@ class CaseModel {
     this.caseNumber = '',
     this.legalRep = '',
     List<ChildModel>? children, 
+    this.relatedPartyName,
+    this.relatedPartyRelation,
     this.isCustodyRuleSet = false,
     this.isPaymentRuleSet = false,
     this.custodyRule,
@@ -39,6 +47,8 @@ class CaseModel {
       'caseNumber': caseNumber,
       'legalRep': legalRep,
       'children': children.map((x) => x.toMap()).toList(),
+      'relatedPartyName': relatedPartyName,
+      'relatedPartyRelation': relatedPartyRelation,
       'isCustodyRuleSet': isCustodyRuleSet,
       'isPaymentRuleSet': isPaymentRuleSet,
       'custodyRule': custodyRule,
@@ -66,6 +76,9 @@ class CaseModel {
             )
           : [],
 
+      relatedPartyName: map['relatedPartyName'] as String?,
+      relatedPartyRelation: map['relatedPartyRelation'] as String?,
+
       isCustodyRuleSet: map['isCustodyRuleSet'] ?? false,
       isPaymentRuleSet: map['isPaymentRuleSet'] ?? false,
       
@@ -78,6 +91,16 @@ class CaseModel {
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
+}
+
+/// Relationship options for a related party.
+const List<String> relatedPartyRelations = ["Mother", "Father", "Guardian"];
+
+extension CaseRelatedParty on CaseModel {
+  /// True once both the related party's relationship and name are saved.
+  bool get hasRelatedParty =>
+      (relatedPartyRelation ?? '').trim().isNotEmpty &&
+      (relatedPartyName ?? '').trim().isNotEmpty;
 }
 
 class ChildModel {

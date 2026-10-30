@@ -19,6 +19,11 @@ class ReportPalette {
   static const PdfColor decor = PdfColor.fromInt(0xFFF0F1F4);
   static final PdfColor accent = PdfColor.fromInt(AppColors.primary.toARGB32());
 
+  // Flagged records: a solid badge plus a warm tint on their rows and cards,
+  // distinct from every record-type pill.
+  static const PdfColor flagged = PdfColor.fromInt(0xFFD9480F);
+  static const PdfColor flaggedTint = PdfColor.fromInt(0xFFFFF1E8);
+
   // Provenance notes on evidence photos.
   static const PdfColor libraryNote = PdfColor.fromInt(0xFFA35D00);
   static const PdfColor cameraNote = PdfColor.fromInt(0xFF1E7A46);

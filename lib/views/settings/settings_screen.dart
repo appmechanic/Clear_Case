@@ -1,8 +1,12 @@
 
 import 'package:clearcase/models/case_model.dart';
+import 'package:clearcase/core/static/subscription_config.dart';
 import 'package:clearcase/provider/setting_provider.dart';
+import 'package:clearcase/provider/subscription_provider.dart';
 import 'package:clearcase/views/home/case_setup_screen.dart';
 import 'package:clearcase/views/settings/account_screen.dart';
+import 'package:clearcase/views/subscription/paywall_screen.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -72,20 +76,54 @@ class SettingsScreen extends StatelessWidget {
                           ),
                         ),
 
+                        // 5. Subscription (store management page: change plan / cancel)
+                        // Debug-only preview while the paywall isn't enforced yet.
+                        if (kDebugMode && !SubscriptionConfig.enforcePaywall) ...[
+                          const SizedBox(height: 25),
+                          const Text("Subscription", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 15),
+                          OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              minimumSize: const Size.fromHeight(50),
+                              side: const BorderSide(color: Color(0xFF4A148C)),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                            ),
+                            onPressed: () => Navigator.pushNamed(context, PaywallScreen.routeName),
+                            child: const Text("View Plans (debug)", style: TextStyle(color: Color(0xFF4A148C), fontSize: 15)),
+                          ),
+                        ],
+                        if (SubscriptionConfig.enforcePaywall &&
+                            context.watch<SubscriptionProvider>().isActive) ...[
+                          const SizedBox(height: 25),
+                          const Text("Subscription", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          const SizedBox(height: 15),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: Colors.black,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(25),
+                                  side: BorderSide(color: Colors.blue.shade50),
+                                ),
+                              ),
+                              onPressed: () => context.read<SubscriptionProvider>().openManageSubscriptions(),
+                              child: const Text("Manage Subscription", style: TextStyle(fontWeight: FontWeight.normal, fontSize: 15)),
+                            ),
+                          ),
+                        ],
+
                         const SizedBox(height: 25),
                         const Text("Legal Info", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                         const SizedBox(height: 15),
 
-                        _buildLegalButton(
-                            "Terms & Conditions",
-                            "https://docs.google.com/document/d/19_TmhTBYzsrhPEviQk6IMptCLSPhJfHN4ihuBcdiZJI/edit?usp=sharing"
-                        ),
+                        _buildLegalButton("Terms & Conditions", SubscriptionConfig.termsUrl),
                         const SizedBox(height: 12),
                         // 2. Privacy Policy
-                        _buildLegalButton(
-                            "Privacy Policy",
-                            "https://docs.google.com/document/d/1M0pHs1VBdUwnaNqog1H_HpkRE5mqAfxcn_F3_Sd0laA/edit?usp=sharing"
-                        ),
+                        _buildLegalButton("Privacy Policy", SubscriptionConfig.privacyUrl),
 
                         // Logout / Delete Account live on the Account screen
                         // (tap the profile card above) — not duplicated here.

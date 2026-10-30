@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 class AppColors {
   static const Color primary = Color(0xff45086D);
+  // Light wash of primary, e.g. behind AI Clean Up's pill and suggestion.
+  static const Color primaryTint = Color(0xFFF3ECF8);
   static const Color lightBlueColor = Color(0xffD7F1FE);
   static const Color primaryColorDark = Color(0xff1B4332);
   static const Color backgroundCards = Color(0xFFE9EAE2);

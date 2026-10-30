@@ -10,6 +10,7 @@ import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
+import '../../core/utils/attachments.dart';
 import '../../core/utils/child_names.dart';
 import '../../core/utils/custody_span.dart';
 import '../../core/utils/evidence_source.dart';
@@ -27,7 +28,8 @@ import 'pdf/report_theme.dart';
 ///   1. Executive Summary — case overview counts, children, financial record,
 ///      and every included child's details (DOB, school, address).
 ///   2. Detailed Records — chronological table of every record.
-///   3. Event Details — one card per record (E001, E002 … in date order).
+///   3. Event Details — one card per record (E001, E002 … in date order),
+///      with each dispute's log entries under it.
 ///   4. Evidence Index — records that carry attachments.
 ///   5. Recording Notes — what the document is (and isn't).
 ///   6. Evidence Attachments — image grid plus linked documents.
@@ -113,12 +115,23 @@ class PDFGenerator {
         .where((c) => options.childIds.isEmpty || options.childIds.contains(c.id))
         .toList();
 
+    // Each included dispute's log entries (keyed by dispute id), oldest first.
+    // A log's files are reported with its dispute's evidence.
+    final disputeLogs = options.reportSections["Dispute Logs"] == true
+        ? await _fetchDisputeLogs(caseId, events.where((e) => e.type == EventType.dispute).map((e) => e.id))
+        : const <String, List<DisputeLogEntry>>{};
+
     // Pre-fetch image attachments before building pages — MultiPage.build is
     // synchronous, so image bytes must be resolved up front. This is usually
     // the slowest step, so it owns most of the progress bar (10–75%).
     await stage(0.10, "Collecting attachments…");
     final attachments = await _collectAttachments(
       events,
+      extraUrls: {
+        for (final e in events)
+          if (e.type == EventType.dispute && disputeLogs[e.id] != null)
+            _eventKey(e): [for (final log in disputeLogs[e.id]!) ...log.attachmentUrls],
+      },
       onImage: (done, total) => onProgress?.call(0.10 + 0.65 * (done / total), "Adding photos ($done of $total)…"),
     );
 
@@ -130,6 +143,7 @@ class PDFGenerator {
       events: events,
       children: reportChildren,
       attachments: attachments,
+      disputeLogs: disputeLogs,
       window: window,
       preparedName: preparedFor.name,
       preparedEmail: preparedFor.email,
@@ -168,6 +182,7 @@ class PDFGenerator {
     required ExportOptions options,
     required List<CalendarEvent> events,
     required CaseModel caseModel,
+    Map<String, List<DisputeLogEntry>> disputeLogs = const {},
     ReportFonts? fonts,
     DateTime? generatedAt,
   }) {
@@ -180,6 +195,7 @@ class PDFGenerator {
       events: events,
       children: caseModel.children,
       attachments: const {},
+      disputeLogs: disputeLogs,
       window: options.window,
       preparedName: "Sample Parent",
       preparedEmail: "parent@example.com",
@@ -189,6 +205,42 @@ class PDFGenerator {
   }
 
   static String _eventKey(CalendarEvent e) => "${e.type.name}:${e.id}";
+
+  /// Log entries of each of [disputeIds], oldest first. A dispute whose logs
+  /// can't be read is left out rather than failing the whole report.
+  static Future<Map<String, List<DisputeLogEntry>>> _fetchDisputeLogs(
+    String caseId,
+    Iterable<String> disputeIds,
+  ) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || caseId.isEmpty) return const {};
+    final disputes = FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'clearcase')
+        .collection('users')
+        .doc(user.uid)
+        .collection('cases')
+        .doc(caseId)
+        .collection('disputeRecords');
+
+    final result = <String, List<DisputeLogEntry>>{};
+    await Future.wait(disputeIds.toSet().map((id) async {
+      try {
+        final snap = await disputes.doc(id).collection('logs').orderBy('createdAt').get();
+        if (snap.docs.isEmpty) return;
+        result[id] = snap.docs.map((doc) {
+          final data = doc.data();
+          return DisputeLogEntry(
+            title: (data['title'] ?? '').toString(),
+            description: (data['description'] ?? '').toString(),
+            createdAt: (data['createdAt'] as Timestamp?)?.toDate(),
+            attachmentUrls: readAttachmentUrls(data),
+          );
+        }).toList();
+      } catch (e) {
+        debugPrint('PDF export: could not load logs for dispute $id: $e');
+      }
+    }));
+    return result;
+  }
 
   // "Prepared for" = the signed-in account holder. Prefers the profile's
   // first/last name and email in Firestore; falls back to Firebase Auth.
@@ -233,8 +285,12 @@ class PDFGenerator {
   /// Image bytes are downloaded so photos can render as thumbnails; documents
   /// are kept as link targets. [onImage] is called as each embedded photo
   /// finishes (done, total).
+  ///
+  /// [extraUrls] adds files to a record beyond its own (a dispute's log
+  /// files), keyed the same way.
   static Future<Map<String, List<_Attachment>>> _collectAttachments(
     List<CalendarEvent> events, {
+    Map<String, List<String>> extraUrls = const {},
     void Function(int done, int total)? onImage,
   }) async {
     // Pass 1: decide which images get embedded (first _maxEmbeddedImages, in
@@ -243,9 +299,10 @@ class PDFGenerator {
     final toEmbed = <_Attachment>[];
     int skippedForCap = 0;
     for (final e in events) {
-      if (e.attachmentUrls.isEmpty) continue;
+      final urls = [...e.attachmentUrls, ...?extraUrls[_eventKey(e)]];
+      if (urls.isEmpty) continue;
       final list = <_Attachment>[];
-      for (final url in e.attachmentUrls) {
+      for (final url in urls) {
         final attachment = _Attachment(
           url: url,
           fileName: _fileNameFromUrl(url),
@@ -343,6 +400,21 @@ class PDFGenerator {
   }
 }
 
+/// One entry in a dispute's log, as shown under the dispute in the report.
+class DisputeLogEntry {
+  final String title;
+  final String description;
+  final DateTime? createdAt;
+  final List<String> attachmentUrls;
+
+  const DisputeLogEntry({
+    required this.title,
+    required this.description,
+    this.createdAt,
+    this.attachmentUrls = const [],
+  });
+}
+
 /// One attachment of a record. [image] is non-null only for photos that
 /// downloaded successfully; otherwise the file is shown as a link.
 class _Attachment {
@@ -371,6 +443,8 @@ class _ReportLayout {
   final List<CalendarEvent> events;
   final List<ChildModel> children;
   final Map<String, List<_Attachment>> attachments;
+  /// Log entries per dispute id, oldest first.
+  final Map<String, List<DisputeLogEntry>> disputeLogs;
   final TimeWindow window;
   final String preparedName;
   final String preparedEmail;
@@ -389,6 +463,7 @@ class _ReportLayout {
     required this.events,
     required this.children,
     required this.attachments,
+    required this.disputeLogs,
     required this.window,
     required this.preparedName,
     required this.preparedEmail,
@@ -424,6 +499,13 @@ class _ReportLayout {
   }
 
   List<_Attachment> _attachmentsOf(CalendarEvent e) => attachments[PDFGenerator._eventKey(e)] ?? const [];
+
+  List<DisputeLogEntry> _logsOf(CalendarEvent e) =>
+      e.type == EventType.dispute ? (disputeLogs[e.id] ?? const []) : const [];
+
+  /// Flagged records are marked throughout the report (tinted rows and cards
+  /// plus a "FLAGGED" badge) while "Flagged Events" is ticked.
+  bool _showFlag(CalendarEvent e) => e.isFlagged && _enabled("Flagged Events");
 
   String _refOf(CalendarEvent e) => refs[PDFGenerator._eventKey(e)] ?? '';
 
@@ -480,6 +562,25 @@ class _ReportLayout {
     final (bg, fg) = ReportPalette.pill(type);
     return _pill(_typeName(type).toUpperCase(), bg, fg);
   }
+
+  /// Solid badge with a flag icon — deliberately unlike the pastel type
+  /// pills, so a flagged record stands out at a glance.
+  pw.Widget _flaggedPill() => pw.Container(
+    padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+    decoration: pw.BoxDecoration(color: ReportPalette.flagged, borderRadius: pw.BorderRadius.circular(3)),
+    child: pw.Row(
+      mainAxisSize: pw.MainAxisSize.min,
+      crossAxisAlignment: pw.CrossAxisAlignment.center,
+      children: [
+        ReportIcons.icon(ReportIcons.flag, size: 7.5, color: PdfColors.white, stroke: 2.4),
+        pw.SizedBox(width: 3),
+        pw.Text(
+          "FLAGGED",
+          style: _style(size: 6.5, color: PdfColors.white, font: fonts.semiBold, letterSpacing: 0.7),
+        ),
+      ],
+    ),
+  );
 
   pw.Widget _wordmark({double logoSize = 16, double textSize = 12}) => pw.Row(
     mainAxisSize: pw.MainAxisSize.min,
@@ -583,6 +684,8 @@ class _ReportLayout {
       case EventType.dispute:
         add(e.category);
         add(e.description);
+        final logCount = _logsOf(e).length;
+        if (logCount > 0) add("$logCount log entr${logCount == 1 ? 'y' : 'ies'}");
         break;
       case EventType.nonCompliance:
         add(e.title);
@@ -916,6 +1019,7 @@ class _ReportLayout {
 
     int flaggedOf(EventType t) => flagged.where((e) => e.type == t).length;
     int disputesIn(String category) => disputes.where((e) => e.category == category).length;
+    final logEntries = disputes.fold<int>(0, (n, e) => n + _logsOf(e).length);
 
     final rows = <pw.Widget>[];
     void addRow(String icon, String label, int count, {String? detail}) {
@@ -936,7 +1040,8 @@ class _ReportLayout {
         detail: disputes.isEmpty
             ? null
             : "Communication ${disputesIn('Communication')} · Transfer issues ${disputesIn('Transfer Issues')} · "
-                  "Payment disputes ${disputesIn('Payment Disputes')}",
+                  "Payment disputes ${disputesIn('Payment Disputes')}"
+                  "${logEntries > 0 ? ' · Log entries $logEntries' : ''}",
       );
     }
     if (_enabled("Non-Compliance")) addRow(ReportIcons.alert, "Non-compliance records", nonCompliance.length);
@@ -1217,8 +1322,33 @@ class _ReportLayout {
   );
 
   List<pw.Widget> _detailedRecords() {
-    final heading = _sectionHeading(2, "Detailed Records", "A chronological record of events entered into ClearCase.");
-    if (events.isEmpty) return [_together([heading, _emptyState("No records match the selected filters.")])];
+    final title = _sectionHeading(2, "Detailed Records", "A chronological record of events entered into ClearCase.");
+    if (events.isEmpty) return [_together([title, _emptyState("No records match the selected filters.")])];
+
+    // Key to the flag marker, shown only when the report has flagged records.
+    final heading = events.any(_showFlag)
+        ? pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              title,
+              pw.Padding(
+                padding: const pw.EdgeInsets.only(bottom: 10),
+                child: pw.Row(
+                  children: [
+                    _flaggedPill(),
+                    pw.SizedBox(width: 6),
+                    pw.Expanded(
+                      child: pw.Text(
+                        "Records the user flagged as significant are highlighted throughout this report.",
+                        style: _style(size: 7.5, color: ReportPalette.muted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : title;
 
     return _headedTable(
       heading,
@@ -1232,13 +1362,26 @@ class _ReportLayout {
       [
           for (final e in events)
             pw.TableRow(
+              decoration: _showFlag(e) ? const pw.BoxDecoration(color: ReportPalette.flaggedTint) : null,
               children: [
                 _tableCell(
                   e.type == EventType.custody && e.span.isMultiDay
                       ? "${_numDate.format(e.span.start)} –\n${_numDate.format(e.span.end)}"
                       : _numDate.format(e.date),
                 ),
-                _tableCell(_typeName(e.type)),
+                _showFlag(e)
+                    ? pw.Padding(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                        child: pw.Column(
+                          crossAxisAlignment: pw.CrossAxisAlignment.start,
+                          children: [
+                            pw.Text(_typeName(e.type), style: _style(size: 8, lineSpacing: 1.5)),
+                            pw.SizedBox(height: 3),
+                            _flaggedPill(),
+                          ],
+                        ),
+                      )
+                    : _tableCell(_typeName(e.type)),
                 _tableCell(_clip(_childLabel(e), 60)),
                 _tableCell(_summary(e)),
               ],
@@ -1290,6 +1433,7 @@ class _ReportLayout {
           ("Involved Party", _orDash(e.party)),
           ("Description", _orDash(e.description)),
           ("Attachments", "$attachmentCount"),
+          ..._logRows(e),
         ];
       case EventType.nonCompliance:
         return [
@@ -1304,6 +1448,27 @@ class _ReportLayout {
       case EventType.reminder:
         return [("Title", e.title)];
     }
+  }
+
+  /// A dispute's log, one row per entry (oldest first), after its own
+  /// details. Log files are counted in, and shown with, the dispute's
+  /// attachments.
+  List<(String, String)> _logRows(CalendarEvent e) {
+    final logs = _logsOf(e);
+    if (logs.isEmpty) return const [];
+    return [
+      ("Dispute Log", logs.length == 1 ? "1 entry" : "${logs.length} entries, oldest first"),
+      for (var i = 0; i < logs.length; i++)
+        (
+          "Log ${i + 1}${logs[i].createdAt != null ? ' · ${_numDate.format(logs[i].createdAt!)}' : ''}",
+          _orDash([
+            if (logs[i].title.trim().isNotEmpty) logs[i].title.trim(),
+            if (logs[i].description.trim().isNotEmpty) logs[i].description.trim(),
+            if (logs[i].attachmentUrls.isNotEmpty)
+              "(${logs[i].attachmentUrls.length} attachment${logs[i].attachmentUrls.length == 1 ? '' : 's'})",
+          ].join("\n")),
+        ),
+    ];
   }
 
   List<pw.Widget> _eventDetails() {
@@ -1346,8 +1511,8 @@ class _ReportLayout {
             style: _style(size: 8.5, color: ReportPalette.ink, font: fonts.semiBold, letterSpacing: 0.4),
           ),
         ),
-        if (e.isFlagged && _enabled("Flagged Events")) ...[
-          _pill("FLAGGED", const PdfColor.fromInt(0xFFFBE9E9), const PdfColor.fromInt(0xFFB42318)),
+        if (_showFlag(e)) ...[
+          _flaggedPill(),
           pw.SizedBox(width: 5),
         ],
         _typePill(e.type),
@@ -1388,7 +1553,7 @@ class _ReportLayout {
         _together([pw.Container(
           width: double.infinity,
           padding: const pw.EdgeInsets.fromLTRB(16, 12, 16, 12),
-          decoration: _cardDecoration,
+          decoration: pw.BoxDecoration(color: _cardColor(e), borderRadius: pw.BorderRadius.circular(6)),
           child: pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [_eventTitle(e), ...rows.map((r) => _detailRow(r.$1, r.$2)), ?evidence],
@@ -1424,7 +1589,7 @@ class _ReportLayout {
           width: double.infinity,
           padding: pw.EdgeInsets.fromLTRB(16, i == 0 ? 12 : 0, 16, i == slices.length - 1 ? 12 : 0),
           decoration: pw.BoxDecoration(
-            color: ReportPalette.card,
+            color: _cardColor(e),
             borderRadius: pw.BorderRadius.only(
               topLeft: i == 0 ? r : pw.Radius.zero,
               topRight: i == 0 ? r : pw.Radius.zero,
@@ -1436,6 +1601,8 @@ class _ReportLayout {
         )]),
     ];
   }
+
+  PdfColor _cardColor(CalendarEvent e) => _showFlag(e) ? ReportPalette.flaggedTint : ReportPalette.card;
 
   // Rough vertical "cost" of a value in characters: a line break costs about
   // a full line of text, so many short lines can't sneak past the budgets.
@@ -1625,7 +1792,18 @@ class _ReportLayout {
           for (final e in withFiles)
             pw.TableRow(
               children: [
-                _tableCell(_refOf(e), font: fonts.semiBold, color: ReportPalette.ink),
+                _showFlag(e)
+                    ? pw.Padding(
+                        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 7),
+                        child: pw.Row(
+                          children: [
+                            pw.Text(_refOf(e), style: _style(size: 8, color: ReportPalette.ink, font: fonts.semiBold)),
+                            pw.SizedBox(width: 3),
+                            ReportIcons.icon(ReportIcons.flag, size: 8, color: ReportPalette.flagged, stroke: 2.2),
+                          ],
+                        ),
+                      )
+                    : _tableCell(_refOf(e), font: fonts.semiBold, color: ReportPalette.ink),
                 _tableCell(_shortDate.format(e.date)),
                 _tableCell(_typeName(e.type)),
                 pw.Padding(

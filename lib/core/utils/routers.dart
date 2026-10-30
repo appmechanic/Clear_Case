@@ -20,6 +20,7 @@ import 'package:clearcase/views/insights/flagged_events_screen.dart';
 import 'package:clearcase/views/insights/payment_analytics_screen.dart';
 import 'package:clearcase/views/insights/payment_detail_screen.dart';
 import 'package:clearcase/views/settings/account_screen.dart';
+import 'package:clearcase/views/subscription/paywall_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:clearcase/views/auth/email_verification_screen.dart';
 import '../../views/auth/forget_password_screen.dart';
@@ -37,7 +38,7 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     EmailVerificationScreen.routeName: (context) => EmailVerificationScreen(),
     MainScreen.routeName: (context) {
       final arguments = ModalRoute.of(context)?.settings.arguments;
-      final int index = (arguments is int) ? arguments : 0;
+      final int index = (arguments is int) ? arguments : MainScreen.insightsTab;
       return MainScreen(index: index);
     },
     CaseSetupScreen.routeName: (context) {
@@ -72,6 +73,7 @@ Map<String, Widget Function(BuildContext)> getAppRoutes() {
     DisputeLogViewerScreen.routeName: (context) => const DisputeLogViewerScreen(),
     AccountScreen.routeName: (context) => const AccountScreen(),
     FlaggedEventsScreen.routeName: (context) => const FlaggedEventsScreen(),
+    PaywallScreen.routeName: (context) => const PaywallScreen(),
   };
   return appRoutes;
 }

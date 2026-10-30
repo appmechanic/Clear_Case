@@ -1,12 +1,19 @@
+import 'package:clearcase/provider/subscription_provider.dart';
 import 'package:clearcase/views/insights/insights_screen.dart';
 import 'package:clearcase/views/settings/settings_screen.dart';
+import 'package:clearcase/views/subscription/paywall_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/svg.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colors.dart';
 import 'home/calender_screen.dart';
 
 class MainScreen extends StatefulWidget {
   static const String routeName = '/main';
+  // Tab indices. The app opens on Insights; flows about a specific date
+  // (case setup, reminder taps) open the Calendar.
+  static const int insightsTab = 0;
+  static const int calendarTab = 1;
   final int index;
   const MainScreen({super.key, required this.index});
 
@@ -35,13 +42,21 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   final List<Widget> _children = [
-    CalenderScreen(),
     InsightsScreen(),
+    CalenderScreen(),
     SettingsScreen()
   ];
 
   @override
   Widget build(BuildContext context) {
+    // The app needs an active subscription (or free trial) past this point.
+    final subscription = context.watch<SubscriptionProvider>();
+    if (!subscription.hasAccess) {
+      return subscription.isReady
+          ? const PaywallScreen()
+          : const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     return Scaffold(
       body: _children[_currentIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -62,8 +77,8 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: AppColors.backgroundCards,
         type: BottomNavigationBarType.fixed,
         items: [
-          _buildNavItem('assets/icons/calender.svg', 'Calender', 0),
-          _buildNavItem('assets/icons/insights.svg', 'Insights', 1),
+          _buildNavItem('assets/icons/insights.svg', 'Insights', MainScreen.insightsTab),
+          _buildNavItem('assets/icons/calender.svg', 'Calendar', MainScreen.calendarTab),
           _buildNavItem('assets/icons/settings.svg', 'Settings', 2)
         ],
       ),

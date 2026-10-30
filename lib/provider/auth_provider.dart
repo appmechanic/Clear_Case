@@ -177,7 +177,7 @@ class AuthProvider extends ChangeNotifier {
             Navigator.pushNamedAndRemoveUntil(
               context,
               MainScreen.routeName,
-              arguments: 0,
+              arguments: MainScreen.insightsTab,
                   (route) => false,
             );
           }
@@ -284,7 +284,7 @@ class AuthProvider extends ChangeNotifier {
             context,
             MainScreen.routeName,
             (route) => false,
-            arguments: 0,
+            arguments: MainScreen.insightsTab,
           );
         }
       }
@@ -393,7 +393,7 @@ class AuthProvider extends ChangeNotifier {
             context,
             MainScreen.routeName,
             (route) => false,
-            arguments: 0,
+            arguments: MainScreen.insightsTab,
           );
         }
       }

@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'ai_clean_up.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/utils/attachments.dart';
@@ -117,7 +118,7 @@ class _DisputeLogDialogState extends State<_DisputeLogDialog> {
           children: [
             CustomTextField(labelText: "Log Title", controller: _titleC, node: _titleNode),
             const SizedBox(height: 10),
-            CustomTextField(labelText: "Description", maxLines: 3, controller: _descC, node: _descNode),
+            CustomTextField(labelText: "Description", maxLines: 3, controller: _descC, node: _descNode, aiCleanUpRecordType: AiCleanUpRecordType.disputeLog),
             const SizedBox(height: 15),
             const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),
             if (_currentUrls.isNotEmpty) const SizedBox(height: 5),

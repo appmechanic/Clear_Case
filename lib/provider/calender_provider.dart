@@ -603,32 +603,78 @@ class CalendarProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// A tap while in range mode: the first tap sets the start, the second the
-  /// end (in either order). After that, a tap on another month continues the
-  /// range; a tap on the range's own month starts over.
-  void selectRangeDay(DateTime day, DateTime focused) {
+  /// A tap while in range mode. Returns false when the tap left range mode,
+  /// so the caller handles it as an ordinary single-day tap.
+  ///
+  /// While picking (started from the "Select date range" button or a
+  /// long-press) the first tap sets the start and the second the end, in
+  /// either order. Once a range is complete, a tap on another month continues
+  /// it; a tap on the range's own month drops the range and goes back to
+  /// single-day mode — no need to cancel before logging a one-day record.
+  bool selectRangeDay(DateTime day, DateTime focused) {
+    final current = _selection;
+    if (current.isComplete) {
+      final extended = DateRangeSelection.extend(current, day);
+      if (extended == null) {
+        cancelRangeSelection();
+        return false;
+      }
+      _focusedDay = focused;
+      _applySelection(extended);
+      return true;
+    }
     _focusedDay = focused;
-    _applySelection(DateRangeSelection.tap(_selection, day));
+    _applySelection(DateRangeSelection.tap(current, day));
     notifyListeners();
+    return true;
   }
 
   // Selection as it was when the current swipe began.
   DateRangeSelection _swipeBase = const DateRangeSelection();
+  bool _swipeBaseRangeMode = false;
 
   /// Call once when a swipe starts, before [updateSwipe].
-  void beginSwipe() => _swipeBase = _selection;
+  void beginSwipe() {
+    _swipeBase = _selection;
+    _swipeBaseRangeMode = _isRangeMode;
+  }
 
   /// A swipe across the calendar: [anchor] is the day the finger went down
   /// on, [current] the day it's over now (either direction). On a month the
   /// range doesn't start/end in, it continues the range (see
   /// DateRangeSelection) — so 26–30 Sep, then 1–5 Oct on the next page,
   /// gives 26 Sep – 5 Oct.
+  ///
+  /// Range mode starts only once the finger reaches a second date. Wobbling
+  /// within one cell — or dragging back onto the starting day — leaves the
+  /// calendar as it was before the swipe, unless that one day continues a
+  /// range from another month.
   void updateSwipe(DateTime anchor, DateTime current) {
+    if (isSameDay(anchor, current)) {
+      final extended = DateRangeSelection.extend(_swipeBase, anchor);
+      if (extended != null) {
+        _applySelection(extended);
+      } else if (_isRangeMode != _swipeBaseRangeMode ||
+          _rangeStart != _swipeBase.start ||
+          _rangeEnd != _swipeBase.end) {
+        _isRangeMode = _swipeBaseRangeMode;
+        _rangeStart = _swipeBase.start;
+        _rangeEnd = _swipeBase.end;
+        notifyListeners();
+      }
+      return;
+    }
     _applySelection(DateRangeSelection.swipe(
       base: _swipeBase,
       anchor: anchor,
       current: current,
     ));
+  }
+
+  /// Jumps the calendar to [month] (from the month picker / "Today").
+  void goToMonth(DateTime month) {
+    _focusedDay = month;
+    notifyListeners();
   }
 
   void cancelRangeSelection() {

@@ -47,7 +47,15 @@ class DateRangeSelection {
           ? DateRangeSelection(start: d, end: s)
           : DateRangeSelection(start: s, end: d);
     }
-    return _continue(base, d, from: d, to: d) ?? DateRangeSelection(start: d);
+    return extend(base, d) ?? DateRangeSelection(start: d);
+  }
+
+  /// [base] continued to [day] when [day] is on a month the range doesn't
+  /// start/end in; null when [day] is on the range's own month (or [base] is
+  /// empty), i.e. when a tap there means something other than "continue".
+  static DateRangeSelection? extend(DateRangeSelection base, DateTime day) {
+    final d = _day(day);
+    return _continue(base, d, from: d, to: d);
   }
 
   // Cross-month continuation, or null when [anchor] is on the range's own

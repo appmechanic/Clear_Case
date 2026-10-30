@@ -5,6 +5,7 @@ import 'package:clearcase/models/custody_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart'; 
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_clean_up.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart'; 
@@ -307,7 +308,7 @@ class _NewCustodyScreenState extends State<NewCustodyScreen> {
                   ),
                 ),
                 const SizedBox(height: 15),
-                CustomTextField(labelText: "Notes", hintText: "Enter Additional Details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Notes", hintText: "Enter Additional Details", maxLines: 3, controller: _notesController, node: FocusNode(), borderRadius: 8, backgroundColor: Colors.grey.shade200, aiCleanUpRecordType: AiCleanUpRecordType.custody),
                 const SizedBox(height: 20),
 
                 const Text("Attachments", style: TextStyle(fontWeight: FontWeight.bold)),

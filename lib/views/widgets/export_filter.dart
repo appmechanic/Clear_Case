@@ -46,6 +46,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
     "Custody": true,
     "Payments": true,
     "Disputes": true,
+    "Dispute Logs": true,
     "Non-Compliance": true,
     "Flagged Events": true,
   };

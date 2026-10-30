@@ -57,6 +57,7 @@ void main() {
           category: 'Transfer Issues',
           party: 'Mother',
           description: 'Late drop off time, no communication.',
+          isFlagged: true,
         ),
         CalendarEvent(
           id: 'n1',
@@ -81,12 +82,28 @@ void main() {
           "Custody": true,
           "Payments": true,
           "Disputes": true,
+          "Dispute Logs": true,
           "Non-Compliance": true,
           "Flagged Events": true,
         },
       ),
       events: sampleEvents(),
       caseModel: caseModel,
+      disputeLogs: {
+        'd1': [
+          DisputeLogEntry(
+            title: 'Follow-up call',
+            description: 'Called at 5:15 pm; advised they were running late.',
+            createdAt: DateTime(2026, 7, 21),
+          ),
+          DisputeLogEntry(
+            title: 'Message sent',
+            description: 'Requested an agreed handover time in writing.',
+            createdAt: DateTime(2026, 7, 22),
+            attachmentUrls: const ['https://example.com/screenshot.png'],
+          ),
+        ],
+      },
       // The bundled font, so the preview shows the real glyphs offline.
       fonts: () {
         final jost = pw.Font.ttf(File('assets/fonts/Jost.ttf').readAsBytesSync().buffer.asByteData());

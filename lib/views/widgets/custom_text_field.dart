@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colors.dart';
+import 'ai_clean_up.dart';
 
 // ignore: must_be_immutable
 class CustomTextField extends StatefulWidget {
@@ -46,7 +47,12 @@ class CustomTextField extends StatefulWidget {
     this.isReadOnly = false,
     this.borderRadius = 0,
     this.prefixText,
+    this.aiCleanUpRecordType,
   });
+
+  /// Shows the AI Clean Up button beside the label for written records.
+  /// One of [AiCleanUpRecordType].
+  final String? aiCleanUpRecordType;
 
   /// Always-visible text before the input, e.g. "\$" on an amount.
   final String? prefixText;
@@ -75,13 +81,21 @@ class _CustomTextFieldState extends State<CustomTextField> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          widget.labelText,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w500,
-            fontSize: 14,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.labelText,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w500,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+            if (widget.aiCleanUpRecordType != null)
+              AiCleanUpButton(controller: widget.controller, recordType: widget.aiCleanUpRecordType!),
+          ],
         ),
         const SizedBox(height: 5),
         TextField(

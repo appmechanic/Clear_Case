@@ -52,4 +52,30 @@ void main() {
     // Dragged up into the weekday row: stays on the first week.
     expect(sept.dayAt(const Offset(75, 60), size, clamp: true), DateTime(2026, 9, 1));
   });
+
+  // September 2026: the 1st is a Tuesday (row 0, col 1), the 30th a
+  // Wednesday (row 4, col 2).
+  test('edgeDirection: past the last day turns forward', () {
+    expect(sept.edgeDirection(Offset(width / 2, size.height + 10), size), 1); // below the grid
+    expect(sept.edgeDirection(cell(4, 3), size), 1); // blank cell after the 30th
+    expect(sept.edgeDirection(cell(4, 6), size), 1);
+    expect(sept.edgeDirection(cell(4, 2), size), 0); // on the 30th itself
+  });
+
+  test('edgeDirection: before the first day turns back', () {
+    expect(sept.edgeDirection(const Offset(75, 60), size), -1); // weekday row
+    expect(sept.edgeDirection(cell(0, 0), size), -1); // blank cell before the 1st
+    expect(sept.edgeDirection(cell(0, 1), size), 0); // on the 1st itself
+  });
+
+  test('edgeDirection: the outer edge only counts on the first / last row', () {
+    expect(sept.edgeDirection(Offset(width - 5, 80 + 2 * rowHeight + 10), size), 0); // middle row
+    expect(sept.edgeDirection(Offset(5, 80 + 2 * rowHeight + 10), size), 0);
+    // A month ending on a Sunday: the right edge of its last cell turns forward.
+    final may = CalendarGrid(month: DateTime(2026, 5, 1), rowHeight: rowHeight); // Fri 1st, Sun 31st
+    final maySize = Size(width, 80 + may.weekCount * rowHeight);
+    final lastRowY = maySize.height - rowHeight / 2;
+    expect(may.edgeDirection(Offset(width - 5, lastRowY), maySize), 1);
+    expect(may.edgeDirection(Offset(width - 25, lastRowY), maySize), 0);
+  });
 }

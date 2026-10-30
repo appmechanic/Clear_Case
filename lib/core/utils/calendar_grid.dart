@@ -35,6 +35,29 @@ class CalendarGrid {
       local.dy >= gridTop(size) && local.dy <= size.height &&
       local.dx >= 0 && local.dx <= size.width;
 
+  /// Where a dragging finger at [local] sits relative to the month: 1 when it's
+  /// past the last day (below the grid, on the blank cells after the last day,
+  /// or in the right-hand [edgeBand] of the last row), -1 when it's before the
+  /// first day (above the grid, on the blank cells before the 1st, or in the
+  /// left-hand [edgeBand] of the first row), else 0. Holding a drag there turns
+  /// the page so a range can run into the next / previous month.
+  int edgeDirection(Offset local, Size size, {double edgeBand = 16}) {
+    final top = gridTop(size);
+    if (local.dy > size.height) return 1;
+    if (local.dy < top) return -1;
+    final row = ((local.dy - top) / rowHeight).floor().clamp(0, weekCount - 1);
+    final col = local.dx >= size.width - edgeBand
+        ? 7
+        : local.dx <= edgeBand
+            ? -1
+            : (local.dx / (size.width / 7)).floor();
+    final firstCol = _leadingBlanks;
+    final lastCol = (_leadingBlanks + _lastOfMonth.day - 1) % 7;
+    if (row == weekCount - 1 && col > lastCol) return 1;
+    if (row == 0 && col < firstCol) return -1;
+    return 0;
+  }
+
   /// Day under [local], or null when the point is above the grid or on one of
   /// the blank cells outside the month. With [clamp], points past the grid's
   /// edges snap to the nearest row/column so a swipe that drifts slightly

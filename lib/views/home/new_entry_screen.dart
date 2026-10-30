@@ -15,7 +15,7 @@ class NewEntryScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.surfaceColor,
       appBar: AppBar(
-        title: const Text("New Entry", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
+        title: const Text("New Record", style: TextStyle(color: Colors.black, fontWeight: FontWeight.bold)),
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: const BackButton(color: Colors.black),

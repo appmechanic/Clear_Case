@@ -146,7 +146,7 @@ class PushNotificationService {
     navigatorKey.currentState?.pushNamedAndRemoveUntil(
       MainScreen.routeName, // Uses your static route name variable
       (route) => false, // Removes all previous routes from the stack
-      arguments: 0, // Passes the index 0 to your MainScreen
+      arguments: MainScreen.calendarTab,
     );
   }
 

@@ -103,7 +103,7 @@ class AuthController {
               } else {
                 Navigator.pushNamedAndRemoveUntil(
                     context, MainScreen.routeName, (route) => false,
-                    arguments: 0);
+                    arguments: MainScreen.insightsTab);
               }
             }
           } catch (e) {

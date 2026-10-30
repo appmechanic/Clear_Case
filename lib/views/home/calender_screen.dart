@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:clearcase/models/calender_event_model.dart';
 import 'package:clearcase/provider/calender_provider.dart';
 import 'package:clearcase/views/home/new_non_compliance_screen.dart';
@@ -48,6 +50,36 @@ class _CalenderScreenState extends State<CalenderScreen> {
   // Movement before a press counts as a swipe rather than a tap. Same as the
   // tap recognizer's own limit, so a press is never both.
   static const double _swipeSlop = kTouchSlop;
+
+  // --- Month navigation ---
+  // A horizontal swipe on the month header or weekday row turns the page.
+  // The day grid is left to range selection, so the two never compete.
+  PageController? _pageController; // TableCalendar's, from onCalendarCreated
+  Offset? _monthSwipeOrigin;
+  static const double _monthSwipeDistance = 40;
+
+  // Edge paging: holding a range drag past the month's last day (or before
+  // its first) turns the page, so 29 Sep → 3 Oct is one drag.
+  Timer? _edgeTimer;
+  int _edgeDirection = 0; // 1 past the end, -1 before the start
+  Offset? _lastDragPosition; // global
+  // After a page turn the finger is usually still in the edge zone; the range
+  // holds at the new month's first (or last) day until the finger moves back
+  // onto the dates.
+  bool _heldAtEdge = false;
+  static const Duration _edgeFirstDelay = Duration(milliseconds: 500);
+  static const Duration _edgeRepeatDelay = Duration(milliseconds: 900);
+
+  @override
+  void dispose() {
+    _edgeTimer?.cancel();
+    super.dispose();
+  }
+
+  static final DateTime _firstDay = DateTime.utc(2020, 10, 16);
+  static final DateTime _lastDay = DateTime.utc(2030, 3, 14);
+
+  static const TextStyle _dayTextStyle = TextStyle(color: Colors.black, fontWeight: FontWeight.bold);
 
   // Undecorated day cell, rounded like the selected / range-end cells so
   // TableCalendar's state-change animation can interpolate between them.
@@ -326,15 +358,18 @@ class _CalenderScreenState extends State<CalenderScreen> {
         rowHeight: _rowHeight,
         daysOfWeekHeight: 32,
         sixWeekMonthsEnforced: false,
-        firstDay: DateTime.utc(2020, 10, 16),
-        lastDay: DateTime.utc(2030, 3, 14),
+        firstDay: _firstDay,
+        lastDay: _lastDay,
         focusedDay: provider.focusedDay,
         // Weeks run Monday–Sunday. CalendarGrid (swipe hit-testing) and the
         // scheduled-tint joins below assume the same.
         startingDayOfWeek: StartingDayOfWeek.monday,
-        // Months change only via the header arrows — no swipe — so a range
-        // can be picked across months without accidental page flips.
+        // The grid itself doesn't page on swipe — a swipe there selects
+        // dates. Months change via the header arrows, a swipe on the header /
+        // weekday row (see _buildSwipeSelector), or the month picker.
         availableGestures: AvailableGestures.none,
+        onCalendarCreated: (controller) => _pageController = controller,
+        onHeaderTapped: (_) => _showMonthPicker(context, provider),
         // Range state lives in CalendarProvider; TableCalendar only paints it.
         rangeSelectionMode: RangeSelectionMode.disabled,
         rangeStartDay: provider.rangeStart,
@@ -343,8 +378,9 @@ class _CalenderScreenState extends State<CalenderScreen> {
             !provider.isRangeMode && provider.isSameDay(provider.selectedDay, day),
         eventLoader: provider.getEventsForDay,
         onDaySelected: (selectedDay, focusedDay) {
-          if (provider.isRangeMode) {
-            provider.selectRangeDay(selectedDay, focusedDay);
+          // A tap in range mode either picks / extends the range, or drops
+          // it and falls through to an ordinary single-day tap.
+          if (provider.isRangeMode && provider.selectRangeDay(selectedDay, focusedDay)) {
             return;
           }
           provider.onDaySelected(selectedDay, focusedDay);
@@ -358,15 +394,17 @@ class _CalenderScreenState extends State<CalenderScreen> {
         ),
         calendarStyle: CalendarStyle(
           outsideDaysVisible: false,
-          weekendTextStyle: const TextStyle(color: Colors.black),
-          defaultTextStyle: const TextStyle(fontWeight: FontWeight.w600),
+          // Every date number is bold — weekdays, weekends, today, and the
+          // selected / range cells alike.
+          weekendTextStyle: _dayTextStyle,
+          defaultTextStyle: _dayTextStyle,
           // No separate highlight for "today" — only the currently
           // selected day shows a box.
           todayDecoration: _plainCellDecoration,
-          todayTextStyle: const TextStyle(
-            color: Colors.black,
-            fontWeight: FontWeight.w600,
-          ),
+          todayTextStyle: _dayTextStyle,
+          selectedTextStyle: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          rangeStartTextStyle: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          rangeEndTextStyle: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           selectedDecoration: BoxDecoration(
             color: AppColors.primary,
             shape: BoxShape.rectangle,
@@ -395,7 +433,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
           rangeHighlightColor: AppColors.primary.withValues(alpha: 0.15),
           withinRangeTextStyle: const TextStyle(
             color: AppColors.primary,
-            fontWeight: FontWeight.w700,
+            fontWeight: FontWeight.bold,
           ),
           markerSize: 6,
           cellMargin: const EdgeInsets.symmetric(horizontal: 2, vertical:1),
@@ -410,6 +448,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
               fontSize: 18),
         ),
         calendarBuilders: CalendarBuilders(
+          headerTitleBuilder: (context, month) => _buildMonthTitle(context, provider, month),
           // Paints a soft, full-cell tinted background on days that have
           // scheduled events (custody/payment/custom rules). This is the
           // "schedule layer" — structural, subtle, and visually distinct
@@ -518,17 +557,23 @@ class _CalenderScreenState extends State<CalenderScreen> {
       _swipeAnchor = null;
       _swipeOrigin = null;
       _swiping = false;
+      _stopEdgePaging();
       if (_lockPageScroll) setState(() => _lockPageScroll = false);
     }
 
     return Listener(
       behavior: HitTestBehavior.translucent,
       onPointerDown: (event) {
+        _monthSwipeOrigin = null;
         final b = box();
         if (b == null) return;
         final local = b.globalToLocal(event.position);
         final day = grid().dayAt(local, b.size);
-        if (day == null) return; // header, weekday row or a blank cell
+        if (day == null) {
+          // Header or weekday row: a horizontal swipe here turns the month.
+          if (local.dy < grid().gridTop(b.size)) _monthSwipeOrigin = event.position;
+          return; // (or a blank cell)
+        }
         _swipeAnchor = day;
         _swipeOrigin = event.position;
         _swiping = false;
@@ -544,12 +589,253 @@ class _CalenderScreenState extends State<CalenderScreen> {
           provider.beginSwipe();
           HapticFeedback.selectionClick();
         }
-        final day = grid().dayAt(b.globalToLocal(event.position), b.size, clamp: true);
+        final local = b.globalToLocal(event.position);
+        _lastDragPosition = event.position;
+        final edge = grid().edgeDirection(local, b.size);
+        _updateEdgePaging(provider, edge);
+        if (edge != 0 && _heldAtEdge) return;
+        if (edge == 0) _heldAtEdge = false;
+        final day = grid().dayAt(local, b.size, clamp: true);
         if (day != null) provider.updateSwipe(anchor, day);
       },
-      onPointerUp: (_) => endSwipe(),
-      onPointerCancel: (_) => endSwipe(),
+      onPointerUp: (event) {
+        _finishMonthSwipe(event.position);
+        endSwipe();
+      },
+      onPointerCancel: (_) {
+        _monthSwipeOrigin = null;
+        endSwipe();
+      },
       child: calendar,
+    );
+  }
+
+  // Starts / stops the page-turn countdown as the drag enters or leaves the
+  // zone past the month's last day (or before its first).
+  void _updateEdgePaging(CalendarProvider provider, int edge) {
+    if (edge == _edgeDirection) return;
+    _edgeTimer?.cancel();
+    _edgeDirection = edge;
+    if (edge != 0) _scheduleEdgePage(provider, _edgeFirstDelay);
+  }
+
+  void _scheduleEdgePage(CalendarProvider provider, Duration delay) {
+    _edgeTimer = Timer(delay, () {
+      final anchor = _swipeAnchor;
+      final controller = _pageController;
+      final b = _calendarKey.currentContext?.findRenderObject() as RenderBox?;
+      final position = _lastDragPosition;
+      if (!mounted || anchor == null || controller == null || !controller.hasClients || b == null || position == null) {
+        return;
+      }
+      // Re-check against the month now showing: a held finger may no longer
+      // be past its edge after the last page turn.
+      final month = provider.focusedDay;
+      final edge = CalendarGrid(month: month, rowHeight: _rowHeight).edgeDirection(b.globalToLocal(position), b.size);
+      _edgeDirection = edge;
+      if (edge == 0) return;
+
+      // The range runs on to the new month's first day (or the previous
+      // month's last); dragging onto its dates then picks the exact day.
+      final target = edge > 0 ? DateTime(month.year, month.month + 1, 1) : DateTime(month.year, month.month, 0);
+      if (target.isBefore(_firstDay) || target.isAfter(_lastDay)) return;
+      HapticFeedback.selectionClick();
+      _heldAtEdge = true;
+      provider.updateSwipe(anchor, target);
+      const duration = Duration(milliseconds: 300);
+      if (edge > 0) {
+        controller.nextPage(duration: duration, curve: Curves.easeOut);
+      } else {
+        controller.previousPage(duration: duration, curve: Curves.easeOut);
+      }
+      // Keep turning while the finger stays there.
+      _scheduleEdgePage(provider, _edgeRepeatDelay);
+    });
+  }
+
+  void _stopEdgePaging() {
+    _edgeTimer?.cancel();
+    _edgeTimer = null;
+    _edgeDirection = 0;
+    _heldAtEdge = false;
+    _lastDragPosition = null;
+  }
+
+  // Turns the page if the finger travelled mostly sideways from where it went
+  // down on the header / weekday row: left for the next month, right for the
+  // previous one — the same as the arrows.
+  void _finishMonthSwipe(Offset end) {
+    final origin = _monthSwipeOrigin;
+    _monthSwipeOrigin = null;
+    final controller = _pageController;
+    if (origin == null || controller == null || !controller.hasClients) return;
+    final delta = end - origin;
+    if (delta.dx.abs() < _monthSwipeDistance || delta.dx.abs() < delta.dy.abs() * 1.5) return;
+    HapticFeedback.selectionClick();
+    const duration = Duration(milliseconds: 300);
+    if (delta.dx < 0) {
+      controller.nextPage(duration: duration, curve: Curves.easeOut);
+    } else {
+      controller.previousPage(duration: duration, curve: Curves.easeOut);
+    }
+  }
+
+  // Month name between the arrows. Tapping it opens the month picker; when
+  // the calendar is away from the current month, a "Today" chip jumps back.
+  Widget _buildMonthTitle(BuildContext context, CalendarProvider provider, DateTime month) {
+    final now = DateTime.now();
+    final isCurrentMonth = month.year == now.year && month.month == now.month;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Flexible(
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _showMonthPicker(context, provider),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Text(
+                      DateFormat.yMMMM().format(month),
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 18),
+                    ),
+                  ),
+                  const Icon(Icons.arrow_drop_down, color: AppColors.primary),
+                ],
+              ),
+            ),
+          ),
+        ),
+        if (!isCurrentMonth)
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => provider.goToMonth(now),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Text(
+                "Today",
+                style: TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold, fontSize: 12),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // Year stepper over a 3×4 grid of months; picking one jumps straight there.
+  void _showMonthPicker(BuildContext context, CalendarProvider provider) {
+    final focused = provider.focusedDay;
+    final now = DateTime.now();
+    int year = focused.year;
+    int monthIndex(DateTime d) => d.year * 12 + d.month;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(30)),
+      ),
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (sheetContext, setSheetState) {
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left),
+                        onPressed: year > _firstDay.year ? () => setSheetState(() => year--) : null,
+                      ),
+                      Expanded(
+                        child: Text(
+                          "$year",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right),
+                        onPressed: year < _lastDay.year ? () => setSheetState(() => year++) : null,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  GridView.count(
+                    crossAxisCount: 4,
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    childAspectRatio: 1.8,
+                    children: List.generate(12, (i) {
+                      final month = DateTime(year, i + 1);
+                      final index = monthIndex(month);
+                      final enabled = index >= monthIndex(_firstDay) && index <= monthIndex(_lastDay);
+                      final isFocused = index == monthIndex(focused);
+                      final isCurrent = index == monthIndex(now);
+                      return Material(
+                        color: isFocused ? AppColors.primary : Colors.transparent,
+                        borderRadius: BorderRadius.circular(12),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: !enabled
+                              ? null
+                              : () {
+                                  Navigator.pop(sheetContext);
+                                  // Clamp so the first / last partial months
+                                  // stay within TableCalendar's bounds.
+                                  var target = month;
+                                  if (target.isBefore(_firstDay)) target = _firstDay;
+                                  if (target.isAfter(_lastDay)) target = _lastDay;
+                                  provider.goToMonth(target);
+                                },
+                          child: Container(
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(12),
+                              border: isCurrent && !isFocused
+                                  ? Border.all(color: AppColors.primary)
+                                  : null,
+                            ),
+                            child: Text(
+                              DateFormat.MMM().format(month),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: !enabled
+                                    ? Colors.grey[400]
+                                    : isFocused
+                                        ? Colors.white
+                                        : Colors.black,
+                              ),
+                            ),
+                          ),
+                        ),
+                      );
+                    }),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -601,7 +887,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
               ),
             ),
             const Spacer(),
-            const Text("or swipe across dates", style: TextStyle(fontSize: 12, color: Colors.grey)),
+            const Text("or drag across dates", style: TextStyle(fontSize: 12, color: Colors.grey)),
           ],
         ),
       );
@@ -620,7 +906,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
           "use the arrows to move to another month.";
     } else {
       subtitle = "${daysLabel(span.nights + 1)} · ${nightsLabel(span.nights)}\n"
-          "To continue into another month, use the arrows and swipe or tap there.";
+          "To continue into another month, hold your drag past the last date, or change month and drag or tap there. "
+          "Tap a date in this month to go back to single-day records.";
     }
 
     return Container(
@@ -667,7 +954,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                   ),
                   icon: const Icon(Icons.child_care),
-                  label: const Text("Add Custody Entry", style: TextStyle(fontWeight: FontWeight.bold)),
+                  label: const Text("Add Custody Record", style: TextStyle(fontWeight: FontWeight.bold)),
                   onPressed: () async {
                     await Navigator.pushNamed(
                       context,
@@ -854,8 +1141,8 @@ class _CalenderScreenState extends State<CalenderScreen> {
               },
             ),
 
-            // 1. Add Entry (Primary Action)
-            _buildActionButton("Add Entry", Icons.add, const Color(0xFF4A148C),
+            // 1. Add Record (Primary Action)
+            _buildActionButton("Add Record", Icons.add, const Color(0xFF4A148C),
                 Colors.white, true, () {
                   Navigator.pop(context);
                   Navigator.pushNamed(context, NewEntryScreen.routeName,
@@ -1288,13 +1575,7 @@ class _CalenderScreenState extends State<CalenderScreen> {
         ),
       ),
       alignment: Alignment.center,
-      child: Text(
-        '${date.day}',
-        style: const TextStyle(
-          fontWeight: FontWeight.w600,
-          color: Colors.black,
-        ),
-      ),
+      child: Text('${date.day}', style: _dayTextStyle),
     );
   }
 

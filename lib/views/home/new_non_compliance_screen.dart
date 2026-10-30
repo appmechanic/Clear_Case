@@ -2,6 +2,7 @@ import 'dart:io';
 import 'package:clearcase/views/widgets/loader.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_clean_up.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -185,7 +186,7 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
                 Align(alignment: Alignment.centerLeft, child: Text("Severity", style: TextStyle(fontWeight: FontWeight.w500))),
                 Row(children: ["Serious", "Moderate", "Minor"].map((l) => Padding(padding: const EdgeInsets.only(right: 10), child: _buildChip(l))).toList()),
                 const SizedBox(height: 15),
-                CustomTextField(labelText: "Description", hintText: "Describe the non-compliance...", maxLines: 3, controller: _descController, node: _descNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Description", hintText: "Describe the non-compliance...", maxLines: 3, controller: _descController, node: _descNode, borderRadius: 8, backgroundColor: Colors.grey.shade200, aiCleanUpRecordType: AiCleanUpRecordType.nonCompliance),
                 const SizedBox(height: 15),
                 RelatedPartyPicker(
                   caseModel: selectedCase,
@@ -194,7 +195,7 @@ class _NewNonComplianceScreenState extends State<NewNonComplianceScreen> {
                   initialName: _loadedName,
                 ),
                 const SizedBox(height: 15),
-                CustomTextField(labelText: "Evidence (Optional)", hintText: "Describe the evidence", maxLines: 3, controller: _proofController, node: _proofNode, borderRadius: 8, backgroundColor: Colors.grey.shade200),
+                CustomTextField(labelText: "Evidence (Optional)", hintText: "Describe the evidence", maxLines: 3, controller: _proofController, node: _proofNode, borderRadius: 8, backgroundColor: Colors.grey.shade200, aiCleanUpRecordType: AiCleanUpRecordType.evidence),
                 const SizedBox(height: 15),
 
                 // Attachments Section

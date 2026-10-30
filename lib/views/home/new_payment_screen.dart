@@ -4,6 +4,7 @@ import 'package:clearcase/models/payment_model.dart';
 import 'package:clearcase/provider/new_entry_provider.dart';
 import 'package:clearcase/views/widgets/custom_text_field.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_clean_up.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
@@ -314,6 +315,7 @@ class _NewPaymentScreenState extends State<NewPaymentScreen> {
                       maxLines: 3,
                       controller: _notesController,
                       node: _notesNode,
+                      aiCleanUpRecordType: AiCleanUpRecordType.payment,
                       borderRadius: 8,
                       backgroundColor: Colors.grey.shade200,
                     ),

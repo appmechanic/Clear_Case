@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
+import '../widgets/ai_clean_up.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
  import '../../provider/calender_provider.dart';
@@ -197,6 +198,7 @@ class _NewDisputeScreenState extends State<NewDisputeScreen> {
                   maxLines: 3,
                   controller: _descController,
                   node: _descNode,
+                  aiCleanUpRecordType: AiCleanUpRecordType.dispute,
                   borderRadius: 8,
                   backgroundColor: Colors.grey.shade200,
                 ),

@@ -70,4 +70,27 @@ void main() {
       expectRange(DateRangeSelection.tap(sept, d(9, 10)), d(9, 10), null);
     });
   });
+
+  // The calendar uses extend() to decide whether a tap / one-cell drag on a
+  // finished range continues it or drops back to single-day mode.
+  group('extend', () {
+    final sept = DateRangeSelection(start: d(9, 26), end: d(9, 30));
+
+    test('a later month moves the end', () {
+      expectRange(DateRangeSelection.extend(sept, d(10, 1))!, d(9, 26), d(10, 1));
+    });
+
+    test('an earlier month moves the start', () {
+      expectRange(DateRangeSelection.extend(sept, d(8, 30))!, d(8, 30), d(9, 30));
+    });
+
+    test('the range\'s own month is not an extension', () {
+      expect(DateRangeSelection.extend(sept, d(9, 10)), isNull);
+      expect(DateRangeSelection.extend(sept, d(9, 28)), isNull);
+    });
+
+    test('nothing to extend without a range', () {
+      expect(DateRangeSelection.extend(none, d(10, 1)), isNull);
+    });
+  });
 }

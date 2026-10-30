@@ -468,7 +468,7 @@ class _RuleConfigurationScreenState extends State<RuleConfigurationScreen>  {
               Navigator.pushNamedAndRemoveUntil(
                 context,
                 MainScreen.routeName,
-                arguments: 0,
+                arguments: MainScreen.calendarTab,
                     (route) => false,
               );
             }

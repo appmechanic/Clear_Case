@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -27,9 +29,32 @@ class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final GoogleSignIn _googleSignIn = GoogleSignIn();
 
+  // Answered by ios/Runner/AppDelegate.swift.
+  static const MethodChannel _googleConfigChannel =
+      MethodChannel('clearcase/google_sign_in');
+
   User? get currentUser => _auth.currentUser;
 
+  /// On iOS, calling GoogleSignIn without a client ID + URL scheme crashes
+  /// the app natively (the plugin re-raises the SDK's NSException), so check
+  /// the bundle's config first.
+  Future<bool> _isGoogleSignInConfigured() async {
+    if (!Platform.isIOS) return true;
+    try {
+      return await _googleConfigChannel.invokeMethod<bool>('isConfigured') ??
+          false;
+    } catch (e) {
+      debugPrint('Google sign-in config check failed: $e');
+      return false;
+    }
+  }
+
   Future<UserCredential?> signInWithGoogle() async {
+    if (!await _isGoogleSignInConfigured()) {
+      debugPrint('Google sign-in is not configured: add CLIENT_ID to '
+          'GoogleService-Info.plist and REVERSED_CLIENT_ID to CFBundleURLTypes.');
+      throw 'Google sign-in is not available right now. Please sign in with Apple or email.';
+    }
     try {
       await _googleSignIn.signOut();
 
@@ -45,8 +70,14 @@ class AuthService {
 
       return await _auth.signInWithCredential(credential);
     } on FirebaseAuthException catch (e) {
+      if (e.code == 'account-exists-with-different-credential') {
+        throw 'An account with this email already exists. Please sign in with your original method.';
+      }
       throw _handleAuthException(e);
     } catch (e) {
+      // e.g. PlatformException(sign_in_failed, ApiException: 10) on Android
+      // means this build's SHA-1 isn't registered in Firebase.
+      debugPrint('Google sign-in failed: $e');
       throw 'Google sign-in failed. Please try again.';
     }
   }

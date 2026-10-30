@@ -13,6 +13,7 @@ import 'package:clearcase/provider/remainder_provider.dart';
 import 'package:clearcase/provider/rule_configuration_provider.dart';
 import 'package:clearcase/provider/scheduled_dates_provider.dart';
 import 'package:clearcase/provider/setting_provider.dart';
+import 'package:clearcase/provider/subscription_provider.dart';
 import 'package:clearcase/services/notification_service.dart';
 import 'package:clearcase/views/auth/splash_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -60,6 +61,7 @@ class MyApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NonComplianceProviderInsight()),
         ChangeNotifierProvider(create: (_) => DisputeInsightsProvider()),
         ChangeNotifierProvider(create: (_) => CustodyInsightProvider()),
+        ChangeNotifierProvider(create: (_) => SubscriptionProvider(), lazy: false),
       ],
       child: MaterialApp(
       title: 'ClearCase',

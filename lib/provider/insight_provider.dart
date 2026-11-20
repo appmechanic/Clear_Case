@@ -79,8 +79,9 @@ class InsightProvider with ChangeNotifier {
   int get totalFlaggedCount => flaggedCustodyCount + flaggedPaymentsCount + flaggedDisputesCount + flaggedNonComplianceCount;
   List<ChildModel> get children => _selectedCase?.children ?? [];
 
-  // FIX: Only sum Paid and Received to prevent double-counting sub-categories
-  double get totalPayments => totalPaid + totalReceived;
+  // Money received is shown separately and is not part of the total. The
+  // total is always compulsory + additional (same as the PDF report).
+  double get totalPayments => totalCompulsory + totalAdditional;
 
   InsightProvider() {
     // Drive all listeners off auth state so logging out / switching accounts
@@ -268,18 +269,20 @@ class InsightProvider with ChangeNotifier {
 
     for (final data in _paymentDocs.where(_inWindow)) {
       final double amount = (data['amount'] ?? 0).toDouble();
-      final bool isReceived = data['isReceived'] ?? false;
+      final bool isReceived =
+          data['transactionType'] == "PaymentReceived" || (data['isReceived'] ?? false);
       final String category = data['paymentCategory'] ?? "";
 
+      // Received money only counts as received — it's kept out of the
+      // compulsory / additional split so it never reaches the total.
       if (isReceived) {
         tempReceived += amount;
-      } else {
-        tempPaid += amount;
+        continue;
       }
-
+      tempPaid += amount;
       if (category == "Compulsory") {
         tempCompulsory += amount;
-      } else if (category == "Additional") {
+      } else {
         tempAdditional += amount;
       }
     }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../core/theme/app_colors.dart';
 import '../../provider/insight_provider.dart';
 
 class PaymentOverview extends StatelessWidget {
@@ -68,26 +69,7 @@ class PaymentOverview extends StatelessWidget {
                 ),
                 const SizedBox(height: 20),
 
-                // First Row: Paid & Received
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildMoneyStat(
-                          "\$${provider.totalPaid.toInt()}",
-                          "Payments Paid",
-                          const Color(0xFF6200EE)),
-                    ),
-                    Expanded(
-                      child: _buildMoneyStat(
-                          "\$${provider.totalReceived.toInt()}",
-                          "Payments Received",
-                          const Color(0xFF00C853)),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 25),
-
-                // Second Row: Compulsory & Additional
+                // Compulsory + Additional = Total Payment
                 Row(
                   children: [
                     Expanded(
@@ -107,7 +89,6 @@ class PaymentOverview extends StatelessWidget {
 
                 const Divider(height: 40),
 
-                // Footer Total Row
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -122,7 +103,32 @@ class PaymentOverview extends StatelessWidget {
                           fontSize: 20),
                     ),
                   ],
-                )
+                ),
+
+                // Received is its own subsection, not part of the total.
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: AppColors.lightGreyColor,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text("Payments Received",
+                          style: TextStyle(
+                              color: Colors.black54, fontWeight: FontWeight.w500)),
+                      Text(
+                        "\$${provider.totalReceived.toInt()}",
+                        style: const TextStyle(
+                            color: Colors.black,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),

@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
@@ -92,10 +95,33 @@ class _AiCleanUpSheetState extends State<_AiCleanUpSheet> {
   String? _cleaned;
   String? _error;
 
+  // The function doesn't report progress, so this is an estimate: it eases
+  // towards 95% (about 60% at 6s, 85% at 12s) and only reaches 100% once the
+  // response is back. It's there so a slow request doesn't look frozen.
+  double _progress = 0;
+  Timer? _progressTimer;
+
   @override
   void initState() {
     super.initState();
     _run();
+  }
+
+  @override
+  void dispose() {
+    _progressTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startProgress() {
+    _progressTimer?.cancel();
+    final started = DateTime.now();
+    _progress = 0;
+    _progressTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!mounted) return;
+      final seconds = DateTime.now().difference(started).inMilliseconds / 1000;
+      setState(() => _progress = 0.95 * (1 - math.exp(-seconds / 6)));
+    });
   }
 
   Future<void> _run() async {
@@ -103,11 +129,17 @@ class _AiCleanUpSheetState extends State<_AiCleanUpSheet> {
       _cleaned = null;
       _error = null;
     });
+    _startProgress();
     try {
       final result = await FirebaseFunctions.instance
           .httpsCallable('cleanUpRecordText', options: HttpsCallableOptions(timeout: const Duration(seconds: 90)))
           .call<Map<String, dynamic>>({'text': widget.original, 'recordType': widget.recordType});
       final cleaned = (result.data['cleaned'] as String? ?? '').trim();
+      _progressTimer?.cancel();
+      if (!mounted) return;
+      // Let 100% show for a moment before the result replaces it.
+      setState(() => _progress = 1);
+      await Future.delayed(const Duration(milliseconds: 250));
       if (!mounted) return;
       setState(() {
         if (cleaned.isEmpty) {
@@ -118,10 +150,12 @@ class _AiCleanUpSheetState extends State<_AiCleanUpSheet> {
       });
     } on FirebaseFunctionsException catch (e) {
       debugPrint("AI Clean Up error: ${e.code} ${e.message}");
+      _progressTimer?.cancel();
       if (!mounted) return;
       setState(() => _error = e.message ?? "AI Clean Up failed. Please try again.");
     } catch (e) {
       debugPrint("AI Clean Up error: $e");
+      _progressTimer?.cancel();
       if (!mounted) return;
       setState(() => _error = "Couldn't reach AI Clean Up. Check your connection and try again.");
     }
@@ -200,18 +234,43 @@ class _AiCleanUpSheetState extends State<_AiCleanUpSheet> {
     }
 
     if (_cleaned == null) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 40),
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 32),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(
-              width: 32,
-              height: 32,
-              child: CircularProgressIndicator(strokeWidth: 3, color: AppColors.primary),
+              width: 72,
+              height: 72,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CircularProgressIndicator(
+                    value: _progress,
+                    strokeWidth: 5,
+                    color: AppColors.primary,
+                    backgroundColor: AppColors.primaryTint,
+                  ),
+                  Center(
+                    child: Text(
+                      "${(_progress * 100).round()}%",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                        color: AppColors.primary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            SizedBox(height: 16),
-            Text("Polishing your entry…", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const SizedBox(height: 16),
+            const Text("Polishing your entry…", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
+            const SizedBox(height: 4),
+            Text(
+              "This can take up to a minute for longer entries.",
+              style: TextStyle(color: Colors.grey[700], fontSize: 13),
+            ),
           ],
         ),
       );

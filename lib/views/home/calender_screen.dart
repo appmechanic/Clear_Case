@@ -342,8 +342,17 @@ class _CalenderScreenState extends State<CalenderScreen> {
     // The calendar sizes itself to the month (5 or 6 week rows), so there's
     // no dead band under short months and the Scheduled / Legends buttons
     // stay on screen. Only the loader gets a fixed, roughly matching height.
+    // It sits on a white card, inset to line up with the Reminders card, so
+    // the grid reads as its own block against the page background. The
+    // padding is outside _calendarKey, so swipe hit-testing is unaffected.
     return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 10),
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 4))],
+      ),
       child: provider.isLoading
           ? const SizedBox(
         height: 360,

@@ -1198,15 +1198,14 @@ class _ReportLayout {
   }
 
   pw.Widget _financialCard(List<CalendarEvent> payments) {
-    double received = 0, paid = 0, compulsory = 0, additional = 0;
+    double received = 0, compulsory = 0, additional = 0;
     for (final p in payments) {
       final amount = p.amount ?? 0;
+      // Money received is reported on its own and never counts towards the
+      // compulsory / additional split or the total.
       if (_isReceived(p)) {
         received += amount;
-      } else {
-        paid += amount;
-      }
-      if (p.paymentCategory == 'Compulsory') {
+      } else if (p.paymentCategory == 'Compulsory') {
         compulsory += amount;
       } else {
         additional += amount;
@@ -1243,13 +1242,15 @@ class _ReportLayout {
         children: [
           _cardTitle(ReportIcons.dollar, "Financial record"),
           pw.SizedBox(height: 10),
-          line("Payments received", received),
-          line("Payments paid", paid),
           line("Compulsory payments", compulsory),
           line("Additional payments", additional),
           _rule(vertical: 6),
-          // Matches the in-app Insights total (paid + received).
-          line("Total payment value", paid + received, total: true),
+          // Always compulsory + additional; matches the in-app Insights total.
+          line("Total payment value", compulsory + additional, total: true),
+          pw.SizedBox(height: 12),
+          _label("Received", size: 6.5, color: ReportPalette.faint),
+          pw.SizedBox(height: 2),
+          line("Payments received", received),
         ],
       ),
     );
